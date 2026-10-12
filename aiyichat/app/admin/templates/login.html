@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 爱易聊</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    {% include "partials/_design_tokens.html" %}
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--primary-soft) 0%, var(--bg) 50%, var(--login-bg-end, #ede9fe) 100%);
+            font-family: var(--pico-font-family);
+            color: var(--text);
+            margin: 0;
+        }
+        /* 深色主题：背景末端改用深石板色，避免硬编码浅紫在暗色下突兀 */
+        [data-theme="dark"] body {
+            background: linear-gradient(135deg, #1e293b 0%, var(--bg) 50%, #312e5c 100%);
+        }
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+            padding: 1rem;
+        }
+        .login-box {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem 2rem;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .login-header .brand-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: #fff;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            box-shadow: 0 6px 16px rgba(99,102,241,0.35);
+        }
+        .login-header h2 {
+            margin: 0;
+            font-size: 1.4rem;
+            color: var(--text);
+            font-weight: 700;
+        }
+        .login-header .subtitle {
+            color: var(--text-2);
+            font-size: 0.9rem;
+            margin-top: 0.3rem;
+        }
+        .alert-error {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+            border: 1px solid var(--danger);
+            padding: 0.6rem 1rem;
+            border-radius: var(--radius-sm);
+            margin-bottom: 1rem;
+            font-size: 0.88rem;
+        }
+        label {
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+        input[type="text"],
+        input[type="password"] {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-strong);
+            font-size: 0.95rem;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
+        button[type="submit"] {
+            width: 100%;
+            margin-top: 0.8rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 0.95rem;
+            padding: 0.7rem;
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            border: none;
+            transition: all 0.2s ease;
+        }
+        button[type="submit"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(99,102,241,0.4);
+        }
+        .footer-text {
+            text-align: center;
+            color: var(--text-2);
+            font-size: 0.8rem;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <div class="brand-icon">AI</div>
+                <h2>爱易聊</h2>
+                <p class="subtitle">管理后台</p>
+            </div>
+            {% if success %}
+            <div class="alert-success" style="background:#d1fae5;color:#065f46;padding:0.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:0.9rem;">{{ success }}</div>
+            {% endif %}
+            {% if error %}
+            <div class="alert-error">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/admin/login">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required autofocus placeholder="请输入用户名">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required placeholder="请输入密码">
+                <button type="submit">登录</button>
+            </form>
+        </div>
+        <p class="footer-text">AIYIchat Platform</p>
+    </div>
+</body>
+</html>

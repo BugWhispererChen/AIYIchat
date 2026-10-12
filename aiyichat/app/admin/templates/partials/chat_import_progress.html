@@ -1,0 +1,26 @@
+<!-- 分析进度 HTMX partial，每2秒轮询更新 -->
+<h4>分析进度</h4>
+
+{% if task.status == "error" %}
+    <div style="background:var(--pico-del-color);color:white;padding:0.8rem 1rem;border-radius:8px;">
+        分析失败: {{ task.error_message }}
+    </div>
+    <p style="margin-top:1rem;"><a href="/admin/chat-import" role="button" class="secondary">重新上传</a></p>
+
+{% elif task.status == "done" %}
+    <!-- 分析完成，停止轮询 -->
+    <div style="margin-bottom:1rem;">
+        <progress value="100" max="100"></progress>
+        <p style="color:var(--pico-ins-color);font-weight:600;">分析完成！</p>
+    </div>
+    <a href="/admin/chat-import/preview/{{ task.task_id }}" role="button">查看分析结果</a>
+
+{% else %}
+    <!-- 分析中，继续轮询 -->
+    <div hx-get="/admin/chat-import/status/{{ task.task_id }}"
+         hx-trigger="every 2s"
+         hx-swap="outerHTML">
+        <progress value="{{ task.progress }}" max="100"></progress>
+        <p>{{ task.progress_text or "分析中..." }} ({{ task.progress }}%)</p>
+    </div>
+{% endif %}

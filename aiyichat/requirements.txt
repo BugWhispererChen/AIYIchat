@@ -1,0 +1,33 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+motor>=3.6.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+pyyaml>=6.0
+jinja2>=3.1.0
+python-multipart>=0.0.7
+tiktoken>=0.7.0
+openai>=1.0.0
+httpx>=0.25.0
+dashscope>=1.26.4
+# websocket-client 1.9.x 的 close() 在连接已被服务端关闭时会抛
+# AttributeError（sock 为 None），导致 dashscope TTS 合成完成后清理崩溃；
+# 实测 qwen-audio 带 pitch/情感标签场景必现，固定在 1.8.x 规避
+websocket-client<1.9
+pilk>=0.2.0
+pillow>=10.0.0
+websockets>=12.0
+psutil>=5.9.0
+pystray>=0.19.0
+aiohttp>=3.9.0
+qrcode[pil]>=7.0
+pycryptodome>=3.19.0
+cryptography>=42.0.0
+# 人际关系网络：Kuzu 嵌入式图数据库（可选增强，未启用时自动降级）
+kuzu>=0.11.0
+# IANA 时区数据库：Windows 上 zoneinfo 找不到系统时区库，必须依赖该纯数据包
+# （项目要出 Windows 安装包；Linux 容器虽自带 zoneinfo 数据，装上无害且保证行为一致）
+tzdata>=2024.1
+# 中文时间语义解析：相对时间归一化与 LLM 日期防幻觉校验
+# 依赖 numpy/jiojio/zipfile36；zipfile36 为 Py3.6/3.7 回移植，Py3.11 下为独立模块不覆盖 stdlib
+jionlp>=1.5.0

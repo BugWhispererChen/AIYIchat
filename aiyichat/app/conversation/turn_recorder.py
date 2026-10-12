@@ -1,0 +1,61 @@
+"""对话轮次记录器。
+
+负责将用户消息和 AI 回复持久化到数据库，并更新对话元数据。
+"""
+
+from typing import Optional
+
+from app.db.repositories.conversation_repo import ConversationRepository
+from app.db.repositories.message_repo import MessageRepository
+
+
+class TurnRecorder:
+    """记录一轮对话中的用户输入与 AI 输出。"""
+
+    def __init__(
+        self,
+        message_repo: MessageRepository | None = None,
+        conversation_repo: ConversationRepository | None = None,
+    ):
+        self.message_repo = message_repo or MessageRepository()
+        self.conversation_repo = conversation_repo or ConversationRepository()
+
+    async def record_user_message(
+        self,
+        conversation_id: str,
+        text: str,
+        emotion_tag: Optional[str],
+        media_url: Optional[str] = None,
+        content_type: str = "text",
+    ) -> None:
+        """持久化用户消息。"""
+        await self.message_repo.create(
+            conversation_id=conversation_id,
+            role="user",
+            content=text,
+            emotion_tag=emotion_tag,
+            media_url=media_url,
+            content_type=content_type,
+        )
+
+    async def record_assistant_message(
+        self,
+        conversation_id: str,
+        clean_text: str,
+        llm_model: str,
+        latency_ms: int,
+    ) -> None:
+        """持久化 AI 回复。"""
+        await self.message_repo.create(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=clean_text,
+            llm_model=llm_model,
+            latency_ms=latency_ms,
+        )
+
+    async def update_conversation_meta(self, conversation_id: str) -> None:
+        """更新对话元数据（计数 +2）。"""
+        await self.conversation_repo.update_after_message(
+            conversation_id, count=2
+        )

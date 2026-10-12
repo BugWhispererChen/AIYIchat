@@ -1,0 +1,62 @@
+{# 角色信息只读摘要（自定义创建向导 Step 2/4 复用，依赖上下文 profile #}
+<div class="summary-grid">
+    <div class="summary-item">
+        <h5>身份信息</h5>
+        <p><strong>背景：</strong>{{ profile.identity.background or '-' }}</p>
+        <p><strong>时代：</strong>{{ profile.identity.era or '-' }}</p>
+        <p><strong>年龄外观：</strong>{{ profile.identity.age_appearance or '-' }}</p>
+        <p><strong>外貌（英文）：</strong>{{ profile.identity.appearance or '-' }}</p>
+        {% if profile.identity.core_values %}
+        <p><strong>价值观：</strong>{{ profile.identity.core_values | join('、') }}</p>
+        {% endif %}
+    </div>
+    <div class="summary-item">
+        <h5>语言风格</h5>
+        <p><strong>语气：</strong>{{ profile.language_style.tone or '-' }}</p>
+        {% if profile.language_style.vocabulary %}
+        <p><strong>常用词：</strong>{{ profile.language_style.vocabulary | join('、') }}</p>
+        {% endif %}
+        {% if profile.language_style.sentence_patterns %}
+        <p><strong>句式：</strong>{{ profile.language_style.sentence_patterns | join('、') }}</p>
+        {% endif %}
+        {% if profile.language_style.example_utterances %}
+        <p><strong>代表话语：</strong></p>
+        <ul>
+            {% for u in profile.language_style.example_utterances[:5] %}
+            <li>{{ u }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    <div class="summary-item">
+        <h5>性格特征</h5>
+        {% if profile.personality.mbti_hint %}
+        <p><strong>MBTI：</strong>{{ profile.personality.mbti_hint }}</p>
+        {% endif %}
+        {% if profile.personality.traits %}
+        <p><strong>特质评分：</strong>
+            {% for k, v in profile.personality.traits.items() %}
+            {{ k }} {{ '%.2f' | format(v) }}{% if not loop.last %}，{% endif %}
+            {% endfor %}
+        </p>
+        {% endif %}
+        <p><strong>关怀方式：</strong>{{ profile.personality.care_style or '-' }}</p>
+    </div>
+    <div class="summary-item">
+        <h5>对话策略</h5>
+        <p><strong>开场白：</strong>{{ profile.dialogue_strategy.greeting or '-' }}</p>
+        <p><strong>负面情绪应对：</strong>{{ profile.dialogue_strategy.on_negative_emotion or '-' }}</p>
+        <p><strong>沉默时行为：</strong>{{ profile.dialogue_strategy.on_silence or '-' }}</p>
+        {% if profile.dialogue_strategy.boundaries %}
+        <p><strong>行为边界：</strong></p>
+        <ul>
+            {% for b in profile.dialogue_strategy.boundaries %}
+            <li>{{ b }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if profile.meta_instructions %}
+        <p><strong>元指令：</strong>{{ profile.meta_instructions }}</p>
+        {% endif %}
+    </div>
+</div>

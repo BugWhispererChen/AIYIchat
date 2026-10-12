@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set active_page = "profiles" %}
+{% block title %}角色管理{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;">
+    <div>
+        <h3>角色管理</h3>
+        <p class="subtitle">共 {{ profiles|length }} 个角色</p>
+    </div>
+    <a href="/admin/profiles/create" role="button" style="white-space:nowrap;">创建自定义角色</a>
+</div>
+
+<!-- 搜索 -->
+<div class="card">
+    <div class="search-bar">
+        <form method="get" action="/admin/profiles" style="display:flex;gap:0.5rem;flex:1;">
+            <input type="search" name="q" value="{{ request.query_params.get('q', '') }}" placeholder="搜索角色名称、来源或分类...">
+            <button type="submit">搜索</button>
+            {% if request.query_params.get('q') %}
+            <a href="/admin/profiles" role="button" class="ghost">重置</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% if profiles %}
+<div class="card">
+    <div class="table-wrap">
+    <table style="table-layout: fixed !important; width: 100%;">
+        <colgroup>
+            <col style="width: 22%;">
+            <col style="width: 14%;">
+            <col style="width: 14%;">
+            <col style="width: 10%;">
+            <col style="width: 8%;">
+            <col style="width: 8%;">
+            <col style="width: 24%;">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>名称</th>
+                <th>Slug</th>
+                <th>来源</th>
+                <th>分类</th>
+                <th>可见范围</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="profiles-table">
+            {% for p in profiles %}
+            {% include "partials/profile_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6z"/></svg></div>
+        <div class="empty-title">暂无角色</div>
+        <div class="empty-desc">可通过“角色克隆”从聊天记录自动生成角色档案</div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

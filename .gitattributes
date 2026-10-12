@@ -1,0 +1,36 @@
+# 换行符策略：防止 Windows 检出污染在 Linux 上执行的脚本
+#
+# 背景：本仓库在 Windows 上开发（core.autocrlf=true），但 .sh 脚本与 Git hook
+# 实际在 Linux 服务器/容器内执行。若被检出为 CRLF，bash 会报
+# `$'\r': command not found` 而静默失效（曾导致 post-receive 部署钩子异常）。
+
+# Shell 脚本强制 LF（存储与检出均为 LF）
+*.sh text eol=lf
+post-receive text eol=lf
+
+# Windows 专用脚本保持 CRLF
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资源：禁止任何换行符转换与文本 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.so binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.mp3 binary
+*.wav binary
+*.mp4 binary
+*.enc binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

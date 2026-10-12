@@ -1,0 +1,644 @@
+{% extends "base.html" %}
+{% set active_page = "profiles" %}
+{% block title %}{{ profile.name }} - 角色详情{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin/profiles">角色管理</a>
+<span class="sep">/</span>
+<span class="current">{{ profile.name }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>{{ profile.name }} <small class="muted" style="font-size:0.9rem;font-weight:400;">{{ profile.slug }}</small></h3>
+    <p class="subtitle">编辑角色的身份、语言风格、性格与对话策略</p>
+</div>
+
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="detail-layout">
+    <!-- 左侧锚点导航 -->
+    <aside class="anchor-nav">
+        <a href="#sec-basic">基本信息</a>
+        <a href="#sec-identity">身份信息</a>
+        <a href="#sec-refimg">定妆照</a>
+        <a href="#sec-language">语言风格</a>
+        <a href="#sec-personality">性格特征</a>
+        <a href="#sec-dialogue">对话策略</a>
+        <a href="#sec-meta">元指令</a>
+        <a href="#sec-voice">语音设置</a>
+        <div class="save-row">
+            <button type="submit" form="profile-form" style="width:100%;">保存修改</button>
+        </div>
+    </aside>
+
+    <!-- 右侧表单分区卡片 -->
+    <form method="post" action="/admin/profiles/{{ profile.slug }}/edit" id="profile-form">
+        <!-- 基本信息 -->
+        <div class="card section-card" id="sec-basic">
+            <h4>基本信息</h4>
+            <div class="grid">
+                <label>名称
+                    <input type="text" name="name" value="{{ profile.name }}">
+                </label>
+                <label>来源
+                    <input type="text" name="source" value="{{ profile.source }}">
+                </label>
+            </div>
+            <div class="grid">
+                <label>分类
+                    <input type="text" name="category" value="{{ profile.category }}">
+                </label>
+                <label>状态
+                    <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.4rem;">
+                        <input type="checkbox" name="is_active" role="switch" {{ 'checked' if profile.is_active }}>
+                        活跃
+                    </label>
+                </label>
+            </div>
+            <div class="grid">
+                <label>可见范围
+                    <select name="visibility" id="visibility-select">
+                        <option value="public" {% if (profile.visibility or 'public') == 'public' %}selected{% endif %}>公共（所有账号可见）</option>
+                        <option value="private" {% if (profile.visibility or 'public') == 'private' %}selected{% endif %}>私有（仅指定账号可见）</option>
+                    </select>
+                </label>
+                <label id="account-select-label" style="{% if (profile.visibility or 'public') == 'public' %}display:none;{% endif %}">
+                    所属账号
+                    <select name="account_id">
+                        <option value="">请选择账号</option>
+                        {% for acc in accounts.values() %}
+                        <option value="{{ acc.id }}" {% if profile.account_id == acc.id %}selected{% endif %}>{{ acc.name or acc.id }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <!-- 身份信息 -->
+        <div class="card section-card" id="sec-identity">
+            <h4>身份信息 (Identity)</h4>
+            <label>背景故事
+                <textarea name="identity_background" rows="4">{{ profile.identity.background }}</textarea>
+            </label>
+            <div class="grid">
+                <label>时代
+                    <input type="text" name="identity_era" value="{{ profile.identity.era }}">
+                </label>
+                <label>外观/年龄
+                    <input type="text" name="identity_age_appearance" value="{{ profile.identity.age_appearance }}">
+                </label>
+            </div>
+            <label>外貌特征 <small class="field-hint">(英文，用于图片生成保持形象一致，如 a young woman with long black hair, ...)</small>
+                <textarea name="identity_appearance" rows="2">{{ profile.identity.appearance }}</textarea>
+            </label>
+            <label>核心价值观 <small class="field-hint">(每行一个)</small>
+                <textarea name="identity_core_values" rows="3">{{ profile.identity.core_values | join('\n') }}</textarea>
+            </label>
+
+            <details>
+                <summary style="cursor:pointer;color:var(--primary);font-weight:500;">关系列表 ({{ profile.identity.relationships | length }} 个)</summary>
+                <div id="relationships-container" style="margin-top:0.6rem;">
+                    {% for rel in profile.identity.relationships %}
+                    <div class="grid" style="margin-bottom:0.5rem;">
+                        <input type="text" name="rel_name" value="{{ rel.name }}" placeholder="名称">
+                        <input type="text" name="rel_relation" value="{{ rel.relation }}" placeholder="关系">
+                        <input type="text" name="rel_attitude" value="{{ rel.attitude }}" placeholder="态度">
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+
+        <!-- 定妆照（人物一致性参考肖像） -->
+        <div class="card section-card" id="sec-refimg">
+            <h4>定妆照 (Reference Portrait)</h4>
+            <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+                本人出镜的图片（自拍等）将以此图为参考保持人物形象一致，
+                需在「AI 模型配置」中启用「ImageGen 参考图编辑」。
+                建议使用正面清晰、背景简洁的 3:4 竖版半身照。
+            </p>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;">
+                <div>
+                    <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">当前定妆照</p>
+                    {% if profile.reference_image_url %}
+                    <img src="{{ profile.reference_image_url }}" alt="定妆照" style="width:160px;border-radius:8px;border:1px solid var(--border,#e5e7eb);">
+                    {% else %}
+                    <p class="muted" style="font-size:0.85rem;">未设置（本人出镜图片将使用外貌文字描述，无法保证形象一致）</p>
+                    {% endif %}
+                </div>
+                {% if ref_candidate_url %}
+                <div>
+                    <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">待确认候选</p>
+                    <img src="{{ ref_candidate_url }}" alt="候选定妆照" style="width:160px;border-radius:8px;border:2px solid var(--primary,#4f46e5);">
+                </div>
+                {% endif %}
+            </div>
+            <div class="btn-row" style="gap:0.5rem;margin-top:0.8rem;flex-wrap:wrap;">
+                {% if ref_candidate_url %}
+                <button type="submit" form="ref-confirm-form" class="btn-sm" id="ref-confirm-btn">确认设为定妆照</button>
+                {% endif %}
+                <button type="submit" form="ref-generate-form" class="ghost btn-sm" id="ref-generate-btn">用外貌描述生成{{ '新' if ref_candidate_url }}候选</button>
+                <input type="file" name="file" form="ref-upload-form" accept="image/*" required style="max-width:220px;">
+                <button type="submit" form="ref-upload-form" class="ghost btn-sm" id="ref-upload-btn">上传设为定妆照</button>
+                {% if profile.reference_image_url %}
+                <button type="submit" form="ref-clear-form" class="ghost btn-sm" id="ref-clear-btn" onclick="return confirm('确定清除定妆照？')">清除</button>
+                {% endif %}
+            </div>
+            <p id="ref-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
+                <span class="ref-spinner"></span><span id="ref-loading-text">处理中…</span>
+            </p>
+            <style>
+                .ref-spinner {
+                    display: inline-block;
+                    width: 12px; height: 12px;
+                    margin-right: 6px;
+                    border: 2px solid var(--border, #e5e7eb);
+                    border-top-color: var(--primary, #4f46e5);
+                    border-radius: 50%;
+                    animation: ref-spin 0.8s linear infinite;
+                    vertical-align: -2px;
+                }
+                @keyframes ref-spin { to { transform: rotate(360deg); } }
+            </style>
+        </div>
+
+        <!-- 语言风格 -->
+        <div class="card section-card" id="sec-language">
+            <h4>语言风格 (Language Style)</h4>
+            <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
+                <div style="display:flex;gap:1.2rem;">
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                        <input type="radio" name="verbosity" value="concise" {% if profile.verbosity == 'concise' %}checked{% endif %}> 凝练
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                        <input type="radio" name="verbosity" value="standard" {% if profile.verbosity == 'standard' %}checked{% endif %}> 标准
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                        <input type="radio" name="verbosity" value="verbose" {% if profile.verbosity == 'verbose' %}checked{% endif %}> 健谈
+                    </label>
+                </div>
+            </label>
+            <label>语调
+                <textarea name="ls_tone" rows="2">{{ profile.language_style.tone }}</textarea>
+            </label>
+            <label>特征词汇 <small class="field-hint">(每行一个)</small>
+                <textarea name="ls_vocabulary" rows="3">{{ profile.language_style.vocabulary | join('\n') }}</textarea>
+            </label>
+            <label>句式特征 <small class="field-hint">(每行一个)</small>
+                <textarea name="ls_sentence_patterns" rows="3">{{ profile.language_style.sentence_patterns | join('\n') }}</textarea>
+            </label>
+            <label>示例对话 <small class="field-hint">(每行一个)</small>
+                <textarea name="ls_example_utterances" rows="4">{{ profile.language_style.example_utterances | join('\n') }}</textarea>
+            </label>
+            <label>Emoji 习惯 <small class="field-hint">(每行一个)</small>
+                <textarea name="ls_emoji_habits" rows="2">{{ profile.language_style.emoji_habits | join('\n') }}</textarea>
+            </label>
+            <label>禁用词 <small class="field-hint">(每行一个)</small>
+                <textarea name="ls_forbidden_words" rows="2">{{ profile.language_style.forbidden_words | join('\n') }}</textarea>
+            </label>
+            <label>表情包分组 <small class="field-hint">(勾选后对话中只会发送所选分组内的表情包；不选任何分组则不发送表情包)</small>
+                {% if sticker_groups %}
+                <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.3rem;">
+                    {% for g in sticker_groups %}
+                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;{% if not g.enabled %}opacity:0.5;{% endif %}">
+                        <input type="checkbox" name="sticker_group_ids" value="{{ g.id }}"
+                               {% if g.id in profile.sticker_group_ids %}checked{% endif %}>
+                        {{ g.name }}{% if not g.enabled %}（已停用）{% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="muted" style="font-size:0.82rem;margin:0.3rem 0 0;">
+                    尚未创建表情包分组，请前往 <a href="/admin/stickers">表情包管理</a> 创建。
+                </p>
+                {% endif %}
+            </label>
+        </div>
+
+        <!-- 性格特征 -->
+        <div class="card section-card" id="sec-personality">
+            <h4>性格特征 (Personality)</h4>
+            <div class="grid">
+                <label>MBTI 类型提示
+                    <input type="text" name="p_mbti_hint" value="{{ profile.personality.mbti_hint }}">
+                </label>
+                <label>关心风格
+                    <input type="text" name="p_care_style" value="{{ profile.personality.care_style }}">
+                </label>
+            </div>
+            <label>性格特质</label>
+            {% for key, val in profile.personality.traits.items() %}
+            <div class="grid" style="align-items:center;margin-bottom:0.3rem;">
+                <input type="text" name="trait_key" value="{{ key }}" style="max-width:160px;">
+                <input type="range" name="trait_value" min="0" max="1" step="0.05" value="{{ val }}"
+                       oninput="this.nextElementSibling.textContent=this.value" style="flex:1;">
+                <span style="min-width:40px;text-align:center;">{{ val }}</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- 对话策略 -->
+        <div class="card section-card" id="sec-dialogue">
+            <h4>对话策略 (Dialogue Strategy)</h4>
+            <label>开场白
+                <textarea name="ds_greeting" rows="2">{{ profile.dialogue_strategy.greeting }}</textarea>
+            </label>
+            <label>负面情绪应对
+                <textarea name="ds_on_negative_emotion" rows="2">{{ profile.dialogue_strategy.on_negative_emotion }}</textarea>
+            </label>
+            <label>正面情绪应对
+                <textarea name="ds_on_positive_emotion" rows="2">{{ profile.dialogue_strategy.on_positive_emotion }}</textarea>
+            </label>
+            <label>沉默时应对
+                <textarea name="ds_on_silence" rows="2">{{ profile.dialogue_strategy.on_silence }}</textarea>
+            </label>
+            <label>角色边界 <small class="field-hint">(每行一个)</small>
+                <textarea name="ds_boundaries" rows="3">{{ profile.dialogue_strategy.boundaries | join('\n') }}</textarea>
+            </label>
+            <label>安全护栏
+                <textarea name="ds_safety_guardrails" rows="2">{{ profile.dialogue_strategy.safety_guardrails }}</textarea>
+            </label>
+        </div>
+
+        <!-- 元指令 -->
+        <div class="card section-card" id="sec-meta">
+            <h4>元指令 (Meta Instructions)</h4>
+            <textarea name="meta_instructions" rows="4">{{ profile.meta_instructions }}</textarea>
+        </div>
+
+        <!-- 语音设置 -->
+        <div class="card section-card" id="sec-voice">
+            <h4>语音设置</h4>
+            <label>Voice ID <small class="field-hint">(音色须与当前 TTS 模型成套：CosyVoice 用 long 开头音色如 longxiaochun/longcheng/longshu；Qwen-TTS 用英文名如 Cherry/Serena/Ethan。留空使用默认 longxiaochun)</small>
+                <input type="text" name="voice_id" value="{{ profile.voice_id or '' }}" placeholder="longxiaochun">
+            </label>
+
+            <!-- 声音复刻 -->
+            <hr style="border:none;border-top:1px solid var(--border,#e5e7eb);margin:1rem 0;">
+            <h5 style="margin:0 0 0.6rem;">声音复刻</h5>
+            <p class="muted" style="font-size:0.82rem;margin:0 0 0.6rem;">
+                上传 10-20 秒清晰人声音频，即可创建专属复刻音色。
+                支持 WAV / MP3 / M4A 格式，音频需无背景噪音。
+            </p>
+
+            {# 复刻状态展示 #}
+            {% if profile.voice_clone_status == 'active' %}
+            <div style="background:var(--success-bg,#f0fdf4);border:1px solid var(--success,#22c55e);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.6rem;">
+                <p style="margin:0;font-size:0.85rem;color:var(--success,#16a34a);">
+                    <strong>复刻已激活</strong>
+                </p>
+                <p class="muted" style="font-size:0.8rem;margin:0.2rem 0 0;">
+                    音色 ID: <code>{{ profile.voice_id }}</code><br>
+                    绑定模型: {{ profile.voice_clone_target_model }}
+                </p>
+            </div>
+            {% elif profile.voice_clone_status == 'failed' %}
+            <div style="background:var(--error-bg,#fef2f2);border:1px solid var(--error,#ef4444);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.6rem;">
+                <p style="margin:0;font-size:0.85rem;color:var(--error,#dc2626);">
+                    <strong>上次复刻失败</strong>，请检查音频质量后重试
+                </p>
+            </div>
+            {% endif %}
+
+            {# 试听音频播放 #}
+            {% if voice_preview_url %}
+            <div style="margin-bottom:0.6rem;">
+                <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">试听音频</p>
+                <audio controls style="width:100%;max-width:400px;">
+                    <source src="{{ voice_preview_url }}" type="audio/mpeg">
+                    您的浏览器不支持音频播放
+                </audio>
+            </div>
+            {% endif %}
+
+            {# 操作按钮 #}
+            <div class="btn-row" style="gap:0.5rem;flex-wrap:wrap;">
+                <input type="file" name="voice_file" form="voice-clone-upload-form"
+                       accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required
+                       style="max-width:220px;">
+                <button type="submit" form="voice-clone-upload-form" class="btn-sm" id="voice-clone-btn">
+                    上传并复刻
+                </button>
+                <button type="button" class="btn-sm" id="voice-record-btn" onclick="toggleVoiceRecord()">
+                    录音复刻
+                </button>
+                {% if profile.voice_id %}
+                <button type="submit" form="voice-clone-preview-form" class="ghost btn-sm" id="voice-preview-btn">
+                    试听音色
+                </button>
+                {% endif %}
+                {% if profile.voice_clone_status %}
+                <button type="submit" form="voice-clone-clear-form" class="ghost btn-sm" id="voice-clear-btn"
+                        onclick="return confirm('确定清除声音复刻状态？（不会删除云端音色）')">
+                    清除复刻
+                </button>
+                {% endif %}
+            </div>
+
+            {# 录音面板（默认隐藏） #}
+            <div id="voice-record-panel" style="display:none;margin-top:0.8rem;padding:0.8rem;border:1px solid var(--border,#e5e7eb);border-radius:8px;background:var(--surface-2,#f9fafb);">
+                <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
+                    <div id="voice-record-status" style="font-size:0.9rem;color:var(--text-2,#374151);">
+                        点击"开始录音"按钮，录制 10-20 秒清晰人声
+                    </div>
+                    <div id="voice-record-timer" style="font-size:1.1rem;font-weight:600;color:var(--primary,#6366f1);min-width:60px;">
+                        00:00
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
+                    <button type="button" class="btn-sm" id="voice-record-start-btn" onclick="startVoiceRecording()">
+                        开始录音
+                    </button>
+                    <button type="button" class="btn-sm danger" id="voice-record-stop-btn" onclick="stopVoiceRecording()" style="display:none;">
+                        停止录音
+                    </button>
+                    <button type="button" class="ghost btn-sm" id="voice-record-cancel-btn" onclick="cancelVoiceRecording()">
+                        取消
+                    </button>
+                </div>
+                <p class="muted" style="font-size:0.78rem;margin:0.5rem 0 0;">
+                    录音时长要求 10-20 秒，不足 10 秒将无法提交。录音完成后自动转为 WAV 格式并上传复刻。
+                </p>
+            </div>
+            <p id="voice-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
+                <span class="ref-spinner"></span><span id="voice-loading-text">处理中…</span>
+            </p>
+        </div>
+    </form>
+</div>
+
+<!-- 定妆照操作表单（独立于主表单，通过 form 属性关联按钮） -->
+<form id="ref-upload-form" method="post" action="/admin/profiles/{{ profile.slug }}/reference-image/upload" enctype="multipart/form-data" style="display:none;"></form>
+<form id="ref-generate-form" method="post" action="/admin/profiles/{{ profile.slug }}/reference-image/generate" style="display:none;"></form>
+<form id="ref-clear-form" method="post" action="/admin/profiles/{{ profile.slug }}/reference-image/clear" style="display:none;"></form>
+
+<!-- 声音复刻操作表单 -->
+<form id="voice-clone-upload-form" method="post" action="/admin/profiles/{{ profile.slug }}/voice-clone/upload" enctype="multipart/form-data" style="display:none;"></form>
+<form id="voice-clone-preview-form" method="post" action="/admin/profiles/{{ profile.slug }}/voice-clone/preview" style="display:none;"></form>
+<form id="voice-clone-clear-form" method="post" action="/admin/profiles/{{ profile.slug }}/voice-clone/clear" style="display:none;"></form>
+{% if ref_candidate_url %}
+<form id="ref-confirm-form" method="post" action="/admin/profiles/{{ profile.slug }}/reference-image/confirm" style="display:none;">
+    <input type="hidden" name="media_url" value="{{ ref_candidate_url }}">
+</form>
+{% endif %}
+
+<script>
+    const visibilitySelect = document.getElementById('visibility-select');
+    const accountLabel = document.getElementById('account-select-label');
+    visibilitySelect.addEventListener('change', function() {
+        if (this.value === 'private') {
+            accountLabel.style.display = 'block';
+            accountLabel.querySelector('select').required = true;
+        } else {
+            accountLabel.style.display = 'none';
+            accountLabel.querySelector('select').required = false;
+        }
+    });
+
+    // 定妆照表单加载态：提交后禁用按钮并显示提示，防止重复点击与误刷新
+    (function() {
+        const hint = document.getElementById('ref-loading-hint');
+        const hintText = document.getElementById('ref-loading-text');
+        const bindings = [
+            { formId: 'ref-generate-form', btnId: 'ref-generate-btn',
+              text: '正在生成定妆照，约需 30-60 秒，请勿刷新或关闭页面…' },
+            { formId: 'ref-upload-form', btnId: 'ref-upload-btn',
+              text: '正在上传，请稍候…' },
+            { formId: 'ref-confirm-form', btnId: 'ref-confirm-btn',
+              text: '正在确认，请稍候…' },
+        ];
+        bindings.forEach(function(b) {
+            const form = document.getElementById(b.formId);
+            const btn = document.getElementById(b.btnId);
+            if (!form || !btn) return;
+            form.addEventListener('submit', function() {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+                btn.style.cursor = 'not-allowed';
+                hintText.textContent = b.text;
+                hint.style.display = 'block';
+            });
+        });
+    })();
+
+    // 声音复刻表单加载态
+    (function() {
+        const hint = document.getElementById('voice-loading-hint');
+        const hintText = document.getElementById('voice-loading-text');
+        const bindings = [
+            { formId: 'voice-clone-upload-form', btnId: 'voice-clone-btn',
+              text: '正在上传音频并复刻声音，约需 10-30 秒，请勿刷新页面…' },
+            { formId: 'voice-clone-preview-form', btnId: 'voice-preview-btn',
+              text: '正在合成试听音频，请稍候…' },
+        ];
+        bindings.forEach(function(b) {
+            const form = document.getElementById(b.formId);
+            const btn = document.getElementById(b.btnId);
+            if (!form || !btn) return;
+            form.addEventListener('submit', function() {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+                btn.style.cursor = 'not-allowed';
+                hintText.textContent = b.text;
+                hint.style.display = 'block';
+            });
+        });
+    })();
+
+    // ═══════════ 声音复刻录音功能 ═══════════
+    (function() {
+        // 检查浏览器兼容性
+        const recordBtn = document.getElementById('voice-record-btn');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            if (recordBtn) recordBtn.style.display = 'none';
+            return;
+        }
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let recordingTimer = null;
+        let recordingStartTime = 0;
+        const MIN_DURATION = 10; // 最少 10 秒
+        const MAX_DURATION = 20; // 最多 20 秒
+
+        // 切换录音面板显示
+        window.toggleVoiceRecord = function() {
+            const panel = document.getElementById('voice-record-panel');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                recordBtn.textContent = '收起录音';
+            } else {
+                panel.style.display = 'none';
+                recordBtn.textContent = '录音复刻';
+                resetRecordingUI();
+            }
+        };
+
+        // 开始录音
+        window.startVoiceRecording = async function() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = function(e) {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = async function() {
+                    stream.getTracks().forEach(t => t.stop());
+                    const duration = (Date.now() - recordingStartTime) / 1000;
+
+                    if (duration < MIN_DURATION) {
+                        alert('录音时长不足 ' + MIN_DURATION + ' 秒，请重新录制');
+                        resetRecordingUI();
+                        return;
+                    }
+
+                    // 显示加载态
+                    const hint = document.getElementById('voice-loading-hint');
+                    const hintText = document.getElementById('voice-loading-text');
+                    hintText.textContent = '正在转换音频格式并上传复刻，约需 10-30 秒…';
+                    hint.style.display = 'block';
+
+                    try {
+                        const webmBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const wavBlob = await convertToWav(webmBlob);
+                        submitRecording(wavBlob);
+                    } catch (err) {
+                        console.error('音频转换失败:', err);
+                        alert('音频转换失败，请重试');
+                        hint.style.display = 'none';
+                        resetRecordingUI();
+                    }
+                };
+
+                mediaRecorder.start(100);
+                recordingStartTime = Date.now();
+
+                // 更新 UI
+                document.getElementById('voice-record-start-btn').style.display = 'none';
+                document.getElementById('voice-record-stop-btn').style.display = 'inline-block';
+                document.getElementById('voice-record-status').textContent = '正在录音…';
+
+                // 启动计时器
+                updateRecordingTimer();
+                recordingTimer = setInterval(updateRecordingTimer, 1000);
+
+                // 超过最大时长自动停止
+                setTimeout(function() {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        stopVoiceRecording();
+                    }
+                }, MAX_DURATION * 1000);
+
+            } catch (err) {
+                console.error('录音失败:', err);
+                alert('无法访问麦克风，请检查权限设置');
+                resetRecordingUI();
+            }
+        };
+
+        // 停止录音
+        window.stopVoiceRecording = function() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        };
+
+        // 取消录音
+        window.cancelVoiceRecording = function() {
+            stopVoiceRecording();
+            resetRecordingUI();
+            document.getElementById('voice-record-panel').style.display = 'none';
+            recordBtn.textContent = '录音复刻';
+        };
+
+        // 重置录音 UI
+        function resetRecordingUI() {
+            document.getElementById('voice-record-start-btn').style.display = 'inline-block';
+            document.getElementById('voice-record-stop-btn').style.display = 'none';
+            document.getElementById('voice-record-status').textContent = '点击"开始录音"按钮，录制 10-20 秒清晰人声';
+            document.getElementById('voice-record-timer').textContent = '00:00';
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        }
+
+        // 更新录音计时器
+        function updateRecordingTimer() {
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('voice-record-timer').textContent = minutes + ':' + seconds;
+        }
+
+        // WebM 转 WAV
+        async function convertToWav(webmBlob) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const arrayBuffer = await webmBlob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            // 转为单声道
+            const numberOfChannels = 1;
+            const sampleRate = 16000;
+            const length = audioBuffer.length * numberOfChannels * 2 + 44;
+            const buffer = new ArrayBuffer(length);
+            const view = new DataView(buffer);
+
+            // WAV 文件头
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + audioBuffer.length * numberOfChannels * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, numberOfChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+            view.setUint16(32, numberOfChannels * 2, true);
+            view.setUint16(34, 16, true); // 16bit
+            writeString(view, 36, 'data');
+            view.setUint32(40, audioBuffer.length * numberOfChannels * 2, true);
+
+            // 写入 PCM 数据（转为单声道）
+            const channelData = audioBuffer.getChannelData(0);
+            let offset = 44;
+            for (let i = 0; i < channelData.length; i++) {
+                const sample = Math.max(-1, Math.min(1, channelData[i]));
+                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // 提交录音
+        function submitRecording(wavBlob) {
+            const file = new File([wavBlob], 'recording.wav', { type: 'audio/wav' });
+            const input = document.querySelector('input[name="voice_file"][form="voice-clone-upload-form"]');
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            input.files = dataTransfer.files;
+            document.getElementById('voice-clone-upload-form').submit();
+        }
+    })();
+</script>
+{% endblock %}

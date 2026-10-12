@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% set active_page = "profiles" %}
+{% block title %}创建自定义角色{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin/profiles">角色管理</a>
+<span class="sep">/</span>
+<span class="current">创建自定义角色</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>创建自定义角色</h3>
+    <p class="subtitle">第 1/4 步：描述角色 —— 系统将调用大模型生成完整的角色档案</p>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="max-width: 720px;">
+    <form method="post" action="/admin/profiles/create/generate" id="create-form">
+        <label>角色名称 <small class="field-hint">(必填，如：林小满)</small>
+            <input type="text" name="name" value="{{ name or '' }}" required maxlength="30"
+                   placeholder="例如：林小满">
+        </label>
+        <label>角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与用户的关系等)</small>
+            <textarea name="description" rows="6" required minlength="10"
+                      placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心用户">{{ description or '' }}</textarea>
+        </label>
+        {% set vb = verbosity | default('standard', true) %}
+        <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
+            <div style="display:flex;gap:1.2rem;">
+                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <input type="radio" name="verbosity" value="concise" {% if vb == 'concise' %}checked{% endif %}> 凝练
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <input type="radio" name="verbosity" value="standard" {% if vb == 'standard' %}checked{% endif %}> 标准
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <input type="radio" name="verbosity" value="verbose" {% if vb == 'verbose' %}checked{% endif %}> 健谈
+                </label>
+            </div>
+        </label>
+        <div class="btn-row" style="display:flex;gap:0.6rem;align-items:center;">
+            <button type="submit" id="create-btn">生成角色信息</button>
+            <a href="/admin/profiles" role="button" class="ghost">取消</a>
+        </div>
+        <p id="create-loading-hint" class="muted" style="font-size:0.82rem;margin:0.6rem 0 0;display:none;">
+            <span class="wizard-spinner"></span><span id="create-loading-text">处理中…</span>
+        </p>
+    </form>
+</div>
+
+<style>
+.wizard-spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    margin-right: 6px;
+    border: 2px solid var(--border, #e5e7eb);
+    border-top-color: var(--primary, #6366f1);
+    border-radius: 50%;
+    animation: wizard-spin 0.8s linear infinite;
+    vertical-align: -2px;
+}
+@keyframes wizard-spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+    // 生成提交加载态：LLM 生成约需 10-30 秒，禁用按钮并提示，防止误刷新
+    (function() {
+        const form = document.getElementById('create-form');
+        const btn = document.getElementById('create-btn');
+        const hint = document.getElementById('create-loading-hint');
+        const hintText = document.getElementById('create-loading-text');
+        form.addEventListener('submit', function() {
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'not-allowed';
+            hintText.textContent = '正在调用大模型生成角色信息，约需 10-30 秒，请勿刷新或关闭页面…';
+            hint.style.display = 'block';
+        });
+    })();
+</script>
+{% endblock %}

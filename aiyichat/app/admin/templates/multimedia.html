@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% set active_page = "multimedia" %}
+{% block title %}AI模型配置{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* 配置状态指示灯：颜色交 CSS 类控制，深色主题通过令牌自动适配（避免 inline 硬编码在暗色下突兀） */
+    .feat-status {
+        display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+        margin-left: 4px; background: var(--text-3);
+        transition: background var(--transition);
+    }
+    .feat-status.on { background: var(--success); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% macro text_feature(key, label, cfg) %}
+<div class="card" style="margin-bottom:0;">
+    <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
+    <label>基础配置
+        <select name="{{ key }}_config_id" class="config-select" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
+    </label>
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.6rem;">
+        <label style="font-size:0.82rem;">温度
+            <input type="number" name="{{ key }}_temperature" value="{{ cfg[key ~ '_temperature'] }}" min="0" max="2" step="any">
+        </label>
+        <label style="font-size:0.82rem;">最大Token
+            <input type="number" name="{{ key }}_max_tokens" value="{{ cfg[key ~ '_max_tokens'] }}" min="1" step="1">
+        </label>
+        <label style="font-size:0.82rem;">超时(秒)
+            <input type="number" name="{{ key }}_timeout_seconds" value="{{ cfg[key ~ '_timeout_seconds'] }}" min="1" step="1">
+        </label>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro media_feature(key, label, cfg) %}
+<div class="card" style="margin-bottom:0;">
+    <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
+    <label>
+        <input type="checkbox" name="{{ key }}_enabled" role="switch" {{ 'checked' if cfg[key ~ '_enabled'] }}>
+        启用
+    </label>
+    <label>基础配置
+        <select name="{{ key }}_config_id" class="config-select" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
+    </label>
+</div>
+{% endmacro %}
+
+<div class="page-header">
+    <h3>AI 模型配置</h3>
+    <p class="subtitle">先配置可复用的"基础配置"（连接凭证 + 默认模型），再让各功能引用</p>
+</div>
+
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/admin/multimedia" onsubmit="return onSubmitForm()">
+    <input type="hidden" id="model_configs_json" name="model_configs_json" value="">
+
+    <!-- 基础配置管理 -->
+    <div class="card">
+        <div class="card-title-row">
+            <h4>基础配置（连接凭证组）</h4>
+            <div class="btn-row" style="gap:0.4rem;">
+                <button type="button" class="ghost btn-sm" onclick="addPreset('DeepSeek','https://api.deepseek.com/v1','deepseek-chat')">+ DeepSeek</button>
+                <button type="button" class="ghost btn-sm" onclick="addPreset('通义千问','https://dashscope.aliyuncs.com/compatible-mode/v1','qwen-plus')">+ 通义千问</button>
+                <button type="button" class="ghost btn-sm" onclick="addPreset('阿里云百炼','https://dashscope.aliyuncs.com/compatible-mode/v1','')">+ 百炼</button>
+                <button type="button" class="btn-sm" onclick="addGroup()">+ 新增一组</button>
+            </div>
+        </div>
+        <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+            每组包含名称、API 地址、密钥、默认模型。下方各功能通过"基础配置"下拉引用其中一组。
+            密钥留空或保留脱敏值（含 *）则不更新该组密钥。删除仍被功能引用的组会使该功能不可用。
+        </p>
+
+        <div id="mc-rows"></div>
+
+        <!-- 服务端初始数据：脱敏后的基础配置组 -->
+        <div id="mc-initial" style="display:none;">
+            {% for g in model_configs %}
+            <div class="mc-init"
+                 data-id="{{ g.id }}"
+                 data-name="{{ g.name }}"
+                 data-base-url="{{ g.base_url }}"
+                 data-api-key-masked="{{ g.api_key_masked }}"
+                 data-has-key="{{ '1' if g.has_key else '0' }}"
+                 data-default-model="{{ g.default_model }}"></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- 文本功能 -->
+    <div class="card">
+        <h4>文本模型功能</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+            {{ text_feature('chat', '对话主回复', cfg) }}
+            {{ text_feature('proactive', '主动消息', cfg) }}
+            {{ text_feature('focus', '焦点抽取（长期记忆）', cfg) }}
+            {{ text_feature('emotion', '情绪识别', cfg) }}
+            {{ text_feature('summary', '上下文摘要', cfg) }}
+            {{ text_feature('chat_import', '聊天记录导入分析', cfg) }}
+        </div>
+    </div>
+
+    <!-- 多媒体功能 -->
+    <div class="card">
+        <h4>多媒体功能</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+            {{ media_feature('asr', 'ASR 语音转文字', cfg) }}
+            {{ media_feature('tts', 'TTS 语音合成', cfg) }}
+            {{ media_feature('vision', 'Vision 图片理解', cfg) }}
+            {{ media_feature('imagegen', 'ImageGen 文生图', cfg) }}
+            {{ media_feature('imagegen_edit', 'ImageGen 参考图编辑（人物一致性）', cfg) }}
+            {{ media_feature('embedding', 'Embedding 向量化', cfg) }}
+        </div>
+    </div>
+
+    <button type="submit" style="max-width:200px;">保存设置</button>
+</form>
+
+<!-- 基础配置行模板 -->
+<template id="mc-row-template">
+    <div class="mc-row grid-5-col" style="margin-bottom:0.6rem;">
+        <input type="hidden" class="mc-id" value="">
+        <label style="font-size:0.8rem;margin:0;">名称
+            <input type="text" class="mc-name" value="" placeholder="配置名称">
+        </label>
+        <label style="font-size:0.8rem;margin:0;">API 地址
+            <input type="text" class="mc-base-url" value="" placeholder="https://api.deepseek.com/v1">
+        </label>
+        <label style="font-size:0.8rem;margin:0;">API 密钥
+            <input type="password" class="mc-api-key" value="" placeholder="sk-xxxx">
+        </label>
+        <label style="font-size:0.8rem;margin:0;">默认模型
+            <input type="text" class="mc-default-model" value="" placeholder="deepseek-chat">
+        </label>
+        <button type="button" class="ghost btn-sm" onclick="deleteGroup(this)" style="margin-bottom:0.2rem;">删除</button>
+    </div>
+</template>
+
+<script>
+/* 从服务端初始数据构建基础配置行 */
+function buildInitialRows() {
+    var inits = document.querySelectorAll('#mc-initial .mc-init');
+    inits.forEach(function(el) {
+        var node = cloneRow();
+        node.querySelector('.mc-id').value = el.getAttribute('data-id');
+        node.querySelector('.mc-name').value = el.getAttribute('data-name') || '';
+        node.querySelector('.mc-base-url').value = el.getAttribute('data-base-url') || '';
+        // 密钥以脱敏值作为占位符，输入框留空表示不更新
+        var masked = el.getAttribute('data-api-key-masked') || '';
+        var keyInput = node.querySelector('.mc-api-key');
+        keyInput.value = '';
+        keyInput.placeholder = masked || 'sk-xxxx';
+        node.querySelector('.mc-default-model').value = el.getAttribute('data-default-model') || '';
+        node.dataset.hadKey = el.getAttribute('data-has-key') || '0';
+        document.getElementById('mc-rows').appendChild(node);
+    });
+}
+
+function cloneRow() {
+    var tpl = document.getElementById('mc-row-template');
+    return tpl.content.firstElementChild.cloneNode(true);
+}
+
+function genId() {
+    return 'grp-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+}
+
+function addGroup() {
+    var node = cloneRow();
+    node.querySelector('.mc-id').value = genId();
+    document.getElementById('mc-rows').appendChild(node);
+    refreshSelects();
+}
+
+function addPreset(name, baseUrl, model) {
+    var node = cloneRow();
+    node.querySelector('.mc-id').value = genId();
+    node.querySelector('.mc-name').value = name;
+    node.querySelector('.mc-base-url').value = baseUrl;
+    node.querySelector('.mc-default-model').value = model;
+    document.getElementById('mc-rows').appendChild(node);
+    refreshSelects();
+}
+
+function deleteGroup(btn) {
+    var row = btn.closest('.mc-row');
+    if (row) row.remove();
+    refreshSelects();
+}
+
+function collectGroups() {
+    var rows = document.querySelectorAll('#mc-rows .mc-row');
+    var groups = [];
+    rows.forEach(function(r) {
+        var id = r.querySelector('.mc-id').value;
+        if (!id) return;
+        groups.push({
+            id: id,
+            name: r.querySelector('.mc-name').value.trim(),
+            base_url: r.querySelector('.mc-base-url').value.trim(),
+            api_key: r.querySelector('.mc-api-key').value,
+            default_model: r.querySelector('.mc-default-model').value.trim()
+        });
+    });
+    return groups;
+}
+
+/* 用当前基础配置组重建所有功能下拉，保留已选值 */
+function refreshSelects() {
+    var groups = collectGroups();
+    document.querySelectorAll('select.config-select').forEach(function(sel) {
+        var cur = sel.value || sel.getAttribute('data-selected') || '';
+        sel.innerHTML = '';
+        var ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— 请选择 —';
+        sel.appendChild(ph);
+        groups.forEach(function(g) {
+            var o = document.createElement('option');
+            o.value = g.id;
+            o.textContent = (g.name || g.id) + ' (' + g.id + ')';
+            if (g.id === cur) o.selected = true;
+            sel.appendChild(o);
+        });
+    });
+    updateFeatureIndicators();
+}
+
+/* 读取某组在 DOM 中的状态：是否存在、是否已配密钥、默认模型 */
+function groupState(gid) {
+    if (!gid) return {found: false, hasKey: false, defaultModel: ''};
+    var rows = document.querySelectorAll('#mc-rows .mc-row');
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r.querySelector('.mc-id').value === gid) {
+            var typed = r.querySelector('.mc-api-key').value.trim() !== '';
+            var had = r.dataset.hadKey === '1';
+            return {
+                found: true,
+                hasKey: (had || typed),
+                defaultModel: r.querySelector('.mc-default-model').value.trim()
+            };
+        }
+    }
+    return {found: false, hasKey: false, defaultModel: ''};
+}
+
+/* 按所选组更新各功能的状态灯 */
+function updateFeatureIndicators() {
+    document.querySelectorAll('select.config-select').forEach(function(sel) {
+        var card = sel.closest('.card');
+        if (!card) return;
+        var st = groupState(sel.value);
+        var dot = card.querySelector('.feat-status');
+        /* 状态灯切换 .on 类，颜色由 CSS 令牌控制，深色主题自动适配 */
+        if (dot) dot.classList.toggle('on', !!(st.found && st.hasKey));
+    });
+}
+
+function onSubmitForm() {
+    document.getElementById('model_configs_json').value = JSON.stringify(collectGroups());
+    return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    buildInitialRows();
+    refreshSelects();
+    // 基础配置行变化时刷新下拉与状态指示
+    document.getElementById('mc-rows').addEventListener('input', function(e) {
+        if (e.target.classList.contains('mc-name')) {
+            refreshSelects();
+        } else {
+            updateFeatureIndicators();
+        }
+    });
+    // 功能下拉切换时更新状态灯与 model 占位符
+    document.querySelectorAll('select.config-select').forEach(function(sel) {
+        sel.addEventListener('change', updateFeatureIndicators);
+    });
+});
+</script>
+{% endblock %}

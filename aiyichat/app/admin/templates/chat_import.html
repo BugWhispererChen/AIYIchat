@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% set active_page = "chat_import" %}
+{% block title %}角色克隆{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin/profiles">角色管理</a>
+<span class="sep">/</span>
+<span class="current">角色克隆</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>角色克隆</h3>
+    <p class="subtitle">上传聊天记录 JSON 文件，AI 自动分析生成虚拟角色档案</p>
+</div>
+
+<!-- 步骤条：准备 JSON → 上传记录 → AI 分析 → 预览入库 -->
+<div class="steps">
+    <div class="step {% if not analyzing %}active{% else %}done{% endif %}"><span class="step-num">1</span> 准备 JSON 文件</div>
+    <div class="step {% if not analyzing %}active{% else %}done{% endif %}"><span class="step-num">2</span> 上传记录</div>
+    <div class="step {% if analyzing %}active{% endif %}"><span class="step-num">3</span> AI 分析</div>
+    <div class="step"><span class="step-num">4</span> 预览入库</div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if analyzing and task_id %}
+<!-- 分析进度区域 -->
+<div class="card" style="margin-bottom:1rem;">
+    <h4>解析结果</h4>
+    {% if parse_result %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.8rem;margin-bottom:1rem;">
+        <div><strong>总消息数</strong><br>{{ parse_result.total_count }}</div>
+        <div><strong>目标消息</strong><br>{{ parse_result.target_count }}</div>
+        <div><strong>对话方消息</strong><br>{{ parse_result.other_count }}</div>
+        <div><strong>时间跨度</strong><br>{{ parse_result.time_span }}</div>
+    </div>
+    {% if parse_result.target_name %}
+    <p>目标联系人: <strong>{{ parse_result.target_name }}</strong></p>
+    {% endif %}
+    {% endif %}
+</div>
+
+<div class="card" id="progress-container"
+     hx-get="/admin/chat-import/status/{{ task_id }}"
+     hx-trigger="load, every 2s"
+     hx-swap="innerHTML">
+    <p>正在启动分析...</p>
+</div>
+
+{% else %}
+<!-- JSON 格式说明区域 -->
+<div class="card" style="margin-bottom:1rem;">
+    <details>
+        <summary style="cursor:pointer;"><strong>第一步：准备聊天记录 JSON 文件</strong></summary>
+        <div style="padding-top:0.5rem;">
+            <p>请自行将聊天记录整理为如下格式的 JSON 数组后上传：</p>
+            <pre style="padding:0.8rem 1rem;background:var(--surface-2);border-radius:8px;overflow-x:auto;font-size:0.85rem;margin:0.5rem 0;"><code>[
+  {"timestamp": "2024-03-15T14:23:01", "sender": "张三", "content": "在忙吗？", "is_target": true},
+  {"timestamp": "2024-03-15T14:23:40", "sender": "我", "content": "刚开完会", "is_target": false}
+]</code></pre>
+            <ul style="margin:0.5rem 0;">
+                <li><code>timestamp</code>：消息时间，ISO 格式（<code>YYYY-MM-DDTHH:MM:SS</code>）；按导出时的本地墙钟时间填写，需与导入时区偏移配置一致，否则整体错位</li>
+                <li><code>sender</code>：发送者名称，用于区分对话双方</li>
+                <li><code>content</code>：消息文本内容</li>
+                <li><code>is_target</code>：是否为克隆对象发送的消息，<code>true</code> 标记需要学习风格的那一方</li>
+            </ul>
+            <p class="muted" style="margin-bottom:0;">仅支持导入本人聊天记录，请遵守所用平台的服务条款与当地法律法规；分析完成后可在后台删除导入数据。</p>
+        </div>
+    </details>
+</div>
+
+<!-- 上传表单 -->
+<div class="card">
+    <h4>第二步：上传聊天记录JSON</h4>
+    <form method="post" action="/admin/chat-import/upload" enctype="multipart/form-data">
+        <label>选择JSON文件 <small>(格式见上方说明，最大50MB)</small>
+            <input type="file" name="file" accept=".json" required>
+        </label>
+
+        <div class="grid">
+            <label>角色名称 <small>(选填，默认使用联系人名)</small>
+                <input type="text" name="role_name" placeholder="如：小明">
+            </label>
+        </div>
+
+        <label>额外描述信息 <small>(选填，补充角色的背景、性格等，AI会融入角色设定)</small>
+            <textarea name="extra_description" rows="3" placeholder="例如：她是一个90后程序员，性格温柔开朗，喜欢看动漫和打游戏..."></textarea>
+        </label>
+
+        <button type="submit">开始分析</button>
+    </form>
+</div>
+
+<!-- JSON格式说明 -->
+<div class="card" style="margin-top:1rem;">
+    <details>
+        <summary>JSON文件格式说明</summary>
+        <div style="padding-top:0.5rem;">
+            <p>JSON文件应为消息数组，每条消息包含以下字段：</p>
+            <pre style="background:var(--pico-code-background-color);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;">[
+  {
+    "timestamp": "2024-03-15T14:23:01",
+    "sender": "张三",
+    "content": "今天天气真好啊",
+    "is_target": true
+  },
+  {
+    "timestamp": "2024-03-15T14:23:15",
+    "sender": "我",
+    "content": "是啊，要不要出去走走？",
+    "is_target": false
+  }
+]</pre>
+            <ul>
+                <li><code>timestamp</code>: 消息时间（ISO 8601格式或Unix时间戳）</li>
+                <li><code>sender</code>: 发送者名称</li>
+                <li><code>content</code>: 消息文本内容</li>
+                <li><code>is_target</code>: true=目标联系人的消息, false=自己的消息</li>
+            </ul>
+        </div>
+    </details>
+</div>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/admin/profiles">&larr; 返回角色列表</a></p>
+{% endblock %}

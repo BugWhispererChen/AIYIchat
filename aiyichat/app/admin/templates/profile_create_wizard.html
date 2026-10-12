@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+{% block title %}创建自定义角色 - {{ profile.name }}{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin/profiles">角色管理</a>
+<span class="sep">/</span>
+<span class="current">创建自定义角色</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>创建自定义角色：{{ profile.name }}</h3>
+    <p class="subtitle">草稿 slug：<code>{{ profile.slug }}</code>（完成最后一步前不会出现在角色列表）</p>
+</div>
+
+<!-- 步骤进度条 -->
+<div class="wizard-steps">
+    {% set steps = [(1, '描述角色'), (2, '定妆照'), (3, '声音设置'), (4, '确认生成')] %}
+    {% for num, label in steps %}
+    <div class="wizard-step {% if num == step %}current{% elif num < step %}done{% endif %}">
+        <span class="wizard-step-num">{{ num }}</span>
+        <span class="wizard-step-label">{{ label }}</span>
+    </div>
+    {% if not loop.last %}<div class="wizard-step-line"></div>{% endif %}
+    {% endfor %}
+</div>
+
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{# ═══════════ Step 2：定妆照 ═══════════ #}
+{% if step == 2 %}
+<div class="wizard-layout">
+    <div class="card">
+        <h4>设置定妆照</h4>
+        <p class="muted" style="font-size:0.85rem;">定妆照是角色的标准参考肖像，用于对话中生成人物一致的图片。可上传照片，或用 AI 根据外貌描述生成；也可跳过，稍后在角色详情页补设。</p>
+
+        {% if profile.reference_image_url %}
+        <div class="wizard-ref-preview">
+            <img src="{{ profile.reference_image_url }}" alt="定妆照">
+            <p class="muted" style="font-size:0.82rem;margin:0.4rem 0 0;">当前定妆照</p>
+        </div>
+        {% endif %}
+
+        {% if ref_candidate_url %}
+        <div class="wizard-ref-preview" style="border:1px dashed var(--border);padding:0.6rem;border-radius:8px;">
+            <img src="{{ ref_candidate_url }}" alt="候选定妆照">
+            <p class="muted" style="font-size:0.82rem;margin:0.4rem 0 0;">AI 生成的候选图</p>
+            <div class="btn-row" style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+                <button type="submit" form="wiz-ref-confirm-form" class="btn-sm" id="wiz-ref-confirm-btn">确认使用</button>
+                <button type="submit" form="wiz-ref-generate-form" class="ghost btn-sm" id="wiz-ref-regen-btn">重新生成</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.8rem;">
+            <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required style="max-width:240px;">
+            <button type="submit" form="wiz-ref-upload-form" class="btn-sm" id="wiz-ref-upload-btn">上传照片</button>
+            <button type="submit" form="wiz-ref-generate-form" class="ghost btn-sm" id="wiz-ref-generate-btn"
+                    {% if not (profile.identity.appearance or profile.identity.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
+                AI 生成候选
+            </button>
+        </div>
+        <p id="wiz-ref-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
+            <span class="wizard-spinner"></span><span id="wiz-ref-loading-text">处理中…</span>
+        </p>
+    </div>
+
+    <div class="card">
+        <h4>已生成的角色信息</h4>
+        <p style="margin:0.3rem 0;"><strong>{{ profile.name }}</strong> <span class="muted">（{{ profile.identity.age_appearance or '未描述年龄' }}）</span></p>
+        <p style="font-size:0.9rem;margin:0.3rem 0;">{{ profile.identity.background }}</p>
+        <details>
+            <summary style="cursor:pointer;font-size:0.85rem;">查看完整设定</summary>
+            {% include "partials/profile_summary.html" %}
+        </details>
+        <p class="muted" style="font-size:0.8rem;margin-top:0.6rem;">如需修改角色信息，可在最后一步通过「编辑角色信息」进入详情页调整。</p>
+    </div>
+</div>
+
+<div class="wizard-nav">
+    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-2" style="display:none;"></form>
+    <button type="submit" form="wiz-cancel-form-2" class="ghost danger-outline"
+            onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
+    <div style="flex:1;"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/voice" role="button">
+        {% if profile.reference_image_url %}下一步：声音设置{% else %}跳过，下一步：声音设置{% endif %}
+    </a>
+</div>
+{% endif %}
+
+{# ═══════════ Step 3：声音设置 ═══════════ #}
+{% if step == 3 %}
+<div class="wizard-layout">
+    <div class="card">
+        <h4>方式一：上传声音复刻</h4>
+        <p class="muted" style="font-size:0.85rem;">上传 10-20 秒清晰人声（WAV / MP3 / M4A），调用阿里云声音复刻生成专属音色。</p>
+        {% if profile.voice_clone_status == 'active' %}
+        <p style="font-size:0.85rem;color:var(--success-text,#16a34a);">
+            <strong>复刻已激活</strong>，音色 ID：<code>{{ profile.voice_id }}</code>
+        </p>
+        {% elif profile.voice_clone_status == 'failed' %}
+        <p style="font-size:0.85rem;color:var(--danger-text,#dc2626);">上次复刻失败，可重新上传</p>
+        {% endif %}
+        <div class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+            <input type="file" name="voice_file" form="wiz-voice-clone-form"
+                   accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required style="max-width:240px;">
+            <button type="submit" form="wiz-voice-clone-form" class="btn-sm" id="wiz-voice-clone-btn">上传并复刻</button>
+            <button type="button" class="btn-sm" id="wiz-voice-record-btn" onclick="toggleWizVoiceRecord()">录音复刻</button>
+            {% if profile.voice_id %}
+            <button type="submit" form="wiz-voice-preview-form" class="ghost btn-sm" id="wiz-voice-preview-btn">试听当前音色</button>
+            {% endif %}
+        </div>
+
+        {# 录音面板（默认隐藏） #}
+        <div id="wiz-voice-record-panel" style="display:none;margin-top:0.8rem;padding:0.8rem;border:1px solid var(--border,#e5e7eb);border-radius:8px;background:var(--surface-2,#f9fafb);">
+            <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
+                <div id="wiz-voice-record-status" style="font-size:0.9rem;color:var(--text-2,#374151);">
+                    点击"开始录音"按钮，录制 10-20 秒清晰人声
+                </div>
+                <div id="wiz-voice-record-timer" style="font-size:1.1rem;font-weight:600;color:var(--primary,#6366f1);min-width:60px;">
+                    00:00
+                </div>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
+                <button type="button" class="btn-sm" id="wiz-voice-record-start-btn" onclick="startWizVoiceRecording()">
+                    开始录音
+                </button>
+                <button type="button" class="btn-sm danger" id="wiz-voice-record-stop-btn" onclick="stopWizVoiceRecording()" style="display:none;">
+                    停止录音
+                </button>
+                <button type="button" class="ghost btn-sm" id="wiz-voice-record-cancel-btn" onclick="cancelWizVoiceRecording()">
+                    取消
+                </button>
+            </div>
+            <p class="muted" style="font-size:0.78rem;margin:0.5rem 0 0;">
+                录音时长要求 10-20 秒，不足 10 秒将无法提交。录音完成后自动转为 WAV 格式并上传复刻。
+            </p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h4>方式二：选择预置音色</h4>
+        <p class="muted" style="font-size:0.85rem;">选择系统预置音色，试听确认后直接使用。</p>
+        {% for vid, vname, vdesc in preset_voices %}
+        <div class="wizard-voice-row {% if preset_selected == vid or profile.voice_id == vid %}selected{% endif %}">
+            <div style="flex:1;">
+                <strong style="font-size:0.92rem;">{{ vname }}</strong>
+                <span class="muted" style="font-size:0.8rem;margin-left:0.5rem;">{{ vdesc }}</span>
+            </div>
+            <button type="submit" form="wiz-preset-preview-{{ loop.index }}" class="ghost btn-sm">试听</button>
+            <button type="submit" form="wiz-preset-select-{{ loop.index }}" class="btn-sm">使用该音色</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% if voice_preview_url %}
+<div class="card" style="margin-top:1rem;">
+    <h4>试听音频</h4>
+    <audio controls src="{{ voice_preview_url }}" style="width:100%;max-width:480px;"></audio>
+</div>
+{% endif %}
+
+<p id="wiz-voice-loading-hint" class="muted" style="font-size:0.82rem;margin:0.6rem 0 0;display:none;">
+    <span class="wizard-spinner"></span><span id="wiz-voice-loading-text">处理中…</span>
+</p>
+
+<div class="wizard-nav">
+    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-3" style="display:none;"></form>
+    <button type="submit" form="wiz-cancel-form-3" class="ghost danger-outline"
+            onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
+    <a href="/admin/profiles/create/{{ profile.slug }}/image" role="button" class="ghost">上一步：定妆照</a>
+    <div style="flex:1;"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/confirm" role="button">
+        {% if profile.voice_id %}下一步：确认生成{% else %}跳过（使用默认音色），下一步{% endif %}
+    </a>
+</div>
+
+<!-- 声音操作表单 -->
+<form id="wiz-voice-clone-form" method="post" action="/admin/profiles/create/{{ profile.slug }}/voice/clone" enctype="multipart/form-data" style="display:none;"></form>
+<form id="wiz-voice-preview-form" method="post" action="/admin/profiles/create/{{ profile.slug }}/voice/clone-preview" style="display:none;"></form>
+{% for vid, vname, vdesc in preset_voices %}
+<form id="wiz-preset-preview-{{ loop.index }}" method="post" action="/admin/profiles/create/{{ profile.slug }}/voice/preset-preview" style="display:none;">
+    <input type="hidden" name="voice_id" value="{{ vid }}">
+</form>
+<form id="wiz-preset-select-{{ loop.index }}" method="post" action="/admin/profiles/create/{{ profile.slug }}/voice/select" style="display:none;">
+    <input type="hidden" name="voice_id" value="{{ vid }}">
+</form>
+{% endfor %}
+{% endif %}
+
+{# ═══════════ Step 4：确认生成 ═══════════ #}
+{% if step == 4 %}
+<div class="card">
+    <h4>角色信息总览</h4>
+    <div class="wizard-confirm-head">
+        {% if profile.reference_image_url %}
+        <img src="{{ profile.reference_image_url }}" alt="定妆照" class="wizard-confirm-avatar">
+        {% endif %}
+        <div>
+            <p style="margin:0;"><strong style="font-size:1.05rem;">{{ profile.name }}</strong>
+                <span class="muted" style="margin-left:0.5rem;">slug: {{ profile.slug }}</span></p>
+            <p class="muted" style="font-size:0.85rem;margin:0.3rem 0 0;">
+                音色：{{ profile.voice_id or '默认音色' }}
+                {% if profile.voice_clone_status == 'active' %}（复刻）{% endif %}
+            </p>
+            <a href="/admin/profiles/{{ profile.slug }}" style="font-size:0.85rem;">编辑角色信息（保存后请返回本页继续）</a>
+        </div>
+    </div>
+    {% include "partials/profile_summary.html" %}
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <h4>可见性与生成</h4>
+    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/confirm" id="wiz-confirm-form">
+        <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;">
+            <label>可见范围
+                <select name="visibility" id="wiz-visibility-select">
+                    <option value="public" {% if profile.visibility == 'public' %}selected{% endif %}>公共（所有账号可用）</option>
+                    <option value="private" {% if profile.visibility == 'private' %}selected{% endif %}>私有（仅指定账号可用）</option>
+                </select>
+            </label>
+            <label id="wiz-account-select-label" style="display:none;">所属账号
+                <select name="account_id">
+                    <option value="">请选择账号</option>
+                    {% for acc in accounts.values() %}
+                    <option value="{{ acc.id }}">{{ acc.name or acc.id }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="btn-row" style="display:flex;gap:0.5rem;align-items:center;margin-top:0.6rem;">
+            <button type="submit" id="wiz-confirm-btn">确认并生成角色</button>
+        </div>
+        <p id="wiz-confirm-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
+            <span class="wizard-spinner"></span><span id="wiz-confirm-loading-text">处理中…</span>
+        </p>
+    </form>
+</div>
+
+<div class="wizard-nav">
+    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-4" style="display:none;"></form>
+    <button type="submit" form="wiz-cancel-form-4" class="ghost danger-outline"
+            onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
+    <div style="flex:1;"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/voice" role="button" class="ghost">上一步：声音设置</a>
+</div>
+{% endif %}
+
+<!-- 定妆照操作表单（Step 2 用） -->
+{% if step == 2 %}
+<form id="wiz-ref-upload-form" method="post" action="/admin/profiles/create/{{ profile.slug }}/image/upload" enctype="multipart/form-data" style="display:none;"></form>
+<form id="wiz-ref-generate-form" method="post" action="/admin/profiles/create/{{ profile.slug }}/image/generate" style="display:none;"></form>
+{% if ref_candidate_url %}
+<form id="wiz-ref-confirm-form" method="post" action="/admin/profiles/create/{{ profile.slug }}/image/confirm" style="display:none;">
+    <input type="hidden" name="media_url" value="{{ ref_candidate_url }}">
+</form>
+{% endif %}
+{% endif %}
+
+<style>
+.wizard-steps { display:flex; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:0.3rem; }
+.wizard-step { display:flex; align-items:center; gap:0.45rem; }
+.wizard-step-num {
+    width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.8rem; font-weight:600;
+    background:var(--surface-2); color:var(--text-3);
+    border:1px solid var(--border);
+}
+.wizard-step-label { font-size:0.85rem; color:var(--text-3); }
+.wizard-step.current .wizard-step-num { background:var(--primary,#6366f1); color:#fff; border-color:var(--primary,#6366f1); }
+.wizard-step.current .wizard-step-label { color:var(--text); font-weight:600; }
+.wizard-step.done .wizard-step-num { background:var(--success-bg,#dcfce7); color:var(--success-text,#16a34a); border-color:var(--success-text,#16a34a); }
+.wizard-step-line { flex:0 0 28px; height:1px; background:var(--border); margin:0 0.2rem; }
+.wizard-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:1rem; align-items:start; }
+@media (max-width: 900px) { .wizard-layout { grid-template-columns:1fr; } }
+.wizard-ref-preview img { max-width:220px; border-radius:8px; display:block; }
+.wizard-voice-row {
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.6rem 0.7rem; border:1px solid var(--border);
+    border-radius:8px; margin-bottom:0.5rem;
+}
+.wizard-voice-row.selected { border-color:var(--primary,#6366f1); background:var(--primary-soft,rgba(99,102,241,.08)); }
+.wizard-nav { display:flex; align-items:center; gap:0.6rem; margin-top:1.2rem; }
+.wizard-nav .danger-outline { color:var(--danger-text,#dc2626); border-color:var(--danger-text,#dc2626); background:transparent; }
+.wizard-confirm-head { display:flex; gap:1rem; align-items:center; margin-bottom:0.8rem; }
+.wizard-confirm-avatar { width:72px; height:72px; object-fit:cover; border-radius:10px; }
+.wizard-spinner {
+    display:inline-block; width:12px; height:12px; margin-right:6px;
+    border:2px solid var(--border, #e5e7eb); border-top-color:var(--primary, #6366f1);
+    border-radius:50%; animation:wizard-spin 0.8s linear infinite; vertical-align:-2px;
+}
+@keyframes wizard-spin { to { transform: rotate(360deg); } }
+.summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:0.8rem; margin-top:0.6rem; }
+.summary-item h5 { margin:0 0 0.35rem; font-size:0.85rem; color:var(--text-2); }
+.summary-item p, .summary-item li { font-size:0.85rem; margin:0.15rem 0; }
+.summary-item ul { margin:0.2rem 0; padding-left:1.1rem; }
+</style>
+
+<script>
+    // 长耗时表单提交加载态：禁用按钮并显示提示，防止重复点击与误刷新
+    (function() {
+        const bindings = [
+            { formId: 'wiz-ref-generate-form', btnId: 'wiz-ref-generate-btn',
+              hintId: 'wiz-ref-loading-hint', textId: 'wiz-ref-loading-text',
+              text: '正在生成定妆照，约需 30-60 秒，请勿刷新或关闭页面…' },
+            { formId: 'wiz-ref-upload-form', btnId: 'wiz-ref-upload-btn',
+              hintId: 'wiz-ref-loading-hint', textId: 'wiz-ref-loading-text',
+              text: '正在上传，请稍候…' },
+            { formId: 'wiz-ref-confirm-form', btnId: 'wiz-ref-confirm-btn',
+              hintId: 'wiz-ref-loading-hint', textId: 'wiz-ref-loading-text',
+              text: '正在确认，请稍候…' },
+            { formId: 'wiz-voice-clone-form', btnId: 'wiz-voice-clone-btn',
+              hintId: 'wiz-voice-loading-hint', textId: 'wiz-voice-loading-text',
+              text: '正在上传音频并复刻声音，约需 10-30 秒，请勿刷新页面…' },
+            { formId: 'wiz-voice-preview-form', btnId: 'wiz-voice-preview-btn',
+              hintId: 'wiz-voice-loading-hint', textId: 'wiz-voice-loading-text',
+              text: '正在合成试听音频，请稍候…' },
+            { formId: 'wiz-confirm-form', btnId: 'wiz-confirm-btn',
+              hintId: 'wiz-confirm-loading-hint', textId: 'wiz-confirm-loading-text',
+              text: '正在生成角色，请稍候…' },
+        ];
+        bindings.forEach(function(b) {
+            const form = document.getElementById(b.formId);
+            const btn = document.getElementById(b.btnId);
+            if (!form || !btn) return;
+            form.addEventListener('submit', function() {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+                btn.style.cursor = 'not-allowed';
+                const hint = document.getElementById(b.hintId);
+                const hintText = document.getElementById(b.textId);
+                if (hint && hintText) {
+                    hintText.textContent = b.text;
+                    hint.style.display = 'block';
+                }
+            });
+        });
+
+        // Step 4：私有可见性时必选账号
+        const visibilitySelect = document.getElementById('wiz-visibility-select');
+        const accountLabel = document.getElementById('wiz-account-select-label');
+        if (visibilitySelect && accountLabel) {
+            const sync = function() {
+                const isPrivate = visibilitySelect.value === 'private';
+                accountLabel.style.display = isPrivate ? 'block' : 'none';
+                accountLabel.querySelector('select').required = isPrivate;
+            };
+            visibilitySelect.addEventListener('change', sync);
+            sync();
+        }
+    })();
+
+    // ═══════════ 声音复刻录音功能 ═══════════
+    (function() {
+        // 检查浏览器兼容性
+        const recordBtn = document.getElementById('wiz-voice-record-btn');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            if (recordBtn) recordBtn.style.display = 'none';
+            return;
+        }
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let recordingTimer = null;
+        let recordingStartTime = 0;
+        const MIN_DURATION = 10; // 最少 10 秒
+        const MAX_DURATION = 20; // 最多 20 秒
+
+        // 切换录音面板显示
+        window.toggleWizVoiceRecord = function() {
+            const panel = document.getElementById('wiz-voice-record-panel');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                recordBtn.textContent = '收起录音';
+            } else {
+                panel.style.display = 'none';
+                recordBtn.textContent = '录音复刻';
+                resetRecordingUI();
+            }
+        };
+
+        // 开始录音
+        window.startWizVoiceRecording = async function() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = function(e) {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = async function() {
+                    stream.getTracks().forEach(t => t.stop());
+                    const duration = (Date.now() - recordingStartTime) / 1000;
+
+                    if (duration < MIN_DURATION) {
+                        alert('录音时长不足 ' + MIN_DURATION + ' 秒，请重新录制');
+                        resetRecordingUI();
+                        return;
+                    }
+
+                    // 显示加载态
+                    const hint = document.getElementById('wiz-voice-loading-hint');
+                    const hintText = document.getElementById('wiz-voice-loading-text');
+                    hintText.textContent = '正在转换音频格式并上传复刻，约需 10-30 秒…';
+                    hint.style.display = 'block';
+
+                    try {
+                        const webmBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const wavBlob = await convertToWav(webmBlob);
+                        submitRecording(wavBlob);
+                    } catch (err) {
+                        console.error('音频转换失败:', err);
+                        alert('音频转换失败，请重试');
+                        hint.style.display = 'none';
+                        resetRecordingUI();
+                    }
+                };
+
+                mediaRecorder.start(100);
+                recordingStartTime = Date.now();
+
+                // 更新 UI
+                document.getElementById('wiz-voice-record-start-btn').style.display = 'none';
+                document.getElementById('wiz-voice-record-stop-btn').style.display = 'inline-block';
+                document.getElementById('wiz-voice-record-status').textContent = '正在录音…';
+
+                // 启动计时器
+                updateRecordingTimer();
+                recordingTimer = setInterval(updateRecordingTimer, 1000);
+
+                // 超过最大时长自动停止
+                setTimeout(function() {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        stopWizVoiceRecording();
+                    }
+                }, MAX_DURATION * 1000);
+
+            } catch (err) {
+                console.error('录音失败:', err);
+                alert('无法访问麦克风，请检查权限设置');
+                resetRecordingUI();
+            }
+        };
+
+        // 停止录音
+        window.stopWizVoiceRecording = function() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        };
+
+        // 取消录音
+        window.cancelWizVoiceRecording = function() {
+            stopWizVoiceRecording();
+            resetRecordingUI();
+            document.getElementById('wiz-voice-record-panel').style.display = 'none';
+            recordBtn.textContent = '录音复刻';
+        };
+
+        // 重置录音 UI
+        function resetRecordingUI() {
+            document.getElementById('wiz-voice-record-start-btn').style.display = 'inline-block';
+            document.getElementById('wiz-voice-record-stop-btn').style.display = 'none';
+            document.getElementById('wiz-voice-record-status').textContent = '点击"开始录音"按钮，录制 10-20 秒清晰人声';
+            document.getElementById('wiz-voice-record-timer').textContent = '00:00';
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        }
+
+        // 更新录音计时器
+        function updateRecordingTimer() {
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('wiz-voice-record-timer').textContent = minutes + ':' + seconds;
+        }
+
+        // WebM 转 WAV
+        async function convertToWav(webmBlob) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const arrayBuffer = await webmBlob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            // 转为单声道
+            const numberOfChannels = 1;
+            const sampleRate = 16000;
+            const length = audioBuffer.length * numberOfChannels * 2 + 44;
+            const buffer = new ArrayBuffer(length);
+            const view = new DataView(buffer);
+
+            // WAV 文件头
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + audioBuffer.length * numberOfChannels * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, numberOfChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+            view.setUint16(32, numberOfChannels * 2, true);
+            view.setUint16(34, 16, true); // 16bit
+            writeString(view, 36, 'data');
+            view.setUint32(40, audioBuffer.length * numberOfChannels * 2, true);
+
+            // 写入 PCM 数据（转为单声道）
+            const channelData = audioBuffer.getChannelData(0);
+            let offset = 44;
+            for (let i = 0; i < channelData.length; i++) {
+                const sample = Math.max(-1, Math.min(1, channelData[i]));
+                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // 提交录音
+        function submitRecording(wavBlob) {
+            const file = new File([wavBlob], 'recording.wav', { type: 'audio/wav' });
+            const input = document.querySelector('input[name="voice_file"][form="wiz-voice-clone-form"]');
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            input.files = dataTransfer.files;
+            document.getElementById('wiz-voice-clone-form').submit();
+        }
+    })();
+</script>
+{% endblock %}

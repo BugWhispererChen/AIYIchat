@@ -1,0 +1,2216 @@
+[
+  {
+    "file": "st_001_仓鼠00001-甭管什么东西-盘他.gif",
+    "name": "甭管什么东西",
+    "tags": [
+      "甭管什么东西",
+      "盘他"
+    ],
+    "description": "006Hamster_仓鼠🐹BQB系列表情包：「甭管什么东西，盘他」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "小仓鼠"
+  },
+  {
+    "file": "st_002_仓鼠00003-耶.png",
+    "name": "耶",
+    "tags": [
+      "耶"
+    ],
+    "description": "006Hamster_仓鼠🐹BQB系列表情包：「耶」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "小仓鼠"
+  },
+  {
+    "file": "st_003_开心鸭00006-亲我一口鸭.gif",
+    "name": "亲我一口鸭",
+    "tags": [
+      "亲我一口鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「亲我一口鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_004_开心鸭00010-对不起鸭.jpg",
+    "name": "对不起鸭",
+    "tags": [
+      "对不起鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「对不起鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_005_开心鸭00002-今天也要开心鸭.gif",
+    "name": "今天也要开心鸭",
+    "tags": [
+      "今天也要开心鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「今天也要开心鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_006_是喵星人啦00107-够大了吗猫.jpg",
+    "name": "够大了吗猫",
+    "tags": [
+      "够大了吗猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「够大了吗猫」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_007_是喵星人啦00137-打一架猫.jpg",
+    "name": "打一架猫",
+    "tags": [
+      "打一架猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「打一架猫」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_008_是喵星人啦00051-汤姆的情人猫.jpg",
+    "name": "汤姆的情人猫",
+    "tags": [
+      "汤姆的情人猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「汤姆的情人猫」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_009_狗00007-迷茫.jpg",
+    "name": "迷茫",
+    "tags": [
+      "迷茫"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「迷茫」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "汪星萌宠"
+  },
+  {
+    "file": "st_010_鹦鹉00017-目瞪狗呆.gif",
+    "name": "目瞪狗呆",
+    "tags": [
+      "目瞪狗呆"
+    ],
+    "description": "012Parrot_鹦鹉🐦BQB系列表情包：「目瞪狗呆」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_011_鹦鹉00013-忍不住点头.gif",
+    "name": "忍不住点头",
+    "tags": [
+      "忍不住点头"
+    ],
+    "description": "012Parrot_鹦鹉🐦BQB系列表情包：「忍不住点头」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_012_猪00010-抬头.jpg",
+    "name": "抬头",
+    "tags": [
+      "抬头"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「抬头」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_013_猪00014-乖巧又可爱.jpg",
+    "name": "乖巧又可爱",
+    "tags": [
+      "乖巧又可爱"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「乖巧又可爱」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_014_猪00005-盯.jpg",
+    "name": "盯",
+    "tags": [
+      "盯"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「盯」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_015_演奏00021魔法少女弹竖琴.gif",
+    "name": "魔法少女弹竖琴",
+    "tags": [
+      "魔法少女弹竖琴"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「魔法少女弹竖琴」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_016_演奏00008-弹琵琶.gif",
+    "name": "弹琵琶",
+    "tags": [
+      "弹琵琶"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「弹琵琶」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_017_演奏00018-小提琴.gif",
+    "name": "小提琴",
+    "tags": [
+      "小提琴"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「小提琴」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_018_汪蛋00006-扭头.gif",
+    "name": "扭头",
+    "tags": [
+      "扭头"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「扭头」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "汪星萌宠"
+  },
+  {
+    "file": "st_019_汪蛋00044-偷看.gif",
+    "name": "偷看",
+    "tags": [
+      "偷看"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「偷看」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "汪星萌宠"
+  },
+  {
+    "file": "st_020_汪蛋00023-惨.gif",
+    "name": "惨",
+    "tags": [
+      "惨"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「惨」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "汪星萌宠"
+  },
+  {
+    "file": "st_021_Emoji00123-A罩杯.jpg",
+    "name": "A罩杯",
+    "tags": [
+      "A罩杯"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「A罩杯」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "表情符号"
+  },
+  {
+    "file": "st_022_Emoji00155-要我一直笑吗.jpg",
+    "name": "要我一直笑吗",
+    "tags": [
+      "要我一直笑吗"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「要我一直笑吗」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "表情符号"
+  },
+  {
+    "file": "st_023_Emoji00149-行吧.jpg",
+    "name": "行吧",
+    "tags": [
+      "行吧"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「行吧」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "表情符号"
+  },
+  {
+    "file": "st_024_乌龟00005-光头王八.jpg",
+    "name": "光头王八",
+    "tags": [
+      "光头王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「光头王八」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_025_乌龟00008-可乐王八.png",
+    "name": "可乐王八",
+    "tags": [
+      "可乐王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「可乐王八」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_026_000000027.jpg",
+    "name": "000000027",
+    "tags": [
+      "027Turtle_乌龟🐢"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「000000027」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_027_00022鸽子-今晚有事来不了了.jpg",
+    "name": "鸽子",
+    "tags": [
+      "鸽子",
+      "今晚有事来不了了"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「鸽子，今晚有事来不了了」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_028_鸽子00009-好的-ok-OK-Ok.jpg",
+    "name": "好的",
+    "tags": [
+      "好的",
+      "ok",
+      "OK",
+      "Ok"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「好的，ok，OK，Ok」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_029_鸽子00015-还有位置吗带我一个.jpg",
+    "name": "还有位置吗带我一个",
+    "tags": [
+      "还有位置吗带我一个"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「还有位置吗带我一个」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_030_天线宝宝00002-别碰我天线.jpg",
+    "name": "别碰我天线",
+    "tags": [
+      "别碰我天线"
+    ],
+    "description": "030AntennaBaby_天线宝宝👶BQB系列表情包：「别碰我天线」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_031_吃00010-完美的假期装备.jpg",
+    "name": "完美的假期装备",
+    "tags": [
+      "完美的假期装备"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「完美的假期装备」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_032_吃00005-一天一杯奶茶美滋滋.jpg",
+    "name": "一天一杯奶茶美滋滋",
+    "tags": [
+      "一天一杯奶茶美滋滋"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「一天一杯奶茶美滋滋」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_033_吃00003-我就吃了一碗饭.jpg",
+    "name": "我就吃了一碗饭",
+    "tags": [
+      "我就吃了一碗饭"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「我就吃了一碗饭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_034_猫咪日常00010-别打了我不整了.jpg",
+    "name": "别打了我不整了",
+    "tags": [
+      "别打了我不整了"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「别打了我不整了」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_035_猫咪日常00015-你给不给我整一个不整我打趴你.jpg",
+    "name": "你给不给我整一个不整我打趴你",
+    "tags": [
+      "你给不给我整一个不整我打趴你"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「你给不给我整一个不整我打趴你」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_036_猫咪日常00006-就不给你整.jpg",
+    "name": "就不给你整",
+    "tags": [
+      "就不给你整"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「就不给你整」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_037_心心00014-猪猪心心.jpeg",
+    "name": "猪猪心心",
+    "tags": [
+      "猪猪心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「猪猪心心」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_038_心心00023-MyLoveAndSupport.jpeg",
+    "name": "MyLoveAndSupport",
+    "tags": [
+      "MyLoveAndSupport"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MyLoveAndSupport」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_039_心心00086-请你不要再散发魅力了.jpg",
+    "name": "请你不要再散发魅力了",
+    "tags": [
+      "请你不要再散发魅力了"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「请你不要再散发魅力了」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_040_开心鸭00042-今天也要美美的鸭.jpg",
+    "name": "今天也要美美的鸭",
+    "tags": [
+      "今天也要美美的鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「今天也要美美的鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_041_开心鸭00012-你在干嘛鸭.jpg",
+    "name": "你在干嘛鸭",
+    "tags": [
+      "你在干嘛鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「你在干嘛鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_042_开心鸭00044-优鸭.jpg",
+    "name": "优鸭",
+    "tags": [
+      "优鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「优鸭」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "开心鸭"
+  },
+  {
+    "file": "st_043_旅行青蛙00008-wo一个人看书写信自己对话谈心.jpg",
+    "name": "wo一个人看书写信自己对话谈心",
+    "tags": [
+      "wo一个人看书写信自己对话谈心"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「wo一个人看书写信自己对话谈心」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_044_旅行青蛙00007-这天冷的青蛙都冻成蛤蟆了.jpg",
+    "name": "这天冷的青蛙都冻成蛤蟆了",
+    "tags": [
+      "这天冷的青蛙都冻成蛤蟆了"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「这天冷的青蛙都冻成蛤蟆了」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_045_旅行青蛙00006-你不哄我是吧那就不哄吧.jpg",
+    "name": "你不哄我是吧那就不哄吧",
+    "tags": [
+      "你不哄我是吧那就不哄吧"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「你不哄我是吧那就不哄吧」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_046_负鼠00008-终于转正了.png",
+    "name": "终于转正了",
+    "tags": [
+      "终于转正了"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「终于转正了」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_047_负鼠00022-这几年里我窝囊过也窝囊过.png",
+    "name": "这几年里我窝囊过也窝囊过",
+    "tags": [
+      "这几年里我窝囊过也窝囊过"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「这几年里我窝囊过也窝囊过」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_048_旅行青蛙00004-我心里只有学习.jpg",
+    "name": "我心里只有学习",
+    "tags": [
+      "我心里只有学习"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「我心里只有学习」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_049_演奏00023-拉二胡.gif",
+    "name": "拉二胡",
+    "tags": [
+      "拉二胡"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「拉二胡」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_050_是喵星人啦00174-坐立猫猫.jpg",
+    "name": "坐立猫猫",
+    "tags": [
+      "坐立猫猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「坐立猫猫」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "萌猫日常"
+  },
+  {
+    "file": "st_051_乌龟00012-气炖王八.png",
+    "name": "气炖王八",
+    "tags": [
+      "气炖王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「气炖王八」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_052_演奏00012-弹琴.gif",
+    "name": "弹琴",
+    "tags": [
+      "弹琴"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「弹琴」",
+    "source": "ChineseBQB",
+    "enabled": true,
+    "group": "趣味日常"
+  },
+  {
+    "file": "st_053_000000008.gif",
+    "name": "000000008",
+    "tags": [
+      "008HappyDuck_开心鸭🐥"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「000000008」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_054_开心鸭00012-冲鸭.jpg",
+    "name": "冲鸭",
+    "tags": [
+      "冲鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「冲鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_055_开心鸭00007-刚下班鸭.gif",
+    "name": "刚下班鸭",
+    "tags": [
+      "刚下班鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「刚下班鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_056_开心鸭00001-今天不想加油鸭.jpg",
+    "name": "今天不想加油鸭",
+    "tags": [
+      "今天不想加油鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「今天不想加油鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_057_开心鸭00004-你在干嘛鸭.gif",
+    "name": "你在干嘛鸭",
+    "tags": [
+      "你在干嘛鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「你在干嘛鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_058_是喵星人啦00140-爷的眼泪在眼中打转猫.jpg",
+    "name": "爷的眼泪在眼中打转猫",
+    "tags": [
+      "爷的眼泪在眼中打转猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「爷的眼泪在眼中打转猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_059_是喵星人啦00120-猛虎落泪猫.jpg",
+    "name": "猛虎落泪猫",
+    "tags": [
+      "猛虎落泪猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「猛虎落泪猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_060_是喵星人啦00118-我睡着惹-晚安-我睡着了猫.jpg",
+    "name": "我睡着惹",
+    "tags": [
+      "我睡着惹",
+      "晚安",
+      "我睡着了猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「我睡着惹，晚安，我睡着了猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_061_是喵星人啦00133-伤脑筋哦猫.jpg",
+    "name": "伤脑筋哦猫",
+    "tags": [
+      "伤脑筋哦猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「伤脑筋哦猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_062_是喵星人啦00089-歪头不开心猫.png",
+    "name": "歪头不开心猫",
+    "tags": [
+      "歪头不开心猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「歪头不开心猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_063_是喵星人啦00125-想买这个猫.jpg",
+    "name": "想买这个猫",
+    "tags": [
+      "想买这个猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「想买这个猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_064_是喵星人啦00124-莫挨老子猫.jpg",
+    "name": "莫挨老子猫",
+    "tags": [
+      "莫挨老子猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「莫挨老子猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_065_狗00044-忽然警觉.gif",
+    "name": "忽然警觉",
+    "tags": [
+      "忽然警觉"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「忽然警觉」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_066_狗00003-快看那只汪.gif",
+    "name": "快看那只汪",
+    "tags": [
+      "快看那只汪"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「快看那只汪」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_067_鹦鹉00003-老公睡我睡我.gif",
+    "name": "老公睡我睡我",
+    "tags": [
+      "老公睡我睡我"
+    ],
+    "description": "012Parrot_鹦鹉🐦BQB系列表情包：「老公睡我睡我」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_068_鹦鹉00004-emmmm.gif",
+    "name": "emmmm",
+    "tags": [
+      "emmmm"
+    ],
+    "description": "012Parrot_鹦鹉🐦BQB系列表情包：「emmmm」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_069_鹦鹉00012-滴学生卡.gif",
+    "name": "滴学生卡",
+    "tags": [
+      "滴学生卡"
+    ],
+    "description": "012Parrot_鹦鹉🐦BQB系列表情包：「滴学生卡」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_070_猪00012-睡了.jpg",
+    "name": "睡了",
+    "tags": [
+      "睡了"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「睡了」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_071_猪00011-打你.jpg",
+    "name": "打你",
+    "tags": [
+      "打你"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「打你」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_072_猪00015-你是我全世界最喜欢的猪.jpg",
+    "name": "你是我全世界最喜欢的猪",
+    "tags": [
+      "你是我全世界最喜欢的猪"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「你是我全世界最喜欢的猪」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_073_猪00006-我觉得情绪有点失控.jpg",
+    "name": "我觉得情绪有点失控",
+    "tags": [
+      "我觉得情绪有点失控"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「我觉得情绪有点失控」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_074_演奏00017-乔巴吹笛子.gif",
+    "name": "乔巴吹笛子",
+    "tags": [
+      "乔巴吹笛子"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「乔巴吹笛子」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_075_演奏00004-敲鼓.gif",
+    "name": "敲鼓",
+    "tags": [
+      "敲鼓"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「敲鼓」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_076_000000017.gif",
+    "name": "000000017",
+    "tags": [
+      "017Playing_演奏🎻"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「000000017」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_077_演奏00007-弹竖琴.gif",
+    "name": "弹竖琴",
+    "tags": [
+      "弹竖琴"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「弹竖琴」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_078_演奏00020-黄发弹琴.gif",
+    "name": "黄发弹琴",
+    "tags": [
+      "黄发弹琴"
+    ],
+    "description": "017Playing_演奏🎻BQB系列表情包：「黄发弹琴」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_079_汪蛋00021-害羞.gif",
+    "name": "害羞",
+    "tags": [
+      "害羞"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「害羞」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_080_汪蛋00018-摸头.gif",
+    "name": "摸头",
+    "tags": [
+      "摸头"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「摸头」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_081_汪蛋00048-敲桌子.gif",
+    "name": "敲桌子",
+    "tags": [
+      "敲桌子"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「敲桌子」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_082_汪蛋00030-捏.gif",
+    "name": "捏",
+    "tags": [
+      "捏"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「捏」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_083_汪蛋00041-亲亲.gif",
+    "name": "亲亲",
+    "tags": [
+      "亲亲"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「亲亲」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_084_汪蛋00045-你走不走.gif",
+    "name": "你走不走",
+    "tags": [
+      "你走不走"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「你走不走」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_085_汪蛋00020-早上好.gif",
+    "name": "早上好",
+    "tags": [
+      "早上好"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「早上好」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_086_Emoji00138-让人怪不好意思的.jpg",
+    "name": "让人怪不好意思的",
+    "tags": [
+      "让人怪不好意思的"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「让人怪不好意思的」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_087_Emoji00183-喝卑水.jpg",
+    "name": "喝卑水",
+    "tags": [
+      "喝卑水"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「喝卑水」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_088_Emoji00215-要我一直阴险吗.jpg",
+    "name": "要我一直阴险吗",
+    "tags": [
+      "要我一直阴险吗"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「要我一直阴险吗」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_089_Emoji00211-妹妹行为.jpg",
+    "name": "妹妹行为",
+    "tags": [
+      "妹妹行为"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「妹妹行为」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_090_Emoji00128-阿尔卑微.jpg",
+    "name": "阿尔卑微",
+    "tags": [
+      "阿尔卑微"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「阿尔卑微」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_091_Emoji00172-你真的很机车诶.jpg",
+    "name": "你真的很机车诶",
+    "tags": [
+      "你真的很机车诶"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「你真的很机车诶」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_092_Emoji00206-您有事儿吗.jpg",
+    "name": "您有事儿吗",
+    "tags": [
+      "您有事儿吗"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「您有事儿吗」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_093_乌龟00018-洋葱王八.png",
+    "name": "洋葱王八",
+    "tags": [
+      "洋葱王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「洋葱王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_094_乌龟00003-翠花王八.png",
+    "name": "翠花王八",
+    "tags": [
+      "翠花王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「翠花王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_095_乌龟00002-沧海王八.png",
+    "name": "沧海王八",
+    "tags": [
+      "沧海王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「沧海王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_096_乌龟00001-暗香王八.png",
+    "name": "暗香王八",
+    "tags": [
+      "暗香王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「暗香王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_097_乌龟00009-辣椒王八.png",
+    "name": "辣椒王八",
+    "tags": [
+      "辣椒王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「辣椒王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_098_乌龟00011-七彩王八.png",
+    "name": "七彩王八",
+    "tags": [
+      "七彩王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「七彩王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_099_鸽子00006-等我.jpg",
+    "name": "等我",
+    "tags": [
+      "等我"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「等我」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_100_鸽子00013-我一定参加.jpg",
+    "name": "我一定参加",
+    "tags": [
+      "我一定参加"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「我一定参加」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_101_鸽子00010-我正在走呢不要急.jpg",
+    "name": "我正在走呢不要急",
+    "tags": [
+      "我正在走呢不要急"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「我正在走呢不要急」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_102_鸽子00014-准时参加好的我一定来-说好了哟不来不是人.png",
+    "name": "准时参加好的我一定来",
+    "tags": [
+      "准时参加好的我一定来",
+      "说好了哟不来不是人"
+    ],
+    "description": "029Pigeon_鸽子🕊BQB系列表情包：「准时参加好的我一定来，说好了哟不来不是人」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_103_吃00002-就夹一筷子的事.jpg",
+    "name": "就夹一筷子的事",
+    "tags": [
+      "就夹一筷子的事"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「就夹一筷子的事」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_104_吃00004-我饭量很小的一个汉堡就行.jpg",
+    "name": "我饭量很小的一个汉堡就行",
+    "tags": [
+      "我饭量很小的一个汉堡就行"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「我饭量很小的一个汉堡就行」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_105_吃00006-喝杯奶茶怎么了.jpg",
+    "name": "喝杯奶茶怎么了",
+    "tags": [
+      "喝杯奶茶怎么了"
+    ],
+    "description": "033Eat_吃🍔BQB系列表情包：「喝杯奶茶怎么了」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_106_猫咪日常00008-劳资还要整.jpg",
+    "name": "劳资还要整",
+    "tags": [
+      "劳资还要整"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「劳资还要整」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_107_猫咪日常00012-给你整来了四个.jpg",
+    "name": "给你整来了四个",
+    "tags": [
+      "给你整来了四个"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「给你整来了四个」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_108_猫咪日常00009-整完以后.jpg",
+    "name": "整完以后",
+    "tags": [
+      "整完以后"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「整完以后」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_109_猫咪日常00014-我也要.jpg",
+    "name": "我也要",
+    "tags": [
+      "我也要"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「我也要」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_110_猫咪日常00002-你知道我要说什么吧.jpg",
+    "name": "你知道我要说什么吧",
+    "tags": [
+      "你知道我要说什么吧"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「你知道我要说什么吧」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_111_猫咪日常00004-给我也整一个.jpg",
+    "name": "给我也整一个",
+    "tags": [
+      "给我也整一个"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「给我也整一个」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_112_心心00018-myloveforyou.jpeg",
+    "name": "myloveforyou",
+    "tags": [
+      "myloveforyou"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「myloveforyou」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_113_000000055.jpg",
+    "name": "000000055",
+    "tags": [
+      "055AllHeart_全是心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「000000055」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_114_心心00017-杰瑞心心.jpeg",
+    "name": "杰瑞心心",
+    "tags": [
+      "杰瑞心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「杰瑞心心」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_115_心心00010-猫咪心心.jpeg",
+    "name": "猫咪心心",
+    "tags": [
+      "猫咪心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「猫咪心心」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_116_心心00006-还是要微笑.jpg",
+    "name": "还是要微笑",
+    "tags": [
+      "还是要微笑"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「还是要微笑」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_117_心心00013-动漫少女白马王子.jpeg",
+    "name": "动漫少女白马王子",
+    "tags": [
+      "动漫少女白马王子"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「动漫少女白马王子」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_118_心心00022-AllMyLove.jpeg",
+    "name": "AllMyLove",
+    "tags": [
+      "AllMyLove"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「AllMyLove」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_119_开心鸭00026-多年的积蓄.jpg",
+    "name": "多年的积蓄",
+    "tags": [
+      "多年的积蓄"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「多年的积蓄」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_120_开心鸭00040-我错了鸭.jpg",
+    "name": "我错了鸭",
+    "tags": [
+      "我错了鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「我错了鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_121_开心鸭00005-被现实鸭垮.jpg",
+    "name": "被现实鸭垮",
+    "tags": [
+      "被现实鸭垮"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「被现实鸭垮」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_122_开心鸭00036-吃太撑了鸭.jpg",
+    "name": "吃太撑了鸭",
+    "tags": [
+      "吃太撑了鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「吃太撑了鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_123_开心鸭00014-没眼看鸭.jpg",
+    "name": "没眼看鸭",
+    "tags": [
+      "没眼看鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「没眼看鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_124_开心鸭00046-气到发胖.jpg",
+    "name": "气到发胖",
+    "tags": [
+      "气到发胖"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「气到发胖」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_125_旅行青蛙00002-要和我一起旅行吗.gif",
+    "name": "要和我一起旅行吗",
+    "tags": [
+      "要和我一起旅行吗"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「要和我一起旅行吗」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_126_旅行青蛙00010-不聊了又该搬砖了.jpg",
+    "name": "不聊了又该搬砖了",
+    "tags": [
+      "不聊了又该搬砖了"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「不聊了又该搬砖了」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_127_旅行青蛙00009-思考ing.jpg",
+    "name": "思考ing",
+    "tags": [
+      "思考ing"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「思考ing」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_128_旅行青蛙00003-胖瘦随缘.jpg",
+    "name": "胖瘦随缘",
+    "tags": [
+      "胖瘦随缘"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「胖瘦随缘」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_129_负鼠00006-姜还是老的老.png",
+    "name": "姜还是老的老",
+    "tags": [
+      "姜还是老的老"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「姜还是老的老」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_130_负鼠00010-已读不回是在细品.jpg",
+    "name": "已读不回是在细品",
+    "tags": [
+      "已读不回是在细品"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「已读不回是在细品」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_131_负鼠00023-重生之我又回到了周一.jpg",
+    "name": "重生之我又回到了周一",
+    "tags": [
+      "重生之我又回到了周一"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「重生之我又回到了周一」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_132_负鼠00018-那还说啥跳了bro.png",
+    "name": "那还说啥跳了bro",
+    "tags": [
+      "那还说啥跳了bro"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「那还说啥跳了bro」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_133_负鼠00015-人生嘛看开点.png",
+    "name": "人生嘛看开点",
+    "tags": [
+      "人生嘛看开点"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「人生嘛看开点」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_134_负鼠00030-会就会不会就不会约会是什么意思.png",
+    "name": "会就会不会就不会约会是什么意思",
+    "tags": [
+      "会就会不会就不会约会是什么意思"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「会就会不会就不会约会是什么意思」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_135_负鼠00029-别人事业有成我蜜雪冰城.png",
+    "name": "别人事业有成我蜜雪冰城",
+    "tags": [
+      "别人事业有成我蜜雪冰城"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「别人事业有成我蜜雪冰城」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_136_乌龟00013-清水王八.png",
+    "name": "清水王八",
+    "tags": [
+      "清水王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「清水王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_137_Emoji00147-问号-墨镜.jpg",
+    "name": "问号",
+    "tags": [
+      "问号",
+      "墨镜"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「问号，墨镜」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_138_Emoji00189-走辽.jpg",
+    "name": "走辽",
+    "tags": [
+      "走辽"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「走辽」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_139_是喵星人啦00173-哽住猫.jpg",
+    "name": "哽住猫",
+    "tags": [
+      "哽住猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「哽住猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_140_旅行青蛙00005-曾梦想仗剑走天涯因太胖放弃了计划.jpg",
+    "name": "曾梦想仗剑走天涯因太胖放弃了计划",
+    "tags": [
+      "曾梦想仗剑走天涯因太胖放弃了计划"
+    ],
+    "description": "065TravelFrog_旅行青蛙🐸BQB系列表情包：「曾梦想仗剑走天涯因太胖放弃了计划」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_141_猫咪日常00013-给我整俩.jpg",
+    "name": "给我整俩",
+    "tags": [
+      "给我整俩"
+    ],
+    "description": "049CatEveryday_猫咪日常BQB系列表情包：「给我整俩」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_142_心心00003-狗狗心心.jpg",
+    "name": "狗狗心心",
+    "tags": [
+      "狗狗心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「狗狗心心」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_143_汪蛋00039-打脸.gif",
+    "name": "打脸",
+    "tags": [
+      "打脸"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「打脸」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_144_心心00079-MeYou.jpg",
+    "name": "MeYou",
+    "tags": [
+      "MeYou"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MeYou」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_145_是喵星人啦00045-就知道欺负我猫.jpg",
+    "name": "就知道欺负我猫",
+    "tags": [
+      "就知道欺负我猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「就知道欺负我猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_146_汪蛋00035-点头.gif",
+    "name": "点头",
+    "tags": [
+      "点头"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「点头」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_147_Emoji00127-好期待哇.jpg",
+    "name": "好期待哇",
+    "tags": [
+      "好期待哇"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「好期待哇」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_148_是喵星人啦00059-不行我受不了这委屈猫.jpg",
+    "name": "不行我受不了这委屈猫",
+    "tags": [
+      "不行我受不了这委屈猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「不行我受不了这委屈猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_149_负鼠00013-你说那只负鼠吗已经被我干掉了.png",
+    "name": "你说那只负鼠吗已经被我干掉了",
+    "tags": [
+      "你说那只负鼠吗已经被我干掉了"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「你说那只负鼠吗已经被我干掉了」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_150_心心00061-MeYou.jpg",
+    "name": "MeYou",
+    "tags": [
+      "MeYou"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MeYou」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_151_是喵星人啦00108-眼睁睁看着自己变老-生日猫.jpg",
+    "name": "眼睁睁看着自己变老",
+    "tags": [
+      "眼睁睁看着自己变老",
+      "生日猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「眼睁睁看着自己变老，生日猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_152_是喵星人啦00060-今天的生活也是同样的苦涩猫.jpg",
+    "name": "今天的生活也是同样的苦涩猫",
+    "tags": [
+      "今天的生活也是同样的苦涩猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「今天的生活也是同样的苦涩猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_153_是喵星人啦00070-揣手手猫.jpg",
+    "name": "揣手手猫",
+    "tags": [
+      "揣手手猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「揣手手猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_154_是喵星人啦00122-比心猫.jpg",
+    "name": "比心猫",
+    "tags": [
+      "比心猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「比心猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_155_猪00019-你住口.jpg",
+    "name": "你住口",
+    "tags": [
+      "你住口"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「你住口」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_156_负鼠00016-人参和醋不相逢.png",
+    "name": "人参和醋不相逢",
+    "tags": [
+      "人参和醋不相逢"
+    ],
+    "description": "109_Opossum_负鼠_BQB系列表情包：「人参和醋不相逢」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_157_是喵星人啦00009-崽种猫.jpg",
+    "name": "崽种猫",
+    "tags": [
+      "崽种猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「崽种猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_158_是喵星人啦00031-擦眼泪猫.jpg",
+    "name": "擦眼泪猫",
+    "tags": [
+      "擦眼泪猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「擦眼泪猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_159_汪蛋00019-摔杯子.gif",
+    "name": "摔杯子",
+    "tags": [
+      "摔杯子"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「摔杯子」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_160_是喵星人啦00057-感到鸭力-感到压力猫.jpg",
+    "name": "感到鸭力",
+    "tags": [
+      "感到鸭力",
+      "感到压力猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「感到鸭力，感到压力猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_161_心心00054-MeYou愉悦.jpg",
+    "name": "MeYou愉悦",
+    "tags": [
+      "MeYou愉悦"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MeYou愉悦」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_162_心心00051-MeYou.jpg",
+    "name": "MeYou",
+    "tags": [
+      "MeYou"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MeYou」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_163_狗00033-抱树.jpg",
+    "name": "抱树",
+    "tags": [
+      "抱树"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「抱树」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_164_是喵星人啦00017-手枪猫瞄准biubiu猫.gif",
+    "name": "手枪猫瞄准biubiu猫",
+    "tags": [
+      "手枪猫瞄准biubiu猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「手枪猫瞄准biubiu猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_165_乌龟00016-武当王八.png",
+    "name": "武当王八",
+    "tags": [
+      "武当王八"
+    ],
+    "description": "027Turtle_乌龟🐢BQB系列表情包：「武当王八」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_166_是喵星人啦00076-赏个肉粽吧大爷猫.gif",
+    "name": "赏个肉粽吧大爷猫",
+    "tags": [
+      "赏个肉粽吧大爷猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「赏个肉粽吧大爷猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_167_是喵星人啦00145-人家就想粘着你猫.jpg",
+    "name": "人家就想粘着你猫",
+    "tags": [
+      "人家就想粘着你猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「人家就想粘着你猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_168_心心00077-心信.jpg",
+    "name": "心信",
+    "tags": [
+      "心信"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「心信」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_169_是喵星人啦00106-算我求你的猫.jpg",
+    "name": "算我求你的猫",
+    "tags": [
+      "算我求你的猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「算我求你的猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_170_猪00020-按住躁动的你.jpg",
+    "name": "按住躁动的你",
+    "tags": [
+      "按住躁动的你"
+    ],
+    "description": "014Pig_猪🐖BQB系列表情包：「按住躁动的你」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_171_开心鸭00048-来尬舞鸭.jpg",
+    "name": "来尬舞鸭",
+    "tags": [
+      "来尬舞鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「来尬舞鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_172_心心00081-海绵宝宝章鱼哥心心.jpg",
+    "name": "海绵宝宝章鱼哥心心",
+    "tags": [
+      "海绵宝宝章鱼哥心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「海绵宝宝章鱼哥心心」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_173_Emoji00126-报告我不快乐.jpg",
+    "name": "报告我不快乐",
+    "tags": [
+      "报告我不快乐"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「报告我不快乐」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_174_狗00025-柯基把屁股一撅发现事情并不简单.jpg",
+    "name": "柯基把屁股一撅发现事情并不简单",
+    "tags": [
+      "柯基把屁股一撅发现事情并不简单"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「柯基把屁股一撅发现事情并不简单」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_175_是喵星人啦00048-看了我的脚你就是我的人了猫.jpg",
+    "name": "看了我的脚你就是我的人了猫",
+    "tags": [
+      "看了我的脚你就是我的人了猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「看了我的脚你就是我的人了猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_176_心心00083-MeWaitingForYouLove.jpg",
+    "name": "MeWaitingForYouLove",
+    "tags": [
+      "MeWaitingForYouLove"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「MeWaitingForYouLove」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_177_Emoji00234-好可爱不愧是我喜欢的人.jpg",
+    "name": "好可爱不愧是我喜欢的人",
+    "tags": [
+      "好可爱不愧是我喜欢的人"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「好可爱不愧是我喜欢的人」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_178_心心00074-哆啦A梦心心.jpg",
+    "name": "哆啦A梦心心",
+    "tags": [
+      "哆啦A梦心心"
+    ],
+    "description": "055AllHeart_全是心心BQB系列表情包：「哆啦A梦心心」",
+    "source": "ChineseBQB",
+    "group": "趣味日常",
+    "enabled": true
+  },
+  {
+    "file": "st_179_是喵星人啦00142-嗯-还有头发-还能学猫.jpg",
+    "name": "嗯",
+    "tags": [
+      "嗯",
+      "还有头发",
+      "还能学猫"
+    ],
+    "description": "010Cat_是喵星人啦🐱BQB系列表情包：「嗯，还有头发，还能学猫」",
+    "source": "ChineseBQB",
+    "group": "萌猫日常",
+    "enabled": true
+  },
+  {
+    "file": "st_180_开心鸭00003-暗中观察鸭.jpg",
+    "name": "暗中观察鸭",
+    "tags": [
+      "暗中观察鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「暗中观察鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_181_开心鸭00011-苍天鸭.jpg",
+    "name": "苍天鸭",
+    "tags": [
+      "苍天鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「苍天鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_182_开心鸭00008-哎鸭.jpg",
+    "name": "哎鸭",
+    "tags": [
+      "哎鸭"
+    ],
+    "description": "008HappyDuck_开心鸭🐥BQB系列表情包：「哎鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_183_狗00049-愣住.jpg",
+    "name": "愣住",
+    "tags": [
+      "愣住"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「愣住」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_184_狗00047-真让人头大.jpg",
+    "name": "真让人头大",
+    "tags": [
+      "真让人头大"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「真让人头大」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_185_狗00052-我来啦-接住.jpg",
+    "name": "我来啦",
+    "tags": [
+      "我来啦",
+      "接住"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「我来啦，接住」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_186_汪蛋00012-准备上吊.gif",
+    "name": "准备上吊",
+    "tags": [
+      "准备上吊"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「准备上吊」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_187_汪蛋00003-哭着捶桌子.gif",
+    "name": "哭着捶桌子",
+    "tags": [
+      "哭着捶桌子"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「哭着捶桌子」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_188_汪蛋00005-吐舌头.gif",
+    "name": "吐舌头",
+    "tags": [
+      "吐舌头"
+    ],
+    "description": "018WangEgg_汪蛋🥚BQB系列表情包：「吐舌头」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_189_000000023.jpg",
+    "name": "000000023",
+    "tags": [
+      "023Emoji_表情符号"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「000000023」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_190_Emoji00196-爷笑了.jpg",
+    "name": "爷笑了",
+    "tags": [
+      "爷笑了"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「爷笑了」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_191_Emoji00204-不听不听王八念经.gif",
+    "name": "不听不听王八念经",
+    "tags": [
+      "不听不听王八念经"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「不听不听王八念经」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_192_Emoji00205-看戏.gif",
+    "name": "看戏",
+    "tags": [
+      "看戏"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「看戏」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_193_开心鸭00013-我的马鸭.jpg",
+    "name": "我的马鸭",
+    "tags": [
+      "我的马鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「我的马鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_194_开心鸭00035-被生活掐住了肚皮.jpg",
+    "name": "被生活掐住了肚皮",
+    "tags": [
+      "被生活掐住了肚皮"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「被生活掐住了肚皮」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_195_开心鸭00037-我看你就是在为难我鸭鸭.jpg",
+    "name": "我看你就是在为难我鸭鸭",
+    "tags": [
+      "我看你就是在为难我鸭鸭"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「我看你就是在为难我鸭鸭」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_196_开心鸭00033-看什么看.jpg",
+    "name": "看什么看",
+    "tags": [
+      "看什么看"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「看什么看」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  },
+  {
+    "file": "st_197_Emoji00137-谁来和我一起喝下这杯爱情水.jpg",
+    "name": "谁来和我一起喝下这杯爱情水",
+    "tags": [
+      "谁来和我一起喝下这杯爱情水"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「谁来和我一起喝下这杯爱情水」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_198_Emoji00093-暗中观察.jpg",
+    "name": "暗中观察",
+    "tags": [
+      "暗中观察"
+    ],
+    "description": "023Emoji_表情符号BQB系列表情包：「暗中观察」",
+    "source": "ChineseBQB",
+    "group": "表情符号",
+    "enabled": true
+  },
+  {
+    "file": "st_199_狗00014-行8.jpg",
+    "name": "行8",
+    "tags": [
+      "行8"
+    ],
+    "description": "011Dog_狗🐶BQB系列表情包：「行8」",
+    "source": "ChineseBQB",
+    "group": "汪星萌宠",
+    "enabled": true
+  },
+  {
+    "file": "st_200_开心鸭00010-对不起可爱真的是可以为所欲为.jpg",
+    "name": "对不起可爱真的是可以为所欲为",
+    "tags": [
+      "对不起可爱真的是可以为所欲为"
+    ],
+    "description": "057HappyDuck_开心鸭BQB系列表情包：「对不起可爱真的是可以为所欲为」",
+    "source": "ChineseBQB",
+    "group": "开心鸭",
+    "enabled": true
+  }
+]

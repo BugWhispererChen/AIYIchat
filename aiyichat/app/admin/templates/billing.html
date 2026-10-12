@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set active_page = "billing" %}
+{% block title %}套餐计费{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>套餐计费</h3>
+    <p class="subtitle">管理额度套餐模板，查看开通台账（运营手动开通，暂不接支付）</p>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-grid" style="margin-bottom:1rem;">
+    <div class="stat-card">
+        <div class="stat-head"><span>套餐模板数</span></div>
+        <div class="value">{{ templates|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-head"><span>累计开通订单</span></div>
+        <div class="value">{{ order_total }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-head"><span>近30天记账金额</span></div>
+        <div class="value">¥{{ revenue_30d }}</div>
+    </div>
+</div>
+
+<!-- 新增套餐模板 -->
+<div class="card">
+    <div class="card-title-row">
+        <h4>套餐模板</h4>
+    </div>
+    <details>
+        <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增套餐</summary>
+        <form method="post" action="/admin/billing/templates/create" style="margin-top:0.8rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+            <div class="grid">
+                <label>套餐名称
+                    <input type="text" name="name" placeholder="如：月度基础版" required>
+                </label>
+                <label>有效期（天，留空=永久）
+                    <input type="number" name="validity_days" placeholder="30" min="1">
+                </label>
+            </div>
+            <div class="grid">
+                <label>文字额度（Token，≥10亿=无限）
+                    <input type="number" name="text_limit" value="1000000000" min="0">
+                </label>
+                <label>语音额度（≥10亿=无限）
+                    <input type="number" name="voice_limit" value="1000000000" min="0">
+                </label>
+                <label>图片额度（≥10亿=无限）
+                    <input type="number" name="image_limit" value="1000000000" min="0">
+                </label>
+            </div>
+            <button type="submit">创建套餐</button>
+        </form>
+    </details>
+
+    {% if templates %}
+    <div class="table-wrap">
+    <table style="margin-top:0.8rem;">
+        <thead>
+            <tr>
+                <th>套餐名称</th>
+                <th>文字</th>
+                <th>语音</th>
+                <th>图片</th>
+                <th>有效期</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in templates %}
+            <tr>
+                <td><strong>{{ t.name }}</strong></td>
+                <td>{{ t.text_limit|format_quota }}</td>
+                <td>{{ t.voice_limit|format_quota }}</td>
+                <td>{{ t.image_limit|format_quota }}</td>
+                <td>{% if t.validity_days %}{{ t.validity_days }}天{% else %}<span class="muted">永久</span>{% endif %}</td>
+                <td>
+                    <div class="btn-row" style="gap:0.3rem;">
+                        <button type="button" class="ghost btn-sm" onclick="var f=document.getElementById('edit-{{ t.id }}');f.style.display=(f.style.display==='none'||!f.style.display)?'table-row':'none';this.textContent=(f.style.display==='none')?'编辑':'收起';">编辑</button>
+                        <form method="post" action="/admin/billing/templates/{{ t.id }}/delete" style="margin:0;"
+                              data-confirm="确认删除套餐「{{ t.name }}」？" data-danger data-confirm-text="删除">
+                            <button type="submit" class="danger outline btn-sm">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            <!-- 编辑行：默认隐藏，点击“编辑”展开，横跨整行避免与表头列错位 -->
+            <tr id="edit-{{ t.id }}" style="display:none;">
+                <td colspan="6" style="background:var(--surface-2);">
+                    <form method="post" action="/admin/billing/templates/{{ t.id }}/update" class="grid-5-col" style="margin:0;">
+                        <input type="text" name="name" value="{{ t.name }}" title="名称" placeholder="名称">
+                        <input type="number" name="text_limit" value="{{ t.text_limit }}" title="文字" min="0" placeholder="文字额度（Token）">
+                        <input type="number" name="voice_limit" value="{{ t.voice_limit }}" title="语音" min="0" placeholder="语音额度">
+                        <input type="number" name="image_limit" value="{{ t.image_limit }}" title="图片" min="0" placeholder="图片额度">
+                        <input type="number" name="validity_days" value="{{ t.validity_days or '' }}" title="有效期(天)" min="1" placeholder="有效期(天)">
+                        <button type="submit" class="btn-sm">保存</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted" style="margin-top:0.8rem;">暂无套餐模板，点击上方"新增套餐"创建。</p>
+    {% endif %}
+</div>
+
+<!-- 开通台账 -->
+<div class="card">
+    <h4>开通台账 <small class="muted">（共 {{ order_total }} 条）</small></h4>
+    {% if orders %}
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>账号</th>
+                <th>套餐</th>
+                <th>文字/语音/图片</th>
+                <th>有效期</th>
+                <th>金额</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for o in orders %}
+            <tr>
+                <td><span title="{{ (o.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ o.created_at|relative_time }}</span></td>
+                <td>{{ o.account_name or o.account_id[:8] }}</td>
+                <td>{{ o.template_name or '-' }}</td>
+                <td>{{ o.text_limit|format_quota }} / {{ o.voice_limit|format_quota }} / {{ o.image_limit|format_quota }}</td>
+                <td>{% if o.validity_days %}{{ o.validity_days }}天{% else %}永久{% endif %}</td>
+                <td>¥{{ o.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% for p in range(1, total_pages + 1) %}
+        <a href="/admin/billing?page={{ p }}" class="{% if p == page %}current{% endif %}">{{ p }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="muted">暂无开通记录。在账号详情页为账号开通套餐后将在此留痕。</p>
+    {% endif %}
+</div>
+{% endblock %}

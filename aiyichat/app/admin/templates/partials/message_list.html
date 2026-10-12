@@ -1,0 +1,31 @@
+{% for msg in messages %}
+<div class="message-bubble {{ msg.role }}">
+    {# 删除单条消息：右上角叉号，悬停显示 #}
+    <form method="post" action="/admin/conversations/{{ msg.conversation_id }}/messages/{{ msg.id }}/delete" style="display:inline;"
+          data-confirm="确认删除此条消息？此操作不可恢复！" data-danger data-confirm-text="删除">
+        <button type="submit" class="msg-delete-btn" title="删除消息">&times;</button>
+    </form>
+    <div>
+        <span class="badge {% if msg.role == 'user' %}badge-role-user{% else %}badge-role-assistant{% endif %}">
+            {{ '用户' if msg.role == 'user' else 'AI' }}
+        </span>
+        {% if msg.emotion_tag %}
+        <span class="badge badge-warning">{{ msg.emotion_tag }}</span>
+        {% endif %}
+        {% if msg.content_type and msg.content_type != 'text' %}
+        <span class="badge badge-role-assistant">{{ msg.content_type }}</span>
+        {% endif %}
+    </div>
+    <p style="margin:0.4rem 0 0.2rem;">{{ msg.content }}</p>
+    {% if msg.media_url %}
+    <div class="msg-media">
+        <img src="{{ msg.media_url }}" alt="图片" loading="lazy" onclick="window.open(this.src)">
+    </div>
+    {% endif %}
+    <div class="message-meta">
+        {{ (msg.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') if msg.created_at else '' }}
+        {% if msg.latency_ms %} &middot; {{ msg.latency_ms }}ms{% endif %}
+        {% if msg.token_count %} &middot; {{ msg.token_count }} tokens{% endif %}
+    </div>
+</div>
+{% endfor %}

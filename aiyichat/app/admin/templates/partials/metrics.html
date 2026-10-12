@@ -1,0 +1,101 @@
+<!-- 系统资源监控 - Chart.js 环形图 -->
+<div class="monitor-panel">
+    <h3>服务器状态监控</h3>
+    
+    <div class="charts-grid">
+        <!-- CPU 环形图 -->
+        <div class="chart-item">
+            <canvas id="cpuChart"></canvas>
+            <div class="chart-label">CPU 使用率</div>
+            <div class="chart-value" style="color:{% if metrics.cpu_percent > 90 %}var(--danger-color){% elif metrics.cpu_percent > 70 %}var(--warning-color){% else %}var(--success-color){% endif %}">
+                {{ "%.1f"|format(metrics.cpu_percent) }}%
+            </div>
+        </div>
+        <!-- 内存环形图 -->
+        <div class="chart-item">
+            <canvas id="memChart"></canvas>
+            <div class="chart-label">内存使用率</div>
+            <div class="chart-value" style="color:{% if metrics.memory_percent > 90 %}var(--danger-color){% elif metrics.memory_percent > 70 %}var(--warning-color){% else %}var(--success-color){% endif %}">
+                {{ "%.1f"|format(metrics.memory_percent) }}%
+            </div>
+        </div>
+        <!-- 磁盘环形图 -->
+        <div class="chart-item">
+            <canvas id="diskChart"></canvas>
+            <div class="chart-label">磁盘使用率</div>
+            <div class="chart-value" style="color:{% if metrics.disk_percent > 90 %}var(--danger-color){% elif metrics.disk_percent > 80 %}var(--warning-color){% else %}var(--success-color){% endif %}">
+                {{ "%.1f"|format(metrics.disk_percent) }}%
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务器详细信息 -->
+    <div class="server-info-grid">
+        <div class="server-info-item">
+            <div class="info-label">内存用量</div>
+            <div class="info-value">{{ metrics.memory_used_gb }} G / {{ metrics.memory_total_gb }} G</div>
+        </div>
+        <div class="server-info-item">
+            <div class="info-label">磁盘用量</div>
+            <div class="info-value">{{ metrics.disk_used_gb }} G / {{ metrics.disk_total_gb }} G</div>
+        </div>
+        <div class="server-info-item">
+            <div class="info-label">运行时间</div>
+            <div class="info-value">{{ metrics.uptime_display }}</div>
+        </div>
+        <div class="server-info-item">
+            <div class="info-label">网络连接数</div>
+            <div class="info-value">{{ metrics.net_connections }}</div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    if (typeof Chart === 'undefined') return;
+    
+    /* 环形图轨道色取自设计令牌，需在函数内定义 css 变量（修复 ReferenceError 导致环形图空白） */
+    var css = getComputedStyle(document.documentElement);
+    var chartTrack = css.getPropertyValue('--chart-track').trim() || '#e2e8f0';
+
+    function createDoughnut(canvasId, value, color) {
+        var ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [value, 100 - value],
+                    backgroundColor: [color, chartTrack],
+                    borderWidth: 0,
+                    cutout: '75%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                animation: { duration: 800, easing: 'easeOutQuart' }
+            }
+        });
+    }
+
+    var cpuVal = {{ "%.1f"|format(metrics.cpu_percent) }};
+    var memVal = {{ "%.1f"|format(metrics.memory_percent) }};
+    var diskVal = {{ "%.1f"|format(metrics.disk_percent) }};
+    
+    function getColor(val, highThreshold, midThreshold) {
+        var css = getComputedStyle(document.documentElement);
+        var danger = css.getPropertyValue('--chart-danger').trim() || '#ef4444';
+        var warning = css.getPropertyValue('--chart-warning').trim() || '#f59e0b';
+        var success = css.getPropertyValue('--chart-success').trim() || '#10b981';
+        if (val > highThreshold) return danger;
+        if (val > midThreshold) return warning;
+        return success;
+    }
+
+    createDoughnut('cpuChart', cpuVal, getColor(cpuVal, 90, 70));
+    createDoughnut('memChart', memVal, getColor(memVal, 90, 70));
+    createDoughnut('diskChart', diskVal, getColor(diskVal, 90, 80));
+})();
+</script>

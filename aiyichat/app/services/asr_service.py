@@ -1,0 +1,89 @@
+"""ASR 语音转文字服务 — 阿里云百炼 Paraformer。"""
+
+import asyncio
+import logging
+import tempfile
+from http import HTTPStatus
+from pathlib import Path
+
+from app.llm.model_registry import resolve_model_config
+
+logger = logging.getLogger(__name__)
+
+
+def _wav_sample_rate(data: bytes, default: int = 16000) -> int:
+    """从 WAV 头解析采样率（字节 24-28，小端）；非标准 WAV 时返回 default。"""
+    if len(data) >= 28 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return int.from_bytes(data[24:28], "little")
+    return default
+
+
+class ASRService:
+    """语音转文字：WAV bytes → 文本。"""
+
+    async def transcribe(self, audio_data: bytes, fmt: str = "wav") -> str:
+        """
+        将音频转为文字。
+
+        Args:
+            audio_data: WAV 格式音频字节
+            fmt: 音频格式标识
+
+        Returns:
+            识别出的文本，失败返回空字符串
+        """
+        try:
+            cfg = resolve_model_config("asr")
+        except RuntimeError as e:
+            logger.warning("ASR 未正确配置: %s", e)
+            return ""
+
+        def _call() -> str:
+            import dashscope
+            from dashscope.audio.asr import Recognition
+
+            dashscope.api_key = cfg.api_key
+
+            # 写临时文件供 SDK 使用
+            with tempfile.NamedTemporaryFile(
+                suffix=f".{fmt}", delete=False
+            ) as f:
+                f.write(audio_data)
+                tmp_path = f.name
+
+            # WAV 自带采样率信息，从文件头解析以匹配实际音频（微信 silk 转出为 24kHz），
+            # 避免声明采样率与真实音频不一致导致识别失真
+            sr = _wav_sample_rate(audio_data) if fmt == "wav" else 16000
+            try:
+                recognition = Recognition(
+                    model=cfg.model,
+                    format=fmt,
+                    sample_rate=sr,
+                    language_hints=["zh", "en"],
+                    callback=None,
+                )
+                result = recognition.call(tmp_path)
+                if result.status_code == HTTPStatus.OK:
+                    sentences = result.get_sentence()
+                    if sentences:
+                        return "".join(
+                            s.get("text", "") for s in sentences
+                        )
+                else:
+                    logger.warning(
+                        "ASR 返回非200: %s %s",
+                        result.status_code,
+                        getattr(result, "message", ""),
+                    )
+                return ""
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+
+        try:
+            text = await asyncio.to_thread(_call)
+            if text:
+                logger.info("ASR 识别成功: %s", text[:50])
+            return text
+        except Exception as e:
+            logger.error("ASR 识别失败: %s", e)
+            return ""

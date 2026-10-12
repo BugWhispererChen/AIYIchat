@@ -1,0 +1,66 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题！请提供以下信息帮助我们定位。
+
+        **请勿粘贴** `.env` 内容、API Key、聊天记录等敏感信息。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰简洁地描述问题
+      placeholder: 例如：管理后台「角色克隆」页上传 JSON 后提示解析失败
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 如何复现该问题
+      placeholder: |
+        1. 访问 /admin/chat-import
+        2. 上传 xxx.json
+        3. 点击「开始分析」
+        4. 出现错误提示
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 你期望发生什么
+      placeholder: 应该正常解析并进入 AI 分析阶段
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志片段
+      description: 容器日志中的相关错误（docker compose logs --tail=50 app）
+      render: shell
+      placeholder: |
+        app-1  | 2026-10-13 10:00:00 [ERROR] app.chat_import.parser: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 操作系统、Python 版本、Docker 版本、部署方式
+      placeholder: |
+        - OS: Windows 11 / Ubuntu 24.04
+        - Python: 3.11
+        - Docker: 24.0.7
+        - 部署方式: Docker Compose / Windows 安装包
+    validations:
+      required: true

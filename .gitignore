@@ -1,0 +1,63 @@
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.venv/
+nul
+NUL
+/*.png
+# harness 分析报告产物（按日期生成，不入库）
+.qoder/better-harness/
+
+# 覆盖率/测试产物
+.coverage
+htmlcov/
+.pytest_cache/
+
+# 临时与画布产物
+_canvas_tmp/
+.qoder/canvases/
+
+# 文档预览临时产物
+docs/_docx_preview/
+docs/_ppt_preview/
+docs/_docx_preview.pdf
+
+# 测试数据与音频
+aiyichat/data/chat_imports/
+test_audio.mp3
+
+# 大体积二进制（ffmpeg 压缩包与解压目录）
+ffmpeg.zip
+ffmpeg_full/
+
+# 推广视频产物
+promo_video_output/
+
+# 部署包与安装包（大文件，不入库）
+AIYIchat_Setup_*.exe
+aiyichat-deploy-*.tar.gz
+*.bundle
+
+# 调试脚本
+debug_*.py
+
+# ── 开源仓库内部资料（本地保留、严禁入库）────────────────────────────
+# AI 协作规则与自动生成 Wiki（含服务器 IP、运维路径等敏感信息）
+.qoder/
+# 营销物料与内部文档（推广方案、配置说明、后台截图）
+/docs/
+/vibe_images/
+/scripts/
+# 内部发布说明（含授权分级等历史表述）
+/tools/deploy_package/release_notes_*.md
+
+# ── 敏感数据加固（严禁入库）──────────────────────────────────────────
+# 本地解密聊天数据库、密钥提取参考源码、发证私钥
+_decrypted/
+_ref_src/
+private_key*.enc
+*.db
+# 构建日志（含本地绝对路径）
+*.log

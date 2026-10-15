@@ -107,6 +107,8 @@ def _offset_label(tz: timezone) -> str:
 
 def _day_phase(hour: int) -> str:
     """按小时返回中文时段词（与主动关怀调度器 _time_hint 的分段保持一致）。"""
+    if 0 <= hour < 5:
+        return "凌晨"
     if 5 <= hour < 9:
         return "清晨"
     if 9 <= hour < 12:
@@ -152,7 +154,7 @@ class TimeContext:
     date_iso: str              # "2026-09-02"  日粒度，用于锚点
     weekday_cn: str            # "星期三"
     time_hm: str               # "14:30"      分钟粒度，用于易变位置
-    day_phase: str             # "清晨/上午/中午/下午/晚上/深夜"
+    day_phase: str             # "凌晨/清晨/上午/中午/下午/晚上/深夜"
     idle_seconds: float | None  # 距上一条真实用户消息（秒），无历史时为 None
     idle_phrase: str           # "3 天 2 小时" / "20 分钟" / ""
 

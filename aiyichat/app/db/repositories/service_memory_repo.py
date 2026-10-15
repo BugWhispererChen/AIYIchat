@@ -73,6 +73,13 @@ class ServiceMemoryRepository:
             upsert=True,
         )
 
+    async def clear_current_topic(self, service_id: str, expected_topic: str) -> None:
+        # 不覆盖并发提取的新话题，也不刷新焦点提取的节流时间。
+        await self._collection().update_one(
+            {"service_id": service_id, "current_topic": expected_topic},
+            {"$set": {"current_topic": ""}},
+        )
+
     async def add_facts(
         self, service_id: str, new_facts: list[MemoryFact]
     ) -> None:

@@ -3,10 +3,12 @@
 负责将用户消息和 AI 回复持久化到数据库，并更新对话元数据。
 """
 
+from datetime import datetime
 from typing import Optional
 
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
+from app.models.message import MessageInDB
 
 
 class TurnRecorder:
@@ -27,15 +29,21 @@ class TurnRecorder:
         emotion_tag: Optional[str],
         media_url: Optional[str] = None,
         content_type: str = "text",
-    ) -> None:
-        """持久化用户消息。"""
-        await self.message_repo.create(
+        created_at: Optional[datetime] = None,
+    ) -> MessageInDB:
+        """持久化用户消息。
+
+        created_at 应传入消息接收时刻：用户消息在 LLM 回复后才落库，
+        若取写入时间会与 AI 回复时间相同甚至更晚，导致历史顺序错乱。
+        """
+        return await self.message_repo.create(
             conversation_id=conversation_id,
             role="user",
             content=text,
             emotion_tag=emotion_tag,
             media_url=media_url,
             content_type=content_type,
+            created_at=created_at,
         )
 
     async def record_assistant_message(
@@ -44,9 +52,9 @@ class TurnRecorder:
         clean_text: str,
         llm_model: str,
         latency_ms: int,
-    ) -> None:
+    ) -> MessageInDB:
         """持久化 AI 回复。"""
-        await self.message_repo.create(
+        return await self.message_repo.create(
             conversation_id=conversation_id,
             role="assistant",
             content=clean_text,

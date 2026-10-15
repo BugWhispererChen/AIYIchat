@@ -196,6 +196,8 @@ async def features_page(
         "toggles": toggles,
         # 对话时间感知参数区（数值类配置，与开关同页管理）
         "gap_minutes": settings.message_time_gap_minutes,
+        "time_session_gap_hours": settings.time_session_gap_hours,
+        "time_reunion_gap_hours": settings.time_reunion_gap_hours,
         "tz_offset": settings.default_timezone_offset,
         # 表情包触发参数
         "sticker_casual_probability": settings.sticker_casual_probability,
@@ -236,6 +238,14 @@ async def features_save(
     tz = max(-12, min(14, _int_or("tz_offset", settings.default_timezone_offset)))
     updates["message_time_gap_minutes"] = max(
         0, min(1440, _int_or("gap_minutes", settings.message_time_gap_minutes))
+    )
+    # 会话间隔阈值限幅，强档不得低于本次保存的软档
+    session_gap = max(
+        1, min(72, _int_or("time_session_gap_hours", settings.time_session_gap_hours))
+    )
+    updates["time_session_gap_hours"] = session_gap
+    updates["time_reunion_gap_hours"] = max(
+        session_gap, min(720, _int_or("time_reunion_gap_hours", settings.time_reunion_gap_hours))
     )
     updates["default_timezone_offset"] = tz
     # 弃用字段同步写入，保障旧版本回滚不丢时区配置
@@ -292,6 +302,8 @@ async def features_save(
     return _render(request, "features.html", {
         "toggles": toggles,
         "gap_minutes": settings.message_time_gap_minutes,
+        "time_session_gap_hours": settings.time_session_gap_hours,
+        "time_reunion_gap_hours": settings.time_reunion_gap_hours,
         "tz_offset": settings.default_timezone_offset,
         "sticker_casual_probability": settings.sticker_casual_probability,
         "sticker_reply_probability": settings.sticker_reply_probability,

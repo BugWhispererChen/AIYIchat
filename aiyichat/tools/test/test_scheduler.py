@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import mongomock_motor
+import pytest
 
 from app.config import settings
 from app.db import mongo
@@ -54,6 +55,30 @@ class TestSchedulerHelpers:
     def test_ensure_aware(self) -> None:
         naive = datetime(2026, 1, 1)
         assert ProactiveScheduler._ensure_aware(naive).tzinfo is not None
+
+    @pytest.mark.parametrize("hour,expected", [
+        (0, "凌晨"), (4, "凌晨"), (5, "清晨"), (8, "清晨"),
+        (9, "上午"), (11, "上午"), (12, "中午"), (13, "中午"),
+        (14, "下午"), (17, "下午"), (18, "晚上"), (21, "晚上"),
+        (22, "深夜"), (23, "深夜"),
+    ])
+    @pytest.mark.parametrize("minute", [0, 59])
+    def test_time_hint_boundaries(
+        self, hour: int, minute: int, expected: str
+    ) -> None:
+        local = datetime(2026, 9, 2, hour, minute, tzinfo=timezone(timedelta(hours=8)))
+        hints = {
+            "凌晨": "可以温柔提醒对方早点休息",
+            "清晨": "可以问候早安、关心对方是否睡得好、今天有什么计划",
+            "上午": "可以关心对方上午的工作/学习状态",
+            "中午": "可以关心对方吃午饭了吗、午休情况",
+            "下午": "可以关心对方下午的工作进展、是否累了需要休息",
+            "晚上": "可以关心对方晚饭、今天的收获、放松休息",
+            "深夜": "可以温柔提醒对方早点休息",
+        }
+        with patch("app.proactive.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = local
+            assert ProactiveScheduler()._time_hint() == (local, expected, hints[expected])
 
     def test_quiet_hours(self) -> None:
         sched = ProactiveScheduler()
@@ -292,14 +317,33 @@ class TestProcessService:
 class TestGenerateContent:
     """内容生成。"""
 
-    def test_generate_content(self) -> None:
-        async def body():
+    @pytest.mark.parametrize("kind", ["care", "news", "trivia", "event"])
+    @pytest.mark.parametrize("raw_response,expected", [
+        (" [10-16 02:00] 想你了，最近怎么样？ ", "想你了，最近怎么样？"),
+        (
+            "\t[2026-10-16 02:00] 最近怎么样？\n[10-16 02:01] 记得休息。",
+            "最近怎么样？\n记得休息。",
+        ),
+        ("[10-16 02:00] " + "好" * 110, "好" * 100),
+        ("今天 [10-16 02:00] 记录的提醒", "今天 [10-16 02:00] 记录的提醒"),
+        ("  晚安  ", "晚安"),
+        ("[10-16 02:00]", ""),
+    ])
+    def test_generate_content(
+        self, kind: str, raw_response: str, expected: str
+    ) -> None:
+        async def body() -> None:
             _fresh_db()
             try:
                 from app.db.repositories.bot_config_repo import BotConfigRepository
+                from app.db.repositories.conversation_repo import ConversationRepository
                 from app.db.repositories.profile_repo import ProfileRepository
+                from app.db.repositories.service_memory_repo import ServiceMemoryRepository
+                from app.llm.prompt_assembler import PromptAssembler
                 from app.models.bot_config import BotConfigCreate
+                from app.models.message import MessageInDB
                 from app.models.profile import PromptProfileCreate
+                from app.models.service_memory import MemoryFact
 
                 bot = await BotConfigRepository().create(
                     BotConfigCreate(account_id="acc-1", name="Bot")
@@ -307,6 +351,17 @@ class TestGenerateContent:
                 await ProfileRepository().create(
                     PromptProfileCreate(slug="companion", name="小伴")
                 )
+                conversation = await ConversationRepository().create(
+                    "u-1", "companion", "svc-1"
+                )
+                history = [MessageInDB(
+                    _id="msg-1", conversation_id=conversation.id, role="user",
+                    content="上次和朋友完成了登山",
+                    created_at=datetime.now(timezone.utc) - timedelta(hours=5),
+                )]
+                memory_repo = ServiceMemoryRepository()
+                await memory_repo.upsert_topic("svc-1", "旧话题：爬山路线")
+                await memory_repo.add_facts("svc-1", [MemoryFact(content="喜欢登山")])
 
                 sched = ProactiveScheduler()
                 svc = SimpleNamespace(
@@ -317,15 +372,59 @@ class TestGenerateContent:
                     id="u-1", identity_description="", platform="qq",
                 )
                 fake_provider = SimpleNamespace(
-                    complete=AsyncMock(return_value="想你了，最近怎么样？")
+                    complete=AsyncMock(side_effect=[
+                        raw_response, "[2026-10-16 02:01] 分享个有趣的小发现。",
+                    ])
                 )
                 stage = QQ_STAGES[0]
-                with patch(
-                    "app.llm.provider_factory.get_llm_provider",
-                    return_value=fake_provider,
+                with (
+                    patch("app.llm.provider_factory.get_llm_provider",
+                          return_value=fake_provider),
+                    patch("app.conversation.context_manager.ContextManager.get_context",
+                          new=AsyncMock(return_value=(history, None))),
+                    patch("app.llm.prompt_assembler.PromptAssembler.assemble",
+                          wraps=PromptAssembler().assemble) as assemble,
+                    patch.object(settings, "message_time_enabled", True),
                 ):
-                    content, ref = await sched._generate_content(user, svc, stage)
-                assert "想你了" in content
+                    if kind == "care":
+                        content, ref = await sched._generate_content(user, svc, stage)
+                        assert ref == ""
+                    elif kind == "event":
+                        content = await sched._generate_event_content(user, svc, "面试结果")
+                    else:
+                        content = await sched._generate_share_content(user, svc, kind)
+
+                fallback = kind == "news" and not expected
+                assert content == ("分享个有趣的小发现。" if fallback else expected)
+                assert fake_provider.complete.await_count == (2 if fallback else 1)
+                assert assemble.call_count == fake_provider.complete.await_count
+                for call in assemble.call_args_list:
+                    assert call.kwargs["gap_mode"] == "proactive"
+                    assert call.kwargs["current_topic"] == ""
+                    assert call.kwargs.get("topic_context", "") == ""
+                    assert call.kwargs["history"] == history
+                    if kind != "event":
+                        assert call.kwargs["memory_facts"] == ["喜欢登山"]
+                for call in fake_provider.complete.await_args_list:
+                    prompt = "\n".join(message["content"] for message in call.args[0])
+                    assert "【主动开口】" in prompt
+                    assert "正在聊" not in prompt
+                    assert "→当前" not in prompt and "→ 当前" not in prompt
+                    assert "旧话题：爬山路线" not in prompt
+                    assert "上次和朋友完成了登山" in prompt
+                    if kind != "event":
+                        assert "喜欢登山" in prompt
+                    else:
+                        assert "面试结果" in prompt
+                if kind in ("news", "trivia"):
+                    calls = fake_provider.complete.await_args_list
+                    assert calls[0].kwargs["web_search"] == (kind == "news")
+                    if fallback:
+                        assert calls[1].kwargs["web_search"] is False
+                memory = await memory_repo.find_by_service("svc-1")
+                assert memory is not None
+                assert memory.current_topic == "旧话题：爬山路线"
+                assert [fact.content for fact in memory.facts] == ["喜欢登山"]
 
                 # bot 不存在 → 空
                 svc2 = SimpleNamespace(

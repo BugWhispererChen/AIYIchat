@@ -6,16 +6,24 @@
 - Token 计费：结算金额=API usage 总量、预检仅查不扣、usage 缺失跳过结算
 
 安全检查器/情绪检测/回复清洗为纯规则实现，走真实代码；
-仓储层、上下文管理、prompt 组装、LLM Provider、后台任务均为 mock。
+默认隔离仓储层、上下文管理、prompt 组装、LLM Provider 和后台任务，
+跨轮记忆等回归通过 mongomock 使用真实仓库。
 """
 
 import asyncio
+from collections.abc import AsyncIterator, Coroutine
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.config import settings
 from app.llm.base import LLMUsage
+from app.models.message import MessageInDB
+from app.models.service_memory import MemoryEntity, PendingEvent, ServiceMemoryInDB
 
 
 def _make_bot(**overrides):
@@ -118,12 +126,17 @@ def _build_engine(
 
     engine.memory_repo = MagicMock()
     engine.memory_repo.find_by_service = AsyncMock(return_value=None)
+    engine.memory_repo.clear_current_topic = AsyncMock()
 
     engine.safety_repo = MagicMock()
     engine.safety_repo.create = AsyncMock()
 
+    engine.proactive_repo = MagicMock()
+    engine.proactive_repo.get_latest_sent = AsyncMock(return_value=None)
+
     engine.context_manager = MagicMock()
     engine.context_manager.get_context = AsyncMock(return_value=([], ""))
+    engine.context_manager.schedule_summary_if_needed = AsyncMock()
 
     engine.prompt_assembler = MagicMock()
     engine.prompt_assembler.assemble = MagicMock(
@@ -135,19 +148,42 @@ def _build_engine(
 
     engine.focus_tracker = MagicMock()
     engine.focus_tracker.should_extract = MagicMock(return_value=False)
+    engine.focus_tracker.extract_and_save = AsyncMock()
 
     return engine
 
 
+def _discard_background(coro: Coroutine[Any, Any, Any]) -> None:
+    """关闭被隔离的后台协程，避免访问外部依赖及未等待告警。"""
+    coro.close()
+
+
 def _run(
-    engine,
-    text,
-    reply="你好呀，今天过得怎么样？",
-    usage=None,
-    llm_error=None,
-    replies=None,
-):
-    """在收窄开关 + 隔离 LLM/后台任务的环境下执行一轮 handle_message。
+    engine: Any,
+    text: str,
+    reply: str = "你好呀，今天过得怎么样？",
+    usage: LLMUsage | None = None,
+    llm_error: Exception | None = None,
+    replies: list[tuple[str, LLMUsage]] | None = None,
+    stream: bool = False,
+) -> tuple[Any, MagicMock]:
+    """同步执行一轮入口，复用异步测试驱动的依赖隔离。"""
+    return asyncio.run(_run_async(
+        engine, text, reply=reply, usage=usage, llm_error=llm_error,
+        replies=replies, stream=stream,
+    ))
+
+
+async def _run_async(
+    engine: Any,
+    text: str,
+    reply: str = "你好呀，今天过得怎么样？",
+    usage: LLMUsage | None = None,
+    llm_error: Exception | None = None,
+    replies: list[tuple[str, LLMUsage]] | None = None,
+    stream: bool = False,
+) -> tuple[Any, MagicMock]:
+    """在同一事件循环内执行入口，兼容 mongomock 测试体。
 
     replies 传入 [(text, usage), ...] 时按序多次返回（供复读重试用例）。
     """
@@ -162,23 +198,464 @@ def _run(
             return_value=(reply, usage if usage is not None else LLMUsage(10, 20))
         )
 
+    async def stream_reply(**kwargs: Any) -> AsyncIterator[str]:
+        """仅替换 LLM 网络流，入口编排与回复收尾仍执行真实逻辑。"""
+        if llm_error is not None:
+            raise llm_error
+        stream_usage = usage if usage is not None else LLMUsage(10, 20)
+        kwargs["usage_sink"].update(
+            prompt_tokens=stream_usage.prompt_tokens,
+            completion_tokens=stream_usage.completion_tokens,
+        )
+        yield reply[:2]
+        yield reply[2:]
+
+    provider.stream_complete = MagicMock(side_effect=stream_reply)
+
+    async def collect_stream() -> list[str]:
+        """完整消费流，确保生成器末尾的持久化逻辑得到执行。"""
+        return [chunk async for chunk in engine.handle_message_stream(
+            platform="qq", platform_id="openid-1", text=text,
+        )]
+
     with ExitStack() as stack:
         stack.enter_context(
             patch("app.conversation.engine.get_llm_provider", return_value=provider)
         )
-        stack.enter_context(patch("app.conversation.engine.spawn"))
+        stack.enter_context(patch(
+            "app.conversation.engine.spawn_with_limit", side_effect=_discard_background,
+        ))
         for flag in (
             "function_calling_enabled",
             "emotion_llm_fallback_enabled",
             "support_strategy_enabled",
             "consistency_check_enabled",
             "character_mood_enabled",
+            "sticker_enabled",
+            "embedding_enabled",
         ):
             stack.enter_context(patch.object(settings, flag, False))
-        result = asyncio.run(
-            engine.handle_message(platform="qq", platform_id="openid-1", text=text)
+        result = await collect_stream() if stream else await engine.handle_message(
+            platform="qq", platform_id="openid-1", text=text,
         )
     return result, provider
+
+
+class TestReceivedAt:
+    """普通与流式入口均应保存入口接收时间，而非依赖返回或落库时间。"""
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
+    @pytest.mark.parametrize("safety", [False, True], ids=["success", "safety"])
+    def test_received_time_survives_io_delay(self, stream: bool, safety: bool) -> None:
+        """首个仓储调用后推进时钟，正常收尾和安全分支仍透传旧时间。"""
+        engine = _build_engine()
+        received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        text = "我不想活了" if safety else "今天想出门走走"
+        with patch("app.conversation.engine.datetime", wraps=datetime) as clock:
+            clock.now.return_value = received_at
+
+            async def find_bot(bot_id: str) -> SimpleNamespace:
+                """用依赖延迟区分入口采时和后续采时。"""
+                assert bot_id == "bot-1"
+                clock.now.return_value = received_at + timedelta(minutes=2)
+                return _make_bot()
+
+            engine.bot_repo.find_by_id = AsyncMock(side_effect=find_bot)
+            result, provider = _run(engine, text, stream=stream)
+
+        engine.turn_recorder.record_user_message.assert_awaited_once()
+        kwargs = engine.turn_recorder.record_user_message.await_args.kwargs
+        assert kwargs["created_at"] == received_at
+        assert kwargs["text"] == text
+        engine.turn_recorder.record_assistant_message.assert_awaited_once()
+        assistant_kwargs = engine.turn_recorder.record_assistant_message.await_args.kwargs
+        assert "created_at" not in assistant_kwargs
+        if safety:
+            assert "心理援助" in ("".join(result) if stream else result.text)
+            assert assistant_kwargs["llm_model"] == "safety_guard"
+            provider.complete_with_usage.assert_not_awaited()
+            provider.stream_complete.assert_not_called()
+        elif stream:
+            provider.stream_complete.assert_called_once()
+        else:
+            provider.complete_with_usage.assert_awaited_once()
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
+    def test_focus_receives_persisted_current_turn(self, stream: bool) -> None:
+        """焦点输入追加本轮落库对象，保留原始时间且不修改旧历史列表。"""
+        engine = _build_engine()
+        received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        old = MessageInDB(
+            _id="old", conversation_id="conv-1", role="user", content="旧话题",
+            created_at=received_at - timedelta(minutes=5),
+        )
+        history = [old]
+        user_msg = MessageInDB(
+            _id="saved-user", conversation_id="conv-1", role="user", content="当前输入",
+            created_at=received_at,
+        )
+        assistant_msg = MessageInDB(
+            _id="saved-assistant", conversation_id="conv-1", role="assistant",
+            content="当前回复", created_at=received_at + timedelta(seconds=3),
+        )
+        engine.context_manager.get_context.return_value = (history, "")
+        engine.turn_recorder.record_user_message.return_value = user_msg
+        engine.turn_recorder.record_assistant_message.return_value = assistant_msg
+        engine.focus_tracker.should_extract.return_value = True
+        with patch("app.conversation.engine.datetime", wraps=datetime) as clock:
+            clock.now.return_value = received_at
+            _run(engine, "当前输入", reply="当前回复", stream=stream)
+
+        # 后台调度被隔离，但任务创建时的入参必须是真实落库返回值。
+        engine.focus_tracker.extract_and_save.assert_called_once()
+        args = engine.focus_tracker.extract_and_save.call_args.args
+        assert args[0] == "svc-1"
+        extracted = args[1]
+        assert len(extracted) == 3
+        assert extracted[0] is old
+        assert extracted[1] is user_msg
+        assert extracted[2] is assistant_msg
+        assert extracted[1].created_at == received_at
+        assert extracted[2].created_at > received_at
+        assert history == [old] and extracted is not history
+
+
+class TestGapMode:
+    """间隔分类使用运行时阈值，含临界秒及时间总开关。"""
+
+    @pytest.mark.parametrize(("seconds", "expected"), [
+        (-1, "none"), (0, "none"), (8 * 3600 - 1, "none"),
+        (8 * 3600, "session"), (8 * 3600 + 1, "session"),
+        (72 * 3600 - 1, "session"), (72 * 3600, "reunion"),
+        (72 * 3600 + 1, "reunion"),
+    ])
+    def test_default_boundaries(self, seconds: float, expected: str) -> None:
+        """软档八小时、强档七十二小时均包含等号。"""
+        from app.conversation.engine import _gap_mode
+
+        with patch.multiple(
+            settings, message_time_enabled=True,
+            time_session_gap_hours=8, time_reunion_gap_hours=72,
+        ):
+            assert _gap_mode(seconds) == expected
+
+    @pytest.mark.parametrize(("hours", "expected"), [
+        (1, "none"), (2, "session"), (4, "session"), (5, "reunion"),
+    ])
+    def test_runtime_thresholds(self, hours: int, expected: str) -> None:
+        """自定义阈值热更新生效，不能硬编码默认值。"""
+        from app.conversation.engine import _gap_mode
+
+        with patch.multiple(
+            settings, message_time_enabled=True,
+            time_session_gap_hours=2, time_reunion_gap_hours=5,
+        ):
+            assert _gap_mode(hours * 3600) == expected
+
+    def test_master_switch_overrides_all_gaps(self) -> None:
+        """总开关关闭后，无论间隔多长都不分档。"""
+        from app.conversation.engine import _gap_mode
+
+        with patch.object(settings, "message_time_enabled", False):
+            for hours in (0, 8, 72, 1000):
+                assert _gap_mode(hours * 3600) == "none"
+
+
+class TestGapTopicIntegration:
+    """两入口在真实记忆检索后重置当前话题，长间隔不再触发停滞引导。"""
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
+    @pytest.mark.parametrize(("hours", "enabled", "mode"), [
+        (1, True, "none"), (8, True, "session"), (72, True, "reunion"),
+        (72, False, "none"),
+    ])
+    def test_topic_reset_and_stall_gate(
+        self, stream: bool, hours: int, enabled: bool, mode: str,
+    ) -> None:
+        """近期 assistant 不重置用户空闲时间，短间隔仍保留既有停滞行为。"""
+        engine = _build_engine()
+        received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        last_user_at = received_at - timedelta(hours=hours)
+        history = [MessageInDB(
+            _id=f"old-user-{i}", conversation_id="conv-1", role="user",
+            content="一直在讨论考试", created_at=last_user_at - timedelta(minutes=3 - i),
+        ) for i in range(4)]
+        history.append(MessageInDB(
+            _id="recent-assistant", conversation_id="conv-1", role="assistant",
+            content="昨天的回复", created_at=received_at - timedelta(seconds=1),
+        ))
+        memory = ServiceMemoryInDB(
+            _id="memory-1", service_id="svc-1", current_topic="考试",
+            topic_history=["电影", "旅行"],
+            entities=[MemoryEntity(
+                name="小红", relation_to_user="朋友", attributes={"爱好": "摄影"},
+            )],
+            pending_events=[PendingEvent(
+                content="参加面试", due_at=received_at + timedelta(days=1),
+            )],
+        )
+        engine.context_manager.get_context.return_value = (history, "")
+        engine.memory_repo.find_by_service.return_value = memory
+        engine.proactive_repo.get_latest_sent.return_value = SimpleNamespace(
+            sent_at=received_at - timedelta(minutes=10), content="我来问候你",
+        )
+        with (
+            patch("app.conversation.engine.datetime", wraps=datetime) as clock,
+            patch.multiple(
+                settings, message_time_enabled=enabled,
+                time_session_gap_hours=8, time_reunion_gap_hours=72,
+                topic_stall_detection_enabled=True, topic_stall_threshold=4,
+                topic_stall_similarity=0.6,
+            ),
+            patch.object(
+                engine.topic_manager, "generate_topic_context",
+                wraps=engine.topic_manager.generate_topic_context,
+            ) as generate_topic,
+            patch.object(
+                engine.topic_manager, "detect_topic_stall",
+                wraps=engine.topic_manager.detect_topic_stall,
+            ) as detect_stall,
+        ):
+            clock.now.return_value = received_at
+            _run(engine, "今天想聊聊小红", stream=stream)
+
+        engine.memory_repo.find_by_service.assert_awaited_once_with("svc-1")
+        kwargs = engine.prompt_assembler.assemble.call_args.kwargs
+        assert kwargs["gap_mode"] == mode
+        assert "电影→旅行" in kwargs["topic_context"]
+        # 长间隔只重置话题前缀，后续实体和待跟进事件必须继续注入。
+        assert "【提到的人物/事物】\n小红（用户的朋友）；爱好=摄影" in kwargs["topic_context"]
+        assert "【待跟进的事】" in kwargs["topic_context"]
+        assert "参加面试" in kwargs["topic_context"]
+        if mode == "none":
+            engine.memory_repo.clear_current_topic.assert_not_awaited()
+            assert kwargs["current_topic"] == "考试"
+            assert "当前：考试" in kwargs["topic_context"]
+            assert "话题引导" in kwargs["topic_stall_hint"]
+            detect_stall.assert_called_once()
+            generate_topic.assert_called_once_with(memory.topic_history, "考试")
+            engine.proactive_repo.get_latest_sent.assert_not_awaited()
+            assert kwargs["last_proactive_at"] is None
+            assert kwargs["last_proactive_text"] == ""
+        else:
+            engine.memory_repo.clear_current_topic.assert_awaited_once_with("svc-1", "考试")
+            assert kwargs["current_topic"] == ""
+            assert "当前：" not in kwargs["topic_context"]
+            assert kwargs["topic_stall_hint"] == ""
+            detect_stall.assert_not_called()
+            assert generate_topic.call_count == 3
+            generate_topic.assert_called_with(memory.topic_history, "")
+            assert kwargs["last_proactive_at"] == received_at - timedelta(minutes=10)
+            assert kwargs["last_proactive_text"] == "我来问候你"
+            engine.proactive_repo.get_latest_sent.assert_awaited_once_with(
+                user_id="user-1", bot_id="bot-1",
+            )
+        assert memory.current_topic == "考试"  # 清理持久化焦点，不篡改已返回的记忆对象。
+
+    @pytest.mark.parametrize("current_topic", ["", "考试"], ids=["empty-topic", "topic"])
+    @pytest.mark.parametrize("topic_history", [[], ["电影", "旅行"]], ids=["empty-history", "history"])
+    def test_reset_only_replaces_topic_prefix(
+        self, current_topic: str, topic_history: list[str],
+    ) -> None:
+        """无话题前缀时仍保留上下文，尾部出现相同前缀时也不能被全局替换。"""
+        engine = _build_engine()
+        old_prefix = engine.topic_manager.generate_topic_context(topic_history, current_topic)
+        new_prefix = engine.topic_manager.generate_topic_context(topic_history, "")
+        suffix = (
+            "【提到的人物/事物】\n小红（用户的朋友）；备注="
+            f"{old_prefix or '记录原文'}\n\n【待跟进的事】\n- 参加面试"
+        )
+        context = f"{old_prefix}\n\n{suffix}" if old_prefix else suffix
+        result = asyncio.run(engine._reset_topic_after_gap(
+            "svc-1", current_topic, topic_history, context,
+        ))
+        assert result == (f"{new_prefix}\n\n{suffix}" if old_prefix else suffix)
+        if current_topic:
+            engine.memory_repo.clear_current_topic.assert_awaited_once_with("svc-1", current_topic)
+        else:
+            engine.memory_repo.clear_current_topic.assert_not_awaited()
+            assert result == context
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
+    @pytest.mark.parametrize(("hours", "mode"), [(8, "session"), (72, "reunion")])
+    def test_cleared_topic_does_not_return_without_focus_extraction(
+        self, stream: bool, hours: int, mode: str,
+    ) -> None:
+        """真实仓库串联两轮：首轮清空焦点，下一轮无间隔也不会重新读到旧话题。"""
+        from app.conversation.turn_recorder import TurnRecorder
+        from app.db.repositories.service_memory_repo import ServiceMemoryRepository
+        from tools.test.db_test_utils import run_with_db
+
+        async def body() -> None:
+            """隔离外部依赖和后台任务，记忆读写与双向消息落库使用 mongomock。"""
+            engine = _build_engine(service=_make_service(share_group_id="grp-1"))
+            engine.conversation_repo.find_or_create_by_key = AsyncMock(
+                return_value=_make_conversation(),
+            )
+            repo = ServiceMemoryRepository()
+            engine.memory_repo = repo
+            await repo.upsert_topic("grp-1", "考试")
+            await repo.append_topic_history("grp-1", "电影")
+            before = await repo.find_by_service("grp-1")
+            assert before is not None and before.current_topic == "考试"
+
+            received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+            recorder = TurnRecorder()
+            engine.turn_recorder.record_user_message = AsyncMock(wraps=recorder.record_user_message)
+            engine.turn_recorder.record_assistant_message = AsyncMock(
+                wraps=recorder.record_assistant_message,
+            )
+            await recorder.message_repo.create(
+                "conv-1", "user", "之前一直在讨论考试",
+                created_at=received_at - timedelta(hours=hours),
+            )
+
+            async def get_context(
+                conversation_id: str, summary: str, emotion_intensity: float,
+            ) -> tuple[list[MessageInDB], str]:
+                """每轮重读真实消息，第二轮间隔必须来自首轮已保存的用户消息。"""
+                return await recorder.message_repo.get_recent(conversation_id), summary
+
+            engine.context_manager.get_context.side_effect = get_context
+            with (
+                patch("app.conversation.engine.datetime", wraps=datetime) as clock,
+                patch("app.db.repositories.message_repo.datetime", wraps=datetime) as message_clock,
+                patch.object(repo, "clear_current_topic", wraps=repo.clear_current_topic) as clear_topic,
+                patch.multiple(
+                    settings, message_time_enabled=True,
+                    time_session_gap_hours=8, time_reunion_gap_hours=72,
+                ),
+            ):
+                for index, (text, reply, expected_mode) in enumerate([
+                    ("今天想去公园", "去公园散步很放松。", mode),
+                    ("打算在那儿待一会儿", "也可以在树荫下坐坐。", "none"),
+                ]):
+                    clock.now.return_value = received_at + timedelta(minutes=index)
+                    message_clock.now.return_value = clock.now.return_value + timedelta(seconds=3)
+                    result, provider = await _run_async(engine, text, reply=reply, stream=stream)
+                    assert ("".join(result) if stream else result.text) == reply
+                    if stream:
+                        provider.stream_complete.assert_called_once()
+                    else:
+                        provider.complete_with_usage.assert_awaited_once()
+                    kwargs = engine.prompt_assembler.assemble.call_args.kwargs
+                    assert kwargs["gap_mode"] == expected_mode
+                    assert kwargs["current_topic"] == ""
+                    assert kwargs["topic_context"] == "【对话话题脉络】之前聊过：电影"
+                    stored = await repo.find_by_service("grp-1")
+                    assert stored is not None
+                    assert stored.model_dump() == before.model_copy(
+                        update={"current_topic": ""},
+                    ).model_dump()
+
+                clear_topic.assert_awaited_once_with("grp-1", "考试")
+            assert engine.focus_tracker.should_extract.call_count == 2
+            engine.focus_tracker.extract_and_save.assert_not_called()
+            assert await recorder.message_repo.count_by_conversation("conv-1") == 5
+            saved_users = [
+                message for message in await recorder.message_repo.get_recent("conv-1")
+                if message.role == "user"
+            ]
+            assert saved_users[1].created_at.replace(tzinfo=timezone.utc) == received_at
+            assert saved_users[2].created_at.replace(tzinfo=timezone.utc) == received_at + timedelta(minutes=1)
+
+        run_with_db(body)
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
+    @pytest.mark.parametrize("history_kind", ["empty", "assistant", "untimed-user"])
+    def test_missing_user_time_does_not_invent_gap(
+        self, stream: bool, history_kind: str,
+    ) -> None:
+        """无真实用户时间时不能凭 assistant 时间或当前时间推断久别。"""
+        engine = _build_engine()
+        history: list[Any] = []
+        if history_kind == "assistant":
+            history.append(MessageInDB(
+                _id="old-assistant", conversation_id="conv-1", role="assistant",
+                content="旧回复", created_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            ))
+        elif history_kind == "untimed-user":
+            history.append(SimpleNamespace(role="user", content="旧数据", emotion_tag=None))
+        engine.context_manager.get_context.return_value = (history, "")
+        with patch.object(settings, "message_time_enabled", True):
+            _run(engine, "重新聊聊", stream=stream)
+        assert engine.prompt_assembler.assemble.call_args.kwargs["gap_mode"] == "none"
+        engine.proactive_repo.get_latest_sent.assert_not_awaited()
+
+
+class TestRecentProactiveContext:
+    """主动消息仅在最后用户消息之后、当前接收时间之前参与长间隔上下文。"""
+
+    @pytest.mark.parametrize("mode", ["session", "reunion"])
+    @pytest.mark.parametrize("naive", [False, True], ids=["aware", "mongo-naive"])
+    @pytest.mark.parametrize(("offset", "included"), [
+        (-1, False), (0, False), (1, True), (3600, True), (3601, False), (None, False),
+    ])
+    def test_time_window_boundaries(
+        self, mode: str, naive: bool, offset: int | None, included: bool,
+    ) -> None:
+        """下界严格排除，上界包含；MongoDB 无时区发送时间按 UTC 处理。"""
+        engine = _build_engine()
+        last_user_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        received_at = last_user_at + timedelta(hours=1)
+        sent_at = last_user_at + timedelta(seconds=offset) if offset is not None else None
+        stored_at = sent_at.replace(tzinfo=None) if sent_at and naive else sent_at
+        engine.proactive_repo.get_latest_sent.return_value = SimpleNamespace(
+            sent_at=stored_at, content="[10-15 08:30] 我来问候你",
+        )
+        result = asyncio.run(engine._recent_proactive_context(
+            "user-1", last_user_at, received_at, mode,
+        ))
+        assert result == ((sent_at, "我来问候你") if included else (None, ""))
+        engine.proactive_repo.get_latest_sent.assert_awaited_once_with(
+            user_id="user-1", bot_id="bot-1",
+        )
+
+    @pytest.mark.parametrize(("mode", "has_user_time"), [
+        ("none", True), ("session", False), ("reunion", False),
+    ])
+    def test_unneeded_query_is_skipped(self, mode: str, has_user_time: bool) -> None:
+        """无分档或无用户时间不查主动记录，避免多余查询与错误注入。"""
+        engine = _build_engine()
+        now = datetime(2026, 10, 15, tzinfo=timezone.utc)
+        result = asyncio.run(engine._recent_proactive_context(
+            "user-1", now - timedelta(hours=8) if has_user_time else None, now, mode,
+        ))
+        assert result == (None, "")
+        engine.proactive_repo.get_latest_sent.assert_not_awaited()
+
+    def test_only_current_user_and_bot_sent_record_is_used(self) -> None:
+        """用真实主动消息仓库验证用户、Bot、发送状态的隔离。"""
+        from app.conversation.engine import ConversationEngine
+        from app.models.proactive_record import ProactiveRecord
+        from tools.test.db_test_utils import run_with_db
+
+        async def body() -> None:
+            """其他 Bot、其他用户或失败记录即使更新也不能覆盖有效问候。"""
+            engine = ConversationEngine("bot-1")
+            received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+            last_user_at = received_at - timedelta(hours=8)
+            assert await engine._recent_proactive_context(
+                "user-1", last_user_at, received_at, "session",
+            ) == (None, "")
+            records: list[tuple[str, str, Literal["sent", "failed"], str]] = [
+                ("user-1", "bot-1", "sent", "本轮有效问候"),
+                ("user-1", "bot-2", "sent", "其他机器人"),
+                ("user-2", "bot-1", "sent", "其他用户"),
+                ("user-1", "bot-1", "failed", "失败不能注入"),
+            ]
+            for index, (user_id, bot_id, status, content) in enumerate(records):
+                sent_at = last_user_at + timedelta(minutes=index + 1)
+                await engine.proactive_repo.create(ProactiveRecord(
+                    user_id=user_id, platform_user_id="openid-1", bot_id=bot_id,
+                    stage=1, status=status, content=content,
+                    created_at=sent_at, sent_at=sent_at,
+                ))
+            assert await engine._recent_proactive_context(
+                "user-1", last_user_at, received_at, "session",
+            ) == (last_user_at + timedelta(minutes=1), "本轮有效问候")
+
+        run_with_db(body)
 
 
 class TestHappyPath:

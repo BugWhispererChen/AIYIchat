@@ -128,6 +128,8 @@ class _RuntimeSettings:
     # 对话时间感知（防止 LLM 把旧消息当作刚才：注入当前时间 + 间隔处打时间标签）
     message_time_enabled: bool = True  # 时间感知总开关
     message_time_gap_minutes: int = 30  # 两条消息间隔超过该阈值才打标签（分钟，0=每条都打）
+    time_session_gap_hours: int = 8  # 会话间隔软档阈值（小时）
+    time_reunion_gap_hours: int = 72  # 久别重逢强档阈值（小时）
     # 单一时区源：对话时间感知、主动关怀免打扰、摘要日期前缀统一取该 UTC 偏移（小时）
     default_timezone_offset: int = 8
     # 时间感知子开关（各自独立生效，互不依赖；总开关关闭时全部不注入）
@@ -355,6 +357,7 @@ class _RuntimeSettings:
             "reply_jitter_window", "reply_jitter_retry_max",
             "reply_jitter_retry_temp_step",
             "message_time_enabled", "message_time_gap_minutes", "chat_timezone_offset",
+            "time_session_gap_hours", "time_reunion_gap_hours",
             "default_timezone_offset", "time_anchor_enabled", "time_idle_hint_enabled",
             "time_day_separator_enabled", "message_time_tag_year_enabled",
             "memory_inject_time_suffix", "time_jionlp_enabled",
@@ -463,6 +466,8 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         reply_jitter_retry_temp_step: float = Field(default=0.15)
         message_time_enabled: bool = Field(default=True)
         message_time_gap_minutes: int = Field(default=30)
+        time_session_gap_hours: int = Field(default=8)
+        time_reunion_gap_hours: int = Field(default=72)
         default_timezone_offset: int = Field(default=8)
         time_anchor_enabled: bool = Field(default=True)
         time_idle_hint_enabled: bool = Field(default=True)

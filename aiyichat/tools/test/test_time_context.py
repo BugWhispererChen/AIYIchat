@@ -136,6 +136,23 @@ class TestBuildContext:
         assert ctx.idle_seconds is None
         assert ctx.idle_phrase == ""
 
+    @pytest.mark.parametrize("hour,expected", [
+        (0, "凌晨"), (4, "凌晨"), (5, "清晨"), (8, "清晨"),
+        (9, "上午"), (11, "上午"), (12, "中午"), (13, "中午"),
+        (14, "下午"), (17, "下午"), (18, "晚上"), (21, "晚上"),
+        (22, "深夜"), (23, "深夜"),
+    ])
+    @pytest.mark.parametrize("minute", [0, 59])
+    def test_day_phase_boundaries(
+        self, hour: int, minute: int, expected: str
+    ) -> None:
+        local = datetime(2026, 9, 2, hour, minute, tzinfo=timezone(timedelta(hours=8)))
+        with patch("app.conversation.time_context.datetime") as mock_dt:
+            mock_dt.now.return_value = local.astimezone(timezone.utc)
+            ctx = build_context()
+        assert ctx.day_phase == expected
+        assert f"【当前时刻】{hour:02d}:{minute:02d}（{expected}）" in render_moment(ctx)
+
     def test_idle_from_last_user_message(self) -> None:
         last = _NOW_UTC - timedelta(hours=9)
         ctx = build_context(last_user_msg_at=last)

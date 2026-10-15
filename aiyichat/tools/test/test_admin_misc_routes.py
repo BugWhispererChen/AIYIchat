@@ -9,8 +9,12 @@
 """
 
 import asyncio
+import os
+import re
+from unittest.mock import patch
 
 import mongomock_motor
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
@@ -264,6 +268,72 @@ class TestDashboardAndSettings:
         assert _to_beijing(None) is None
         bj = _to_beijing(datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc))
         assert bj is not None and bj.hour == 8
+
+
+class TestFeatureGapThresholds:
+    """通过真实后台 POST、仓库及热重载验证两档间隔参数。"""
+
+    @pytest.mark.parametrize(("form", "expected"), [
+        ({"time_session_gap_hours": "8", "time_reunion_gap_hours": "72"}, (8, 72)),
+        ({"time_session_gap_hours": "1", "time_reunion_gap_hours": "1"}, (1, 1)),
+        ({"time_session_gap_hours": "72", "time_reunion_gap_hours": "720"}, (72, 720)),
+        ({"time_session_gap_hours": "0", "time_reunion_gap_hours": "0"}, (1, 1)),
+        ({"time_session_gap_hours": "-5", "time_reunion_gap_hours": "-1"}, (1, 1)),
+        ({"time_session_gap_hours": "999", "time_reunion_gap_hours": "9999"}, (72, 720)),
+        ({"time_session_gap_hours": "24", "time_reunion_gap_hours": "8"}, (24, 24)),
+        ({"time_session_gap_hours": "100", "time_reunion_gap_hours": "24"}, (72, 72)),
+        ({"time_session_gap_hours": "bad", "time_reunion_gap_hours": "bad"}, (12, 96)),
+        ({"time_session_gap_hours": "", "time_reunion_gap_hours": ""}, (12, 96)),
+        ({"time_session_gap_hours": "3.5", "time_reunion_gap_hours": "NaN"}, (12, 96)),
+        ({}, (12, 96)),
+        ({"time_session_gap_hours": "24"}, (24, 96)),
+        ({"time_reunion_gap_hours": "3"}, (12, 12)),
+    ])
+    def test_post_clamps_persists_and_reloads(
+        self, form: dict[str, str], expected: tuple[int, int],
+    ) -> None:
+        """边界限幅、非法回退及强档不小于本次软档，同时验证页面回显。"""
+        from app.db.repositories.app_settings_repo import AppSettingsRepository
+
+        async def flow() -> None:
+            """完整调用 ASGI 路由，隔离热重载对全局配置及环境变量的影响。"""
+            app = await _setup_app()
+            try:
+                with patch.dict(vars(settings)), patch.dict(os.environ):
+                    settings.time_session_gap_hours = 12
+                    settings.time_reunion_gap_hours = 96
+                    async with _client(app) as client:
+                        before = await client.get("/admin/features")
+                        assert before.status_code == 200
+                        for field, value in (
+                            ("time_session_gap_hours", 12), ("time_reunion_gap_hours", 96),
+                        ):
+                            assert re.search(
+                                rf'<input\b[^>]*name="{field}"[^>]*value="{value}"',
+                                before.text,
+                            )
+                        response = await client.post("/admin/features", data=form)
+                        assert response.status_code == 200
+                        assert "已保存并生效" in response.text
+                        doc = await AppSettingsRepository().get_document()
+                        assert doc is not None
+                        assert (doc.time_session_gap_hours, doc.time_reunion_gap_hours) == expected
+                        assert (
+                            settings.time_session_gap_hours, settings.time_reunion_gap_hours,
+                        ) == expected
+                        after = await client.get("/admin/features")
+                        assert after.status_code == 200
+                        for field, value in zip(
+                            ("time_session_gap_hours", "time_reunion_gap_hours"), expected,
+                        ):
+                            for html in (response.text, after.text):
+                                assert re.search(
+                                    rf'<input\b[^>]*name="{field}"[^>]*value="{value}"', html,
+                                )
+            finally:
+                await _teardown_app(app)
+
+        _run(flow())
 
 
 class TestAdminConversations:

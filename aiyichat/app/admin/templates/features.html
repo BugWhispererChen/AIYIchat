@@ -66,12 +66,21 @@
                 <input type="number" name="gap_minutes" min="0" max="1440" value="{{ gap_minutes }}">
             </label>
             <label>
+                会话间隔软档阈值（小时，1~72）
+                <input type="number" name="time_session_gap_hours" min="1" max="72" value="{{ time_session_gap_hours }}">
+            </label>
+            <label>
+                久别重逢强档阈值（小时，软档值~720）
+                <input type="number" name="time_reunion_gap_hours" min="1" max="720" value="{{ time_reunion_gap_hours }}">
+            </label>
+            <label>
                 默认时区（UTC 偏移小时，北京=8）
                 <input type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
             </label>
         </div>
         <p class="muted" style="font-size:0.8rem;margin:0.5rem 0 0;">
             提示：两条消息间隔超过阈值、或自然日发生变化时，才会给历史消息打时间标签并插入跨天分隔符。
+            软档提示会话已间隔较久，强档提示久别重逢；强档不得低于软档，保存时自动校正。
         </p>
     </div>
 

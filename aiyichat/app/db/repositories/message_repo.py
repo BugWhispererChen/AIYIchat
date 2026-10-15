@@ -9,6 +9,11 @@ from app.models.message import MessageInDB
 # 北京时区偏移（用于按天分组时对齐用户本地日期）
 _BEIJING_OFFSET_HOURS = 8
 
+# 时间相同时以 _id 兜底排序：存量数据中同轮 user/assistant 的 created_at 可能精确相等，
+# ObjectId 按插入顺序单调递增，可保证用户消息排在回复之前
+_ORDER_ASC = [("created_at", 1), ("_id", 1)]
+_ORDER_DESC = [("created_at", -1), ("_id", -1)]
+
 
 class MessageRepository:
     """管理消息的增删改查。"""
@@ -28,8 +33,13 @@ class MessageRepository:
         latency_ms: Optional[int] = None,
         content_type: str = "text",
         media_url: Optional[str] = None,
+        created_at: Optional[datetime] = None,
     ) -> MessageInDB:
-        """创建新消息。"""
+        """创建新消息。
+
+        created_at 由调用方传入消息真实发生时刻（如用户消息的接收时间），
+        缺省取当前时间；updated_at 始终为写入时间。
+        """
         now = datetime.now(timezone.utc)
         doc = {
             "conversation_id": conversation_id,
@@ -41,7 +51,7 @@ class MessageRepository:
             "latency_ms": latency_ms,
             "content_type": content_type,
             "media_url": media_url,
-            "created_at": now,
+            "created_at": created_at or now,
             "updated_at": now,
         }
         result = await self._collection().insert_one(doc)
@@ -55,7 +65,7 @@ class MessageRepository:
         cursor = (
             self._collection()
             .find({"conversation_id": conversation_id})
-            .sort("created_at", -1)
+            .sort(_ORDER_DESC)
             .limit(limit)
         )
         messages = [MessageInDB.from_mongo(doc) async for doc in cursor]
@@ -69,7 +79,7 @@ class MessageRepository:
         cursor = (
             self._collection()
             .find({"conversation_id": conversation_id})
-            .sort("created_at", -1)
+            .sort(_ORDER_DESC)
             .skip(skip)
             .limit(limit)
         )
@@ -88,7 +98,7 @@ class MessageRepository:
         cursor = (
             self._collection()
             .find({"conversation_id": conversation_id})
-            .sort("created_at", 1)
+            .sort(_ORDER_ASC)
         )
         return [MessageInDB.from_mongo(doc) async for doc in cursor]
 

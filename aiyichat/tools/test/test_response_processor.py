@@ -6,6 +6,11 @@
 - [IMG:xxx] / [IMG:self:xxx] 标签被提取并从正文移除
 """
 
+import asyncio
+from collections.abc import AsyncIterator
+
+import pytest
+
 from app.conversation.response_processor import ResponseProcessor
 
 
@@ -64,3 +69,54 @@ class TestResponseProcessor:
         assert clean_text == "今天天气真好"
         assert images == []
         assert stickers == []
+
+    @pytest.mark.parametrize("text,expected", [
+        ("[09-13 02:24] 你好", "你好"),
+        (" \n[2026-09-13 02:24] 你好", "你好"),
+        ("你好\n[09-13 02:25] 晚安", "你好\n晚安"),
+        ("正文 [09-13 02:24] 是引用", "正文 [09-13 02:24] 是引用"),
+        ("[表情:晚安]", "[表情:晚安]"),
+        ("[IMG:海边日落]", "[IMG:海边日落]"),
+        ("[09-13 02:", "[09-13 02:"),
+        ("短句", "短句"),
+        ("", ""),
+    ])
+    def test_strip_time_tags(self, text: str, expected: str) -> None:
+        assert self.processor.strip_time_tags(text) == expected
+
+    def test_process_removes_time_before_other_tags(self) -> None:
+        clean, images, stickers = self.processor.process(
+            "[2026-09-13 02:24] 晚安[表情:晚安][IMG:月亮]"
+        )
+        assert clean == "晚安"
+        assert images == [("月亮", False)]
+        assert stickers == ["晚安"]
+
+    @pytest.mark.parametrize("text", [
+        "[09-13 02:24] 你好", "\n [2026-09-13 02:24] \n你好", "你好",
+        "第一行\n[09-13 02:25] 第二行", "[IMG:月亮]", "[表情:晚安]",
+        "[09-13 02:", "", " 正常缩进", "正文 [09-13 02:24] 引用",
+    ])
+    def test_stream_all_split_positions(self, text: str) -> None:
+        async def collect(parts: list[str]) -> str:
+            async def source() -> AsyncIterator[str]:
+                for part in parts:
+                    yield part
+            return "".join([part async for part in self.processor.strip_time_tags_stream(source())])
+
+        for split in range(len(text) + 1):
+            assert asyncio.run(collect([text[:split], text[split:]])) == self.processor.strip_time_tags(text)
+        assert asyncio.run(collect(list(text))) == self.processor.strip_time_tags(text)
+
+    def test_stream_flushes_short_reply_on_error(self) -> None:
+        async def collect() -> list[str]:
+            async def source() -> AsyncIterator[str]:
+                yield "[09-"
+                raise RuntimeError("模拟流中断")
+            output: list[str] = []
+            with pytest.raises(RuntimeError):
+                async for part in self.processor.strip_time_tags_stream(source()):
+                    output.append(part)
+            return output
+
+        assert asyncio.run(collect()) == ["[09-"]

@@ -172,10 +172,10 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     )
     await _safe_create_index(db.conversations, "service_id")
     await _safe_create_index(db.conversations, "created_at")
-    # 消息：按 conversation_id + created_at 索引，按 role 索引
+    # 消息：按 conversation_id + created_at + _id 索引（_id 为同时间戳的兜底排序键），按 role 索引
     await _safe_create_index(
         db.messages,
-        [("conversation_id", 1), ("created_at", 1)],
+        [("conversation_id", 1), ("created_at", 1), ("_id", 1)],
     )
     await _safe_create_index(db.messages, "role")
     # 用户与 Bot 绑定关系：一个用户+一个 Bot 仅一条绑定，声明为唯一索引

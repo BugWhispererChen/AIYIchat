@@ -5,6 +5,7 @@
 """
 
 import re
+from collections.abc import AsyncIterator
 
 # 常见表情描述 → Unicode emoji 映射表
 EMOTION_EMOJI_MAP: dict[str, str] = {
@@ -60,6 +61,58 @@ class ResponseProcessor:
         re.IGNORECASE,
     )
 
+    _TIME_TAG_RE = re.compile(r'^\s*\[(?:\d{4}-)?\d{2}-\d{2} \d{2}:\d{2}\]\s*', re.M)
+
+    @staticmethod
+    def strip_time_tags(text: str) -> str:
+        return ResponseProcessor._TIME_TAG_RE.sub('', text)
+
+    @staticmethod
+    async def strip_time_tags_stream(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
+        # 行首标签可能跨多个增量，确认不是时间标签前不能下发。
+        templates = ("[dd-dd dd:dd]", "[dddd-dd-dd dd:dd]")
+        pending = ""
+        at_line_start = True
+        skipping_tag_space = False
+        try:
+            async for chunk in chunks:
+                output: list[str] = []
+                for char in chunk:
+                    if not at_line_start:
+                        output.append(char)
+                        at_line_start = char == "\n"
+                        continue
+                    if skipping_tag_space and char.isspace():
+                        continue
+                    skipping_tag_space = False
+                    pending += char
+                    probe = pending.lstrip()
+                    if not probe:
+                        continue
+                    if ResponseProcessor._TIME_TAG_RE.fullmatch(pending):
+                        pending = ""
+                        skipping_tag_space = True
+                        continue
+                    if any(
+                        len(probe) < len(template) and all(
+                            actual.isdecimal() if expected == "d" else actual == expected
+                            for actual, expected in zip(probe, template)
+                        )
+                        for template in templates
+                    ):
+                        continue
+                    output.append(pending)
+                    pending = ""
+                    at_line_start = char == "\n"
+                if output:
+                    yield "".join(output)
+        except Exception:
+            if pending:
+                yield ResponseProcessor.strip_time_tags(pending)
+            raise
+        if pending:
+            yield ResponseProcessor.strip_time_tags(pending)
+
     def process(
         self, text: str
     ) -> tuple[str, list[tuple[str, bool]], list[str]]:
@@ -71,7 +124,7 @@ class ResponseProcessor:
             - image_specs: (图片描述, 是否本人出镜) 列表
             - sticker_specs: [表情:描述] 标签提取的语义描述列表
         """
-        cleaned = self._clean_action_tags(text)
+        cleaned = self._clean_action_tags(self.strip_time_tags(text))
         image_specs = self._extract_image_tags(cleaned)
         sticker_specs = self._extract_sticker_tags(cleaned)
         clean_text = self._IMG_TAG_RE.sub('', cleaned).strip()

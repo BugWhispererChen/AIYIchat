@@ -2,6 +2,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from app.config import settings
 from app.models.message import MessageInDB
@@ -16,6 +17,16 @@ _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "�
 
 # 单轮最多插入的跨天分隔符数量：超出后合并为一条“更早的对话已归档”，控制 token 增量
 _MAX_DAY_SEPARATORS = 3
+
+# 久别重逢（强档）时会话边界之前保留的旧消息条数：只留一点上下文，避免模型接着回答旧问题
+_REUNION_KEEP_BEFORE_BOUNDARY = 4
+
+# 主动消息原文注入的最大长度
+_PROACTIVE_NOTE_MAX_CHARS = 80
+
+# 对话间隔分档：none=连续对话；session=隔了一段（软档）；reunion=久别重逢（强档）；
+# proactive=角色主动开口（由主动关怀调度器指定，不按“对方重新开口”处理）
+GapMode = Literal["none", "session", "reunion", "proactive"]
 
 # 长期稳定类记忆类别：语义上不随时间失效，注入时标注“长期信息”而非“记录于 N 天前”
 _STABLE_FACT_CATEGORIES = frozenset({
@@ -37,16 +48,21 @@ def _local_tz() -> timezone:
 
 
 def _day_phase(hour: int) -> str:
-    """按小时返回中文时段词（与主动关怀调度器 _time_hint 的分段保持一致）。"""
-    if 5 <= hour < 9:
+    """按小时返回中文时段词（与主动关怀调度器 _time_hint、time_context 的分段保持一致）。
+
+    0~5 点单列为“凌晨”：与 22~24 点的“深夜”区分，提示模型此时日历已翻到新的一天。
+    """
+    if hour < 5:
+        return "凌晨"
+    if hour < 9:
         return "清晨"
-    if 9 <= hour < 12:
+    if hour < 12:
         return "上午"
-    if 12 <= hour < 14:
+    if hour < 14:
         return "中午"
-    if 14 <= hour < 18:
+    if hour < 18:
         return "下午"
-    if 18 <= hour < 22:
+    if hour < 22:
         return "晚上"
     return "深夜"
 
@@ -69,6 +85,17 @@ def _format_gap(seconds: float) -> str:
     return f"{days} 天" if rest_h == 0 else f"{days} 天 {rest_h} 小时"
 
 
+def _format_moment(local: datetime, now_local: datetime) -> str:
+    """把某个本地时刻渲染为带日期、星期的绝对时间，近三天附加“今天/昨天/前天”。
+
+    间隔只给“过去 18 天”时，模型会把“现在几点”误当成对方离开的时刻，
+    因此凡是提到过去的时间点都必须给出绝对端点。
+    """
+    base = f"{local.month}月{local.day}日（{_WEEKDAYS[local.weekday()]}）{local.strftime('%H:%M')}"
+    relative = {0: "今天", 1: "昨天", 2: "前天"}.get((now_local.date() - local.date()).days)
+    return f"{relative} {base}" if relative else base
+
+
 @dataclass
 class TimeAudit:
     """本轮时间上下文注入的审计信息（由 assemble 就地填充，调用方据此记 time_ctx 日志）。
@@ -80,8 +107,9 @@ class TimeAudit:
     now: str = ""         # 当前时刻（HH:mm 分钟粒度）
     tz: str = ""          # 生效时区（如 UTC+08:00）
     idle: str = ""        # 距上一条真实用户消息的间隔中文化表达，无历史时为空
-    tagged: int = 0       # 本轮打了时间标签的历史消息条数
+    tagged: int = 0       # 本轮打了时间标签的历史消息条数（仅用户消息）
     separators: int = 0   # 本轮插入的跨天分隔符条数
+    gap_mode: str = "none"  # 本轮间隔分档（none/session/reunion/proactive）
 
 
 def _last_user_message_at(history: list[MessageInDB]) -> datetime | None:
@@ -97,6 +125,30 @@ def _last_user_message_at(history: list[MessageInDB]) -> datetime | None:
         if created is None:
             continue
         return _ensure_aware(created)
+    return None
+
+
+def _find_session_boundary(
+    history: list[MessageInDB], now_utc: datetime, threshold_seconds: float
+) -> tuple[int, float] | None:
+    """按用户消息间隔找最近边界，避免回复耗时改变重逢分档。"""
+    last = _last_user_message_at(history)
+    if last is not None:
+        gap = (now_utc - last).total_seconds()
+        if gap >= threshold_seconds:
+            return len(history) - 1, gap
+    next_user_index: int | None = None
+    next_user_at: datetime | None = None
+    for i in range(len(history) - 1, -1, -1):
+        msg = history[i]
+        if msg.role != "user":
+            continue
+        at = _ensure_aware(msg.created_at)
+        if next_user_at is not None and next_user_index is not None:
+            gap = (next_user_at - at).total_seconds()
+            if gap >= threshold_seconds:
+                return next_user_index - 1, gap
+        next_user_index, next_user_at = i, at
     return None
 
 
@@ -193,6 +245,9 @@ class PromptAssembler:
         summary_end_at: datetime | None = None,  # 摘要覆盖的结束时间
         time_audit: TimeAudit | None = None,  # 传入时就地填充本轮时间注入审计信息
         topic_stall_hint: str = "",  # 话题停滞引导提示（命中停滞时注入换话题引导）
+        gap_mode: GapMode = "none",  # 本轮间隔分档（由引擎/调度器判定，默认保持原行为）
+        last_proactive_at: datetime | None = None,  # 对方上次发言后角色主动发出的消息时间
+        last_proactive_text: str = "",  # 该主动消息原文（主动消息不入 messages 集合）
     ) -> list[dict[str, str]]:
         """
         组装完整的Prompt消息数组。
@@ -212,6 +267,9 @@ class PromptAssembler:
             summary_start_at: 摘要覆盖的起始时间（存量会话为 None 时退回无范围标题）
             summary_end_at: 摘要覆盖的结束时间
             time_audit: 传入时由本方法就地填充，供调用方记 time_ctx 审计日志
+            gap_mode: 间隔分档，决定是否注入“新的一段对话/久别重逢/主动开口”提示
+            last_proactive_at: 角色在对方上次发言后主动发出消息的时间（可选）
+            last_proactive_text: 该主动消息原文
 
         Returns:
             组装好的消息列表，可直接传入LLM
@@ -222,15 +280,17 @@ class PromptAssembler:
         now_utc = datetime.now(timezone.utc)
         now_local = now_utc.astimezone(tz)
         time_enabled = settings.message_time_enabled
+        if not time_enabled:
+            gap_mode = "none"
 
-        # 间隔语义：idle 只认真实用户消息，且仅在总开关与子开关均开启时计算
-        idle_phrase = ""
-        if time_enabled and settings.time_idle_hint_enabled:
-            last_user_at = _last_user_message_at(history)
-            if last_user_at is not None:
-                idle_seconds = (now_utc - last_user_at).total_seconds()
-                if idle_seconds > 0:
-                    idle_phrase = _format_gap(idle_seconds)
+        # 间隔语义：idle 只认真实用户消息；分档提示复用同一间隔表达
+        last_user_at = _last_user_message_at(history) if time_enabled else None
+        gap_phrase = ""
+        if last_user_at is not None:
+            idle_seconds = (now_utc - last_user_at).total_seconds()
+            if idle_seconds > 0:
+                gap_phrase = _format_gap(idle_seconds)
+        idle_phrase = gap_phrase if settings.time_idle_hint_enabled else ""
 
         messages: list[dict[str, str]] = []
 
@@ -242,8 +302,25 @@ class PromptAssembler:
         messages.append({"role": "system", "content": system_prompt})
 
         # 2. 记忆注入（提升到summary前面，LLM更重视靠近对话的内容）
-        #    先完成历史过滤，以便向记忆段落声明被归档的消息条数（借 Letta）
+        #    先完成历史过滤与会话边界裁剪，以便向记忆段落声明被归档的消息条数（借 Letta）
         filtered_history = self._filter_history(history, user_input)
+        raw_index = {id(m): i for i, m in enumerate(history)}
+        boundary_idx: int | None = None
+        if time_enabled:
+            boundary = _find_session_boundary(
+                history, now_utc, settings.time_session_gap_hours * 3600
+            )
+            if boundary is not None:
+                boundary_idx = boundary[0]
+            reunion_boundary = _find_session_boundary(
+                history, now_utc, settings.time_reunion_gap_hours * 3600
+            )
+            # 较新的软边界不能撤销更早的强档裁剪。
+            if reunion_boundary is not None:
+                reunion_idx = reunion_boundary[0]
+                before = history[:reunion_idx + 1]
+                after = [m for m in filtered_history if raw_index[id(m)] > reunion_idx]
+                filtered_history = before[-_REUNION_KEEP_BEFORE_BOUNDARY:] + after
         memory_section = self._render_memory_section(
             current_topic, memory_facts, topic_context,
             memory_fact_objs=memory_fact_objs,
@@ -262,43 +339,75 @@ class PromptAssembler:
                 ),
             })
 
-        # 4. 近期对话历史（智能过滤；间隔超阈值或跨天处打时间标签并插入跨天分隔符）
+        # 4. 近期对话历史（智能过滤；仅用户消息打时间标签，跨天处插分隔符，会话边界处插结束标记）
+        #    assistant 消息不打标签：模型会模仿历史中自己回复的格式，把 [MM-DD HH:mm] 输出给用户
         prev_map = _build_prev_map(history)
-        separator_count = 0
-        archived_emitted = False
-        tagged_count = 0
-        for msg in filtered_history:
-            if msg.role not in ("user", "assistant"):
-                continue
+        entries = [
+            m for m in filtered_history
+            if m.role in ("user", "assistant")
             # 跳过 AI 图片占位消息（如 "(AI生成了一张图片)"）
-            if msg.role == "assistant" and getattr(msg, "content_type", "text") == "image":
-                continue
-            prev_msg = prev_map.get(id(msg))
-            # 跨天分隔符：自然日变化处插入独立 system 消息（修正“跨天但间隔不足阈值”漏标）
-            if self._is_day_changed(msg, prev_msg, tz):
-                if separator_count < _MAX_DAY_SEPARATORS:
-                    messages.append({
-                        "role": "system",
-                        "content": self._render_day_separator(msg, now_local, tz),
-                    })
-                    separator_count += 1
-                elif not archived_emitted:
-                    # 超出上限后合并为一条归档声明，避免长跳会话堆叠大量分隔符
-                    messages.append({
-                        "role": "system",
-                        "content": "———— 更早的对话已归档 ————",
-                    })
-                    archived_emitted = True
-            tag = self._time_tag(msg, prev_msg, now_local, tz)
-            if tag:
-                tagged_count += 1
+            and not (m.role == "assistant" and getattr(m, "content_type", "text") == "image")
+        ]
+        # 跨天分隔符名额优先给最近的日期变化（最近的上下文最需要日期），更早的合并为一条归档声明
+        day_changes = [
+            i for i, m in enumerate(entries)
+            if self._is_day_changed(m, prev_map.get(id(m)), tz)
+        ]
+        dated_changes = set(day_changes[-_MAX_DAY_SEPARATORS:])
+        archive_at = day_changes[0] if len(day_changes) > _MAX_DAY_SEPARATORS else None
+        boundary_emitted = False
+        user_tagged_once = False
+        tagged_count = 0
+        for i, msg in enumerate(entries):
+            if (
+                boundary_idx is not None
+                and not boundary_emitted
+                and raw_index[id(msg)] > boundary_idx
+            ):
+                messages.append({
+                    "role": "system",
+                    "content": self._render_session_boundary(history[boundary_idx], now_local, tz),
+                })
+                boundary_emitted = True
+            if i == archive_at:
+                messages.append({"role": "system", "content": "———— 更早的对话已归档 ————"})
+            elif i in dated_changes:
+                messages.append({
+                    "role": "system",
+                    "content": self._render_day_separator(msg, now_local, tz),
+                })
+            tag = ""
+            if msg.role == "user":
+                # 窗口内首条用户消息无论间隔都打标，给后续消息提供时间参照
+                prev_ref = prev_map.get(id(msg)) if user_tagged_once else None
+                tag = self._time_tag(msg, prev_ref, now_local, tz)
+                user_tagged_once = True
+                if tag:
+                    tagged_count += 1
             messages.append({"role": msg.role, "content": tag + msg.content})
+        if boundary_idx is not None and not boundary_emitted:
+            messages.append({
+                "role": "system",
+                "content": self._render_session_boundary(history[boundary_idx], now_local, tz),
+            })
 
         # 5. 时刻与间隔语义 + 情绪/长度/支持策略指令（作为独立system消息，紧贴user_input前）
         context_hint = self._render_context_hint(
             emotion_hint, length_instruction, strategy_instruction, mood_hint,
             now_local=now_local, idle_phrase=idle_phrase,
             topic_stall_hint=topic_stall_hint,
+            last_user_local=last_user_at.astimezone(tz) if last_user_at else None,
+            gap_mode=gap_mode,
+            gap_phrase=gap_phrase,
+            has_yesterday_history=any(
+                (now_local.date() - _ensure_aware(m.created_at).astimezone(tz).date()).days == 1
+                for m in entries if getattr(m, "created_at", None) is not None
+            ),
+            last_proactive_local=(
+                _ensure_aware(last_proactive_at).astimezone(tz)
+                if last_proactive_at is not None else None
+            ),
+            last_proactive_text=last_proactive_text,
         )
         if context_hint:
             messages.append({"role": "system", "content": context_hint})
@@ -314,7 +423,8 @@ class PromptAssembler:
             time_audit.tz = str(tz) if time_enabled else ""
             time_audit.idle = idle_phrase
             time_audit.tagged = tagged_count
-            time_audit.separators = separator_count
+            time_audit.separators = len(dated_changes)
+            time_audit.gap_mode = gap_mode
 
         logger.debug("Assembled %d messages for profile '%s'", len(messages), profile.slug)
         return messages
@@ -520,6 +630,12 @@ class PromptAssembler:
         now_local: datetime | None = None,
         idle_phrase: str = "",
         topic_stall_hint: str = "",
+        last_user_local: datetime | None = None,
+        gap_mode: GapMode = "none",
+        gap_phrase: str = "",
+        has_yesterday_history: bool = False,
+        last_proactive_local: datetime | None = None,
+        last_proactive_text: str = "",
     ) -> str:
         """
         渲染时刻/间隔语义与情绪、长度、支持策略上下文提示（独立system消息，紧贴user_input前）。
@@ -536,6 +652,12 @@ class PromptAssembler:
             now_local: 已按配置时区转换的当前时间；为 None 时自行取
             idle_phrase: 距上一条真实用户消息的间隔中文化表达，为空时不输出间隔段
             topic_stall_hint: 话题停滞引导提示（命中停滞时注入换话题引导）
+            last_user_local: 上一条真实用户消息的本地时间（用于给出间隔的绝对端点）
+            gap_mode: 间隔分档
+            gap_phrase: 分档提示使用的间隔表达（不受间隔子开关影响）
+            has_yesterday_history: 历史中是否含前一自然日的消息（凌晨“今天/昨天”纠偏用）
+            last_proactive_local: 角色主动消息的本地时间
+            last_proactive_text: 角色主动消息原文
 
         Returns:
             组合后的上下文提示文本，无内容时返回空字符串
@@ -544,15 +666,40 @@ class PromptAssembler:
         # 时间感知：时刻 + 间隔语义（让 LLM 无需自己做日期减法就能感知历史时效）
         if settings.message_time_enabled:
             now = now_local if now_local is not None else datetime.now(_local_tz())
+            phase = _day_phase(now.hour)
             parts.append(
-                f"【当前时刻】{now.strftime('%H:%M')}（{_day_phase(now.hour)}）"
+                f"【当前时刻】现在是 {now.month}月{now.day}日（{_WEEKDAYS[now.weekday()]}）"
+                f"{now.strftime('%H:%M')}，{phase}。"
             )
+            if phase == "凌晨" and has_yesterday_history:
+                yesterday = now - timedelta(days=1)
+                hint = (
+                    f"【凌晨提示】日历已经翻到 {now.month}月{now.day}日，"
+                    f"{yesterday.month}月{yesterday.day}日的事提到时要说“昨天”或“昨晚”，不要说成“今天”。"
+                )
+                if last_user_local is not None and (now.date() - last_user_local.date()).days == 1:
+                    when = "昨晚" if last_user_local.hour >= 18 else "昨天"
+                    hint += f"对方上一条消息是{when} {last_user_local.strftime('%H:%M')} 发的。"
+                parts.append(hint)
             if settings.time_idle_hint_enabled and idle_phrase:
+                if last_user_local is not None:
+                    parts.append(
+                        f"【对话间隔】对方上一条消息发于{_format_moment(last_user_local, now)}，"
+                        f"距现在 {idle_phrase}。"
+                    )
+                else:
+                    parts.append(f"【对话间隔】距离对方上一条消息已经过去 {idle_phrase}。")
+            gap_hint = PromptAssembler._render_gap_mode_hint(gap_mode, gap_phrase)
+            if gap_hint:
+                parts.append(gap_hint)
+            if last_proactive_local is not None and last_proactive_text:
                 parts.append(
-                    f"【对话间隔】距离对方上一条消息已经过去 {idle_phrase}。"
+                    f"【你的主动消息】你在{_format_moment(last_proactive_local, now)}主动给对方发过："
+                    f"『{last_proactive_text[:_PROACTIVE_NOTE_MAX_CHARS]}』（这条不在上面的历史里），"
+                    "对方这条消息可能是在回应它。"
                 )
             parts.append(
-                "历史消息开头带[月-日 时:分]标签的表示当时说的话；"
+                "对方消息开头的[月-日 时:分]标签是系统标注的发送时间，你的回复里绝不要输出这种标签；"
                 + (
                     # 锚点开启：引导模型回到系统提示词开头的日期基准上做对比
                     "请先与系统提示中的【时间基准】对比再判断久远程度，"
@@ -787,6 +934,40 @@ class PromptAssembler:
         else:
             distance = f"距现在 {day_delta} 天"
         return f"———— 以下对话发生在 {date_cn}（{weekday}），{distance} ————"
+
+    @staticmethod
+    def _render_session_boundary(
+        last_msg: MessageInDB, now_local: datetime, tz: timezone
+    ) -> str:
+        """渲染会话边界标记：声明此前的聊天已经结束，并给出最后一条消息的绝对时间。"""
+        local = _ensure_aware(last_msg.created_at).astimezone(tz)
+        return (
+            f"———— 以上是之前的一段聊天（最后一条在{_format_moment(local, now_local)}），"
+            "已经结束 ————"
+        )
+
+    @staticmethod
+    def _render_gap_mode_hint(gap_mode: GapMode, gap_phrase: str) -> str:
+        """按间隔分档渲染对话衔接提示；none 或缺少间隔表达时不输出。"""
+        if not gap_phrase:
+            return ""
+        if gap_mode == "session":
+            return (
+                f"【新的一段对话】距离对方上一条消息已经过去 {gap_phrase}，之前的聊天已经告一段落。"
+                "这是新的一段对话：旧话题除非对方主动提起，否则不要接着往下说，也不要表现得像刚刚还在聊。"
+            )
+        if gap_mode == "reunion":
+            return (
+                f"【久别重逢】你们已经 {gap_phrase} 没聊了。上面的历史都是 {gap_phrase} 前的旧事："
+                "不要接着回答旧问题，也不要延续旧话题；【当前时刻】指的是现在，不是对方离开的时间。"
+                "请把对方这条消息当作隔了很久之后重新开口的第一句来回应。"
+            )
+        if gap_mode == "proactive":
+            return (
+                f"【主动开口】距离对方上次说话已经过去 {gap_phrase}，现在是你主动给对方发消息："
+                "不要接着回答旧问题或延续旧话题，像隔了一段时间后自然地打招呼、关心对方。"
+            )
+        return ""
 
     def _filter_history(
         self,

@@ -38,13 +38,16 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
+from app.db.repositories.proactive_repo import ProactiveRecordRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.safety_event_repo import SafetyEventRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.user_repo import UserRepository
 from app.llm.base import LLMUsage
-from app.llm.prompt_assembler import PromptAssembler, TimeAudit
+from app.llm.prompt_assembler import (
+    GapMode, PromptAssembler, TimeAudit, _ensure_aware, _last_user_message_at,
+)
 from app.llm.provider_factory import get_llm_provider
 from app.models.conversation import ConversationInDB
 from app.models.profile import PromptProfileInDB
@@ -77,6 +80,17 @@ from app.utils.token_estimate import estimate_tokens
 _unused_spawn = spawn
 
 logger = logging.getLogger(__name__)
+
+
+def _gap_mode(idle_seconds: float) -> GapMode:
+    if not settings.message_time_enabled:
+        return "none"
+    if idle_seconds >= settings.time_reunion_gap_hours * 3600:
+        return "reunion"
+    if idle_seconds >= settings.time_session_gap_hours * 3600:
+        return "session"
+    return "none"
+
 
 # 粗略情绪强度估计（用于自适应上下文窗口），主链路与流式链路共用
 _ROUGH_EMOTION_INTENSITY: dict[str, float] = {
@@ -148,6 +162,7 @@ class ConversationEngine:
         self.profile_repo = ProfileRepository()
         self.conversation_repo = ConversationRepository()
         self.message_repo = MessageRepository()
+        self.proactive_repo = ProactiveRecordRepository()
         self.context_manager = ContextManager()
         self.prompt_assembler = PromptAssembler()
         self.response_processor = ResponseProcessor()
@@ -192,6 +207,9 @@ class ConversationEngine:
         # 避免与同一用户的 C2C 私聊冲突
         if is_group and group_id:
             platform_id = f"{group_id}::{platform_id}"
+
+        # 用户消息的真实发生时刻（落库发生在 LLM 回复之后，不能取写入时间）
+        received_at = datetime.now(timezone.utc)
 
         # 0. 校验 Bot 并获取所属账号（bot_id 现在存储的是 UUID）
         bot = await self.bot_repo.find_by_id(self.bot_id)
@@ -307,6 +325,7 @@ class ConversationEngine:
                 emotion_tag=detect_emotion(text),
                 media_url=media_url,
                 content_type=content_type,
+                created_at=received_at,
             )
             await self.turn_recorder.record_assistant_message(
                 conversation_id=conversation.id,
@@ -372,6 +391,19 @@ class ConversationEngine:
             self._retrieve_memories(service.context_key, text, backfill=True, history=history),
         )
         
+        last_user_at = _last_user_message_at(history)
+        gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
+        last_proactive_at, last_proactive_text = await self._recent_proactive_context(
+            user.id, last_user_at, received_at, gap_mode
+        )
+        if gap_mode != "none":
+            topic_context = await self._reset_topic_after_gap(
+                service.context_key, current_topic,
+                getattr(service_memory, "topic_history", []) if service_memory else [],
+                topic_context,
+            )
+            current_topic = ""
+
         # 7d. 表情库可用性（Prompt 注入与表情发送共用同一判定，限定角色绑定分组）
         sticker_available = False
         if settings.sticker_enabled:
@@ -383,7 +415,7 @@ class ConversationEngine:
 
         # 7e. 话题停滞检测：连续多轮同话题时生成换话题引导提示
         topic_stall_hint = ""
-        if settings.topic_stall_detection_enabled:
+        if settings.topic_stall_detection_enabled and gap_mode == "none":
             recent_user_msgs = [
                 getattr(m, "content", "") or ""
                 for m in history if getattr(m, "role", "") == "user"
@@ -423,6 +455,9 @@ class ConversationEngine:
             conversation=conversation,
             time_audit=time_audit,
             topic_stall_hint=topic_stall_hint,
+            gap_mode=gap_mode,
+            last_proactive_at=last_proactive_at,
+            last_proactive_text=last_proactive_text,
         )
         self._log_time_audit(
             time_audit,
@@ -594,6 +629,7 @@ class ConversationEngine:
             scored_facts=scored_facts,
             summary=summary,
             injected_entities=injected_entities,
+            received_at=received_at,
         )
 
         # 提取当前 profile 的音色设置；表现力参数（指令/音调/情感标签）
@@ -645,6 +681,9 @@ class ConversationEngine:
         逐 token 产出；为独立实现，不影响 QQ/微信整段回复主链路。
         流式产出原始增量；完成后持久化清洗后的文本并触发异步记忆任务。
         """
+        # 用户消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
+        received_at = datetime.now(timezone.utc)
+
         # 解析 Bot/用户/服务/角色/会话
         bot = await self.bot_repo.find_by_id(self.bot_id)
         if bot is None or getattr(bot, "is_blocked", False):
@@ -678,6 +717,7 @@ class ConversationEngine:
                 text=text,
                 emotion_tag=detect_emotion(text),
                 content_type=content_type,
+                created_at=received_at,
             )
             await self.turn_recorder.record_assistant_message(
                 conversation_id=conversation.id,
@@ -718,6 +758,19 @@ class ConversationEngine:
             scored_facts, injected_entities, pending_events,
         ) = await self._retrieve_memories(service.context_key, text, backfill=False, history=history)
 
+        last_user_at = _last_user_message_at(history)
+        gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
+        last_proactive_at, last_proactive_text = await self._recent_proactive_context(
+            user.id, last_user_at, received_at, gap_mode
+        )
+        if gap_mode != "none":
+            topic_context = await self._reset_topic_after_gap(
+                service.context_key, current_topic,
+                getattr(service_memory, "topic_history", []) if service_memory else [],
+                topic_context,
+            )
+            current_topic = ""
+
         # 表情库可用性（仅用于 Prompt 注入；流式链路不发送表情包，限定角色绑定分组）
         sticker_available = False
         if settings.sticker_enabled:
@@ -729,7 +782,7 @@ class ConversationEngine:
 
         # 话题停滞检测：连续多轮同话题时生成换话题引导提示
         topic_stall_hint = ""
-        if settings.topic_stall_detection_enabled:
+        if settings.topic_stall_detection_enabled and gap_mode == "none":
             recent_user_msgs = [
                 getattr(m, "content", "") or ""
                 for m in history if getattr(m, "role", "") == "user"
@@ -768,6 +821,9 @@ class ConversationEngine:
             conversation=conversation,
             time_audit=stream_time_audit,
             topic_stall_hint=topic_stall_hint,
+            gap_mode=gap_mode,
+            last_proactive_at=last_proactive_at,
+            last_proactive_text=last_proactive_text,
         )
         self._log_time_audit(
             stream_time_audit,
@@ -783,13 +839,14 @@ class ConversationEngine:
         chunks: list[str] = []
         usage_sink: dict = {}
         try:
-            async for delta in provider.stream_complete(
+            stream = provider.stream_complete(
                 messages=messages,
                 temperature=settings.chat_temperature,
                 max_tokens=settings.chat_max_tokens,
                 usage_sink=usage_sink,
                 presence_penalty=settings.chat_presence_penalty,
-            ):
+            )
+            async for delta in ResponseProcessor.strip_time_tags_stream(stream):
                 chunks.append(delta)
                 yield delta
         except Exception as e:
@@ -840,6 +897,7 @@ class ConversationEngine:
             scored_facts=scored_facts,
             summary=summary,
             injected_entities=injected_entities,
+            received_at=received_at,
         )
 
     async def _find_or_create_conversation(
@@ -1203,6 +1261,29 @@ class ConversationEngine:
             return _LENGTH_SOFT_GUIDE + "\n你的人设偏健谈，时机合适时可以自然多展开聊几句。"
         return _LENGTH_SOFT_GUIDE
 
+    async def _reset_topic_after_gap(
+        self, service_id: str, current_topic: str, topic_history: list[str], topic_context: str,
+    ) -> str:
+        old_context = self.topic_manager.generate_topic_context(topic_history, current_topic)
+        new_context = self.topic_manager.generate_topic_context(topic_history, "")
+        if current_topic:
+            await self.memory_repo.clear_current_topic(service_id, current_topic)
+        # 只替换话题前缀，保留随后拼接的人物关系与待跟进事件。
+        return new_context + topic_context.removeprefix(old_context)
+
+    async def _recent_proactive_context(
+        self, user_id: str, last_user_at: datetime | None,
+        received_at: datetime, gap_mode: GapMode,
+    ) -> tuple[datetime | None, str]:
+        if gap_mode not in ("session", "reunion") or last_user_at is None:
+            return None, ""
+        record = await self.proactive_repo.get_latest_sent(user_id=user_id, bot_id=self.bot_id)
+        if record is not None and record.sent_at is not None:
+            sent_at = _ensure_aware(record.sent_at)
+            if last_user_at < sent_at <= received_at:
+                return sent_at, ResponseProcessor.strip_time_tags(record.content)
+        return None, ""
+
     def _assemble_messages(
         self,
         *,
@@ -1223,6 +1304,9 @@ class ConversationEngine:
         conversation: ConversationInDB | None = None,
         time_audit: TimeAudit | None = None,
         topic_stall_hint: str = "",
+        gap_mode: GapMode = "none",
+        last_proactive_at: datetime | None = None,
+        last_proactive_text: str = "",
     ) -> list:
         """组装 LLM 消息列表（含长度软引导、未成年人保护注入与时间上下文审计）。
 
@@ -1252,6 +1336,9 @@ class ConversationEngine:
             summary_end_at=getattr(conversation, "summary_end_at", None),
             time_audit=time_audit,
             topic_stall_hint=topic_stall_hint,
+            gap_mode=gap_mode,
+            last_proactive_at=last_proactive_at,
+            last_proactive_text=last_proactive_text,
         )
         # 未成年人保护：注入合规约束（紧贴 user_input 前）
         if getattr(user, "is_minor", False):
@@ -1277,10 +1364,10 @@ class ConversationEngine:
         """
         logger.info(
             "time_ctx: anchor=%s now=%s tz=%s idle=%s tagged=%d separators=%d "
-            "events=%d user=%s service=%s conv=%s",
+            "gap_mode=%s events=%d user=%s service=%s conv=%s",
             audit.anchor or "-", audit.now or "-", audit.tz or "-",
             audit.idle or "-", audit.tagged, audit.separators,
-            pending_event_count, user_id, service_id, conversation_id,
+            audit.gap_mode, pending_event_count, user_id, service_id, conversation_id,
         )
 
     def _postprocess_response(
@@ -1544,17 +1631,19 @@ class ConversationEngine:
         scored_facts: list[MemoryFact] | None = None,
         summary: str | None = None,
         injected_entities: list[str] | None = None,
+        received_at: datetime | None = None,
     ) -> None:
         """回合收尾：持久化双方消息、更新元数据/活跃时间、异步摘要与焦点提取。"""
-        # 持久化用户消息与 AI 回复（保存清理后的纯文本）
-        await self.turn_recorder.record_user_message(
+        # 持久化用户消息与 AI 回复（保存清理后的纯文本；用户消息按接收时刻落时间戳）
+        user_msg = await self.turn_recorder.record_user_message(
             conversation_id=conversation.id,
             text=text,
             emotion_tag=emotion_tag,
             media_url=media_url,
             content_type=content_type,
+            created_at=received_at,
         )
-        await self.turn_recorder.record_assistant_message(
+        assistant_msg = await self.turn_recorder.record_assistant_message(
             conversation_id=conversation.id,
             clean_text=clean_text,
             llm_model=llm_model,
@@ -1584,8 +1673,11 @@ class ConversationEngine:
             if service_memory else None,
         ):
             spawn_with_limit(
+                # 带上本轮双方消息：否则提取总滞后一轮，久别重逢时还会把旧话题重新提取回来
                 self.focus_tracker.extract_and_save(
-                    service.context_key, history, memory_facts,
+                    service.context_key,
+                    [*history, user_msg, assistant_msg],
+                    memory_facts,
                     current_topic=current_topic,
                 )
             )

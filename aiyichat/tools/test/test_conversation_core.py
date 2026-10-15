@@ -10,10 +10,12 @@
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import mongomock_motor
+import pytest
 
 from app.config import settings
 from app.db import mongo
@@ -287,6 +289,59 @@ class TestFocusTracker:
                 assert await ft._decide_action("旧", "新") == "ADD"
 
         _run(body())
+
+
+class TestTurnRecorder:
+    """轮次记录器应保留接收时间并返回真实的落库消息对象。"""
+
+    @pytest.mark.parametrize("explicit_time", [False, True])
+    def test_record_messages_return_persisted_models(self, explicit_time: bool) -> None:
+        """直接使用内存仓库验证时间透传、返回值、媒体字段及消息计数。"""
+        from app.conversation.turn_recorder import TurnRecorder
+        from app.db.repositories.conversation_repo import ConversationRepository
+        from app.db.repositories.message_repo import MessageRepository
+        from app.models.message import MessageInDB
+        from tools.test.db_test_utils import run_with_db
+
+        async def body() -> None:
+            """模拟 LLM 完成后才落库，用户时间仍为接收时刻。"""
+            conversations = ConversationRepository()
+            messages = MessageRepository()
+            conversation = await conversations.create("u-1", "p-1", "svc-1")
+            recorder = TurnRecorder(messages, conversations)
+            written_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+            received_at = written_at - timedelta(minutes=2)
+            kwargs = {"created_at": received_at} if explicit_time else {}
+            with patch("app.db.repositories.message_repo.datetime", wraps=datetime) as clock:
+                clock.now.return_value = written_at
+                user_msg = await recorder.record_user_message(
+                    conversation.id, "今天很开心", "happy",
+                    media_url="/api/media/test-image", content_type="image", **kwargs,
+                )
+                assistant_msg = await recorder.record_assistant_message(
+                    conversation.id, "替你开心", "test-model", 120,
+                )
+            assert isinstance(user_msg, MessageInDB)
+            assert isinstance(assistant_msg, MessageInDB)
+            assert user_msg.id != assistant_msg.id
+            assert user_msg.role == "user" and user_msg.content == "今天很开心"
+            assert user_msg.emotion_tag == "happy"
+            assert user_msg.media_url == "/api/media/test-image"
+            assert user_msg.content_type == "image"
+            assert user_msg.created_at == (received_at if explicit_time else written_at)
+            assert user_msg.updated_at == written_at
+            assert assistant_msg.role == "assistant"
+            assert assistant_msg.content == "替你开心"
+            assert assistant_msg.llm_model == "test-model"
+            assert assistant_msg.latency_ms == 120
+            assert assistant_msg.created_at == assistant_msg.updated_at == written_at
+            stored = await messages.get_recent(conversation.id)
+            assert [m.id for m in stored] == [user_msg.id, assistant_msg.id]
+            await recorder.update_conversation_meta(conversation.id)
+            updated = await conversations.find_by_id(conversation.id)
+            assert updated is not None and updated.message_count == 2
+
+        run_with_db(body)
 
 
 class TestContextManager:

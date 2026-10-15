@@ -7,6 +7,10 @@
 """
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from bson import ObjectId
 
 from app.chat_import.models import AnalysisTask
 from app.db.repositories.analysis_task_repo import AnalysisTaskRepository
@@ -82,6 +86,71 @@ class TestConversationRepository:
 
 class TestMessageRepository:
     """消息仓库测试集。"""
+
+    @pytest.mark.parametrize("explicit_time", [False, True])
+    def test_create_preserves_received_time(self, explicit_time: bool) -> None:
+        """发生时间可早于写入时间；省略时两个字段都采用当前时间。"""
+        from app.models.message import MessageInDB
+
+        async def body() -> None:
+            """使用真实仓库验证返回对象及实际存储的时间字段。"""
+            repo = MessageRepository()
+            written_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+            received_at = written_at - timedelta(minutes=2)
+            expected = received_at if explicit_time else written_at
+            with patch("app.db.repositories.message_repo.datetime", wraps=datetime) as clock:
+                clock.now.return_value = written_at
+                message = await repo.create(
+                    "conv-time", "user", "接收时刻应保留",
+                    created_at=received_at if explicit_time else None,
+                )
+            assert isinstance(message, MessageInDB)
+            assert message.created_at == expected
+            assert message.updated_at == written_at
+            stored = (await repo.get_recent("conv-time"))[0]
+            # mongomock 与 MongoDB 默认返回无时区的 UTC 时间。
+            assert stored.created_at.replace(tzinfo=timezone.utc) == expected
+            assert stored.updated_at.replace(tzinfo=timezone.utc) == written_at
+
+        run_with_db(body)
+
+    @pytest.mark.parametrize("query", ["recent", "paginated", "all"])
+    def test_stable_time_and_id_order(self, query: str) -> None:
+        """同时间按 ObjectId 同向排序，不能依赖插入顺序或仅按 ID 排序。"""
+        from app.db.mongo import get_database
+
+        async def body() -> None:
+            """打乱插入顺序，覆盖时间优先、同刻兜底及分页截断。"""
+            repo = MessageRepository()
+            old = datetime(2026, 10, 14, tzinfo=timezone.utc)
+            recent = old + timedelta(days=1)
+            await get_database().messages.insert_many([
+                {
+                    "_id": ObjectId(f"{number:024x}"),
+                    "conversation_id": "conv-order",
+                    "role": "user" if number % 2 else "assistant",
+                    "content": str(number),
+                    "created_at": timestamp,
+                }
+                for number, timestamp in [
+                    (1, recent), (6, old), (3, recent), (5, old), (2, recent),
+                ]
+            ])
+            await repo.create("another-conv", "user", "不能混入其他会话")
+            if query == "recent":
+                full = await repo.get_recent("conv-order")
+                window = await repo.get_recent("conv-order", limit=2)
+                assert [m.content for m in window] == ["2", "3"]
+            elif query == "paginated":
+                full = await repo.list_paginated("conv-order")
+                window = await repo.list_paginated("conv-order", skip=1, limit=3)
+                assert [m.content for m in window] == ["6", "1", "2"]
+                assert await repo.list_paginated("conv-order", skip=5) == []
+            else:
+                full = await repo.get_all_for_conversation("conv-order")
+            assert [m.content for m in full] == ["5", "6", "1", "2", "3"]
+
+        run_with_db(body)
 
     def test_crud_and_stats(self) -> None:
         async def body():
@@ -377,6 +446,101 @@ class TestAppSettingsRepository:
 
 class TestServiceMemoryRepository:
     """服务记忆仓库测试集。"""
+
+    def test_clear_current_topic_is_atomic_and_preserves_memory(self) -> None:
+        """清理只发出一次带预期话题的条件更新，不重写记忆文档或提取节流时间。"""
+        from app.db.mongo import get_database
+
+        async def body() -> None:
+            """用真实集合检查落库结果，同时核验更新条件与更新字段。"""
+            repo = ServiceMemoryRepository()
+            collection = get_database().service_memories
+            updated_at = datetime(2026, 10, 1, 8, tzinfo=timezone.utc)
+            await collection.insert_one({
+                "service_id": "svc-1",
+                "current_topic": "考试",
+                "updated_at": updated_at,
+                "facts": [MemoryFact(content="喜欢猫").model_dump()],
+                "topic_history": ["电影", "旅行"],
+                "entities": [MemoryEntity(name="小红", relation_to_user="朋友").model_dump()],
+                "pending_events": [PendingEvent(content="面试", due_at=updated_at).model_dump()],
+                "mood": {"label": "平静", "valence": 0.1, "updated_at": updated_at},
+                "legacy_marker": {"keep": True},
+            })
+            await repo.upsert_topic("svc-other", "考试")
+            before = await collection.find_one({"service_id": "svc-1"})
+            other_before = await collection.find_one({"service_id": "svc-other"})
+            assert before is not None
+            with (
+                patch.object(repo, "_collection", return_value=collection),
+                patch.object(
+                    collection, "update_one", new_callable=AsyncMock,
+                    wraps=collection.update_one,
+                ) as update_one,
+                patch.object(
+                    collection, "find_one", new_callable=AsyncMock,
+                    wraps=collection.find_one,
+                ) as find_one,
+            ):
+                await repo.clear_current_topic("svc-1", "考试")
+                # 禁止先读后写、无条件更新、upsert 或额外刷新 updated_at。
+                find_one.assert_not_awaited()
+                update_one.assert_awaited_once_with(
+                    {"service_id": "svc-1", "current_topic": "考试"},
+                    {"$set": {"current_topic": ""}},
+                )
+            after = await collection.find_one({"service_id": "svc-1"})
+            assert after is not None
+            assert after == {**before, "current_topic": ""}
+            assert after["updated_at"].replace(tzinfo=timezone.utc) == updated_at
+            assert await collection.find_one({"service_id": "svc-other"}) == other_before
+            # 以相同旧值重复清理是幂等操作，其他数据和文档数量保持不变。
+            await repo.clear_current_topic("svc-1", "考试")
+            assert await collection.find_one({"service_id": "svc-1"}) == after
+            assert await collection.count_documents({}) == 2
+
+        run_with_db(body)
+
+    def test_clear_current_topic_does_not_overwrite_concurrent_topic(self) -> None:
+        """旧轮读取后产生的新话题必须保留，旧轮的清理不能覆盖并发提取结果。"""
+        from app.db.mongo import get_database
+
+        async def body() -> None:
+            """确定性模拟读取旧焦点、新焦点写入、旧轮清理的交错顺序。"""
+            repo = ServiceMemoryRepository()
+            collection = get_database().service_memories
+            await repo.upsert_topic("svc-1", "考试")
+            stale = await repo.find_by_service("svc-1")
+            assert stale is not None and stale.current_topic == "考试"
+            await repo.update_topic_and_facts("svc-1", "旅行", [MemoryFact(content="准备去海边")])
+            await repo.append_topic_history("svc-1", "考试")
+            before = await collection.find_one({"service_id": "svc-1"})
+            assert before is not None and before["current_topic"] == "旅行"
+            await repo.clear_current_topic("svc-1", stale.current_topic)
+            assert await collection.find_one({"service_id": "svc-1"}) == before
+            assert await collection.count_documents({}) == 1
+
+        run_with_db(body)
+
+    @pytest.mark.parametrize("expected_topic", ["", "考试"], ids=["empty-topic", "topic"])
+    def test_clear_current_topic_missing_service_does_not_insert(self, expected_topic: str) -> None:
+        """服务不存在时不新增文档，也不清除其他服务的同名话题。"""
+        from app.db.mongo import get_database
+
+        async def body() -> None:
+            """空库和仅有其他服务两种情况下都不得发生 upsert。"""
+            repo = ServiceMemoryRepository()
+            collection = get_database().service_memories
+            await repo.clear_current_topic("missing", expected_topic)
+            assert await collection.count_documents({}) == 0
+            await repo.upsert_topic("svc-other", expected_topic)
+            before = await collection.find_one({"service_id": "svc-other"})
+            await repo.clear_current_topic("missing", expected_topic)
+            assert await repo.find_by_service("missing") is None
+            assert await collection.count_documents({}) == 1
+            assert await collection.find_one({"service_id": "svc-other"}) == before
+
+        run_with_db(body)
 
     def test_topic_and_facts(self) -> None:
         async def body():

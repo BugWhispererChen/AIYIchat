@@ -207,6 +207,8 @@ class AppSettingsDocument(BaseModel):
     # 对话时间感知（注入当前时间 + 间隔处打时间标签，防止 LLM 把旧消息当作刚才）
     message_time_enabled: bool = True
     message_time_gap_minutes: int = 30  # 两条消息间隔超过该阈值才打标签（分钟，0=每条都打）
+    time_session_gap_hours: int = 8  # 会话间隔软档阈值（小时）
+    time_reunion_gap_hours: int = 72  # 久别重逢强档阈值（小时）
     # 单一时区源：对话时间感知、主动关怀免打扰、摘要日期前缀统一取该 UTC 偏移（小时）
     default_timezone_offset: int = 8
     # 时间感知子开关（各自独立生效，互不依赖；总开关关闭时全部不注入）

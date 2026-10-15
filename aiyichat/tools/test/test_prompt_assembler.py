@@ -38,6 +38,8 @@ _TIME_TOGGLE_NAMES = (
     "time_day_separator_enabled",
     "message_time_tag_year_enabled",
     "memory_inject_time_suffix",
+    "time_session_gap_hours",
+    "time_reunion_gap_hours",
 )
 
 
@@ -230,6 +232,8 @@ class TestMessageTimeAwareness:
         settings.time_day_separator_enabled = True
         settings.message_time_tag_year_enabled = True
         settings.memory_inject_time_suffix = True
+        settings.time_session_gap_hours = 8
+        settings.time_reunion_gap_hours = 72
 
     def teardown_method(self):
         for key, val in self._saved.items():
@@ -279,7 +283,7 @@ class TestMessageTimeAwareness:
         ]
         assert len(hint_msgs) == 1
         # NOW_UTC = 北京 08:00 → 时段划分沿用主动关怀调度器的 5~9 点为“清晨”
-        assert "【当前时刻】08:00（清晨）" in hint_msgs[0]
+        assert "【当前时刻】现在是 9月2日（星期三）08:00，清晨" in hint_msgs[0]
         assert "不要把之前说的话当作刚刚发生" in hint_msgs[0]
 
     def test_disabled_no_injection(self):
@@ -319,7 +323,8 @@ class TestMessageTimeAwareness:
         ]
         contents = [m["content"] for m in self._assemble(history, user_input="在吗")]
         assert "[08-12 23:45] 你好" in contents
-        assert "[08-12 23:45] 你好啊" in contents
+        assert "你好啊" in contents
+        assert "[08-12 23:45] 你好啊" not in contents
 
     # ── 清单 1：昨晚消息 → 间隔 9 小时 + 跨天分隔符 + 日期标签 ─────
 
@@ -333,13 +338,16 @@ class TestMessageTimeAwareness:
             self._msg("m3", "user", "晚安", datetime(2026, 9, 1, 15, 0, tzinfo=timezone.utc)),
             self._msg("m4", "assistant", "晚安，好梦", datetime(2026, 9, 1, 15, 1, tzinfo=timezone.utc)),
         ]
-        messages = self._assemble(history)
+        messages = self._assemble(history, gap_mode="session")
         joined = "\n".join(m["content"] for m in messages)
-        assert "【对话间隔】距离对方上一条消息已经过去 9 小时。" in joined
+        assert "【对话间隔】对方上一条消息发于昨天 9月1日（星期二）23:00，距现在 9 小时。" in joined
+        assert "【新的一段对话】" in joined
+        assert "已经结束 ————" in joined
         # 跨天分隔符：9月1日星期二，距 09-02 为 1 天 → “即昨天”
         separators = [
             m["content"] for m in messages
             if m["role"] == "system" and m["content"].startswith("————")
+            and "已经结束" not in m["content"]
         ]
         assert len(separators) == 1
         assert "9月1日（星期二）" in separators[0]
@@ -365,7 +373,7 @@ class TestMessageTimeAwareness:
         assert "早安" in [m["content"] for m in messages]
         assert "吃了吗" in [m["content"] for m in messages]
         assert "【时间基准】今天是 2026-09-02" in joined
-        assert "【当前时刻】08:30" in joined
+        assert "【当前时刻】现在是 9月2日（星期三）08:30，清晨" in joined
 
     # ── 清单 3：跨天但间隔 <阈值（现有 gap 逻辑漏洞，D3 回归）─────
 
@@ -382,6 +390,7 @@ class TestMessageTimeAwareness:
         separators = [
             m["content"] for m in messages
             if m["role"] == "system" and m["content"].startswith("————")
+            and "已经结束" not in m["content"]
         ]
         assert len(separators) == 1
         assert "9月2日（星期三）" in separators[0]
@@ -397,7 +406,7 @@ class TestMessageTimeAwareness:
             self._msg("m1", "user", "好久不见", self.NOW_UTC - timedelta(days=20)),
         ]
         joined = "\n".join(m["content"] for m in self._assemble(history))
-        assert "【对话间隔】距离对方上一条消息已经过去 20 天。" in joined
+        assert "【对话间隔】对方上一条消息发于8月13日（星期四）08:00，距现在 20 天。" in joined
 
     # ── 清单 5：跨年 12-31 → 01-01 ────────────────────
 
@@ -453,7 +462,7 @@ class TestMessageTimeAwareness:
             self._msg("m3", "assistant", "最近过得好吗", self.NOW_UTC - timedelta(minutes=10)),
         ]
         joined = "\n".join(m["content"] for m in self._assemble(history))
-        assert "已经过去 2 小时。" in joined
+        assert "距现在 2 小时。" in joined
         assert "10 分钟" not in joined
 
     # ── 清单 8：日期边界（月末/年末/闰年）───────────────
@@ -496,7 +505,7 @@ class TestMessageTimeAwareness:
         messages = self._assemble(history)
         joined = "\n".join(m["content"] for m in messages)
         assert "【时间基准】" not in joined
-        assert "【当前时刻】08:00（清晨）" in joined
+        assert "【当前时刻】现在是 9月2日（星期三）08:00，清晨" in joined
         assert "[09-01 08:00] 晚安" in joined
 
     def test_idle_hint_disabled_keeps_moment(self):
@@ -659,11 +668,115 @@ class TestMessageTimeAwareness:
         separators = [
             m["content"] for m in messages
             if m["role"] == "system" and m["content"].startswith("————")
+            and "已经结束" not in m["content"]
         ]
         dated = [s for s in separators if "以下对话发生在" in s]
         archived = [s for s in separators if "更早的对话已归档" in s]
         assert len(dated) == 3          # 上限 _MAX_DAY_SEPARATORS
         assert len(archived) == 1       # 剩余跨天合并为一条归档声明
+        assert "8月31日" in dated[0]
+        assert "9月1日" in dated[1]
+        assert "9月2日" in dated[2]
+        assert separators.index(archived[0]) < separators.index(dated[0])
+
+    @pytest.mark.parametrize("mode,marker", [
+        ("none", ""), ("session", "【新的一段对话】"),
+        ("reunion", "【久别重逢】"), ("proactive", "【主动开口】"),
+    ])
+    def test_gap_mode_hints(self, mode: str, marker: str) -> None:
+        history = [self._msg("u1", "user", "旧问题？", self.NOW_UTC - timedelta(days=18))]
+        audit = TimeAudit()
+        messages = self._assemble(history, gap_mode=mode, time_audit=audit)
+        joined = "\n".join(m["content"] for m in messages)
+        assert audit.gap_mode == mode
+        if marker:
+            assert marker in joined
+        else:
+            assert "【久别重逢】" not in joined
+        if mode == "reunion":
+            assert "不是对方离开的时间" in joined
+            assert "不要接着回答旧问题" in joined
+        if mode == "proactive":
+            assert "重新开口" not in joined
+            assert "现在是你主动" in joined
+
+    def test_reunion_keeps_last_four_and_summary(self) -> None:
+        old = self.NOW_UTC - timedelta(days=18)
+        history = [
+            self._msg(str(i), "user" if i % 2 == 0 else "assistant", f"旧消息{i}？", old + timedelta(seconds=i))
+            for i in range(10)
+        ]
+        messages = self._assemble(history, gap_mode="reunion", summary="保留摘要")
+        actual = [m for m in messages[:-1] if m["role"] in ("user", "assistant")]
+        assert len(actual) == 4
+        for i, msg in enumerate(actual, 6):
+            assert f"旧消息{i}？" in msg["content"]
+        assert any("保留摘要" in m["content"] for m in messages)
+        assert any("更早的 6 条消息已归档" in m["content"] for m in messages)
+
+    def test_boundary_persists_after_reunion(self) -> None:
+        old = self.NOW_UTC - timedelta(days=18)
+        history = [
+            self._msg(str(i), "user" if i % 2 == 0 else "assistant", f"旧消息{i}？", old + timedelta(seconds=i))
+            for i in range(8)
+        ] + [
+            self._msg("new-u", "user", "重新聊电影", self.NOW_UTC - timedelta(minutes=2)),
+            self._msg("new-a", "assistant", "好啊", self.NOW_UTC - timedelta(minutes=1)),
+        ]
+        messages = self._assemble(history)
+        boundary = next(i for i, m in enumerate(messages) if "已经结束 ————" in m["content"])
+        new_index = next(i for i, m in enumerate(messages) if "重新聊电影" in m["content"])
+        old_messages = [m for m in messages[:boundary] if m["role"] in ("user", "assistant")]
+        assert len(old_messages) == 4
+        assert boundary < new_index
+        assert "旧消息7？" in messages[boundary - 1]["content"]
+
+    @pytest.mark.parametrize("followup_hours", [0, 9])
+    def test_reunion_cutoff_survives_followup_gap(self, followup_hours: int) -> None:
+        old = self.NOW_UTC - timedelta(hours=72)
+        history = [
+            self._msg(str(i), "user" if i % 2 == 0 else "assistant", f"旧消息{i}？", old - timedelta(minutes=8 - i))
+            for i in range(8)
+        ]
+        history[-2].created_at = old
+        history[-1].created_at = old + timedelta(seconds=30)
+        first = self._assemble(history, gap_mode="reunion")
+        history += [
+            self._msg("new-u", "user", "电影", self.NOW_UTC),
+            self._msg("new-a", "assistant", "聊电影吧", self.NOW_UTC + timedelta(seconds=30)),
+        ]
+        next_messages = self._assemble(history, now_utc=self.NOW_UTC + timedelta(hours=followup_hours, minutes=1))
+        for messages in (first, next_messages):
+            old_messages = [m for m in messages if m["role"] in ("user", "assistant") and "旧消息" in m["content"]]
+            assert len(old_messages) == 4
+            assert "旧消息4？" in old_messages[0]["content"]
+
+    def test_dawn_names_last_night(self) -> None:
+        now = datetime(2026, 9, 1, 17, 12, tzinfo=timezone.utc)
+        history = [self._msg("u", "user", "晚安", datetime(2026, 9, 1, 14, 10, tzinfo=timezone.utc))]
+        joined = "\n".join(m["content"] for m in self._assemble(history, now_utc=now))
+        assert "9月2日（星期三）01:12，凌晨" in joined
+        assert "昨晚 22:10" in joined
+        assert "不要说成“今天”" in joined
+
+    def test_proactive_note_has_own_timestamp(self) -> None:
+        history = [self._msg("u", "user", "旧话题", self.NOW_UTC - timedelta(days=3))]
+        joined = "\n".join(m["content"] for m in self._assemble(
+            history, gap_mode="reunion", last_proactive_at=self.NOW_UTC - timedelta(hours=1),
+            last_proactive_text="最近过得好吗",
+        ))
+        assert "今天 9月2日（星期三）07:00" in joined
+        assert "『最近过得好吗』" in joined
+        assert "可能是在回应它" in joined
+
+    def test_disabled_suppresses_gap_mode(self) -> None:
+        settings.message_time_enabled = False
+        history = [self._msg("u", "user", "旧话题", self.NOW_UTC - timedelta(days=3))]
+        audit = TimeAudit()
+        joined = "\n".join(m["content"] for m in self._assemble(history, gap_mode="reunion", time_audit=audit))
+        assert audit.gap_mode == "none"
+        assert "【久别重逢】" not in joined
+        assert "已经结束" not in joined
 
 
 

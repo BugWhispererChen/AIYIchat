@@ -185,6 +185,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "proactive_timezone_offset", "chat_import_chunk_size",
         # 对话时间感知（单一时区源 + 标签阈值 + 弃用的 chat 侧偏移）
         "default_timezone_offset", "message_time_gap_minutes",
+        "time_session_gap_hours", "time_reunion_gap_hours",
         "chat_timezone_offset",
         # 语音动态触发窗口时长（分钟）
         "voice_window_min_minutes", "voice_window_max_minutes",

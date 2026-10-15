@@ -367,6 +367,7 @@ class ProactiveScheduler:
         """
         try:
             from app.conversation.context_manager import ContextManager
+            from app.conversation.response_processor import ResponseProcessor
             from app.db.repositories.bot_config_repo import BotConfigRepository
             from app.db.repositories.conversation_repo import ConversationRepository
             from app.db.repositories.profile_repo import ProfileRepository
@@ -472,6 +473,7 @@ class ProactiveScheduler:
                 user=user,
                 memory_facts=memory_facts[:5],
                 current_topic="",
+                gap_mode="proactive",
             )
 
             # 调用 LLM（提高 temperature 增加多样性，非实时场景使用较长超时）
@@ -481,6 +483,7 @@ class ProactiveScheduler:
                 temperature=settings.proactive_temperature,
                 max_tokens=settings.proactive_max_tokens,
             )
+            response = ResponseProcessor.strip_time_tags(response)
             # 截断过长的回复
             if len(response) > 100:
                 response = response[:100]
@@ -507,6 +510,8 @@ class ProactiveScheduler:
         tz = timezone(timedelta(hours=settings.default_timezone_offset))
         user_now = datetime.now(tz)
         current_hour = user_now.hour
+        if 0 <= current_hour < 5:
+            return user_now, "凌晨", "可以温柔提醒对方早点休息"
         if 5 <= current_hour < 9:
             return user_now, "清晨", "可以问候早安、关心对方是否睡得好、今天有什么计划"
         if 9 <= current_hour < 12:
@@ -517,7 +522,7 @@ class ProactiveScheduler:
             return user_now, "下午", "可以关心对方下午的工作进展、是否累了需要休息"
         if 18 <= current_hour < 22:
             return user_now, "晚上", "可以关心对方晚饭、今天的收获、放松休息"
-        # 22-5 深夜（兜底，正常不会触发）
+        # 22-24 深夜（兜底，正常不会触发）
         return user_now, "深夜", "可以温柔提醒对方早点休息"
 
     async def _generate_share_content(
@@ -538,6 +543,7 @@ class ProactiveScheduler:
         """
         try:
             from app.conversation.context_manager import ContextManager
+            from app.conversation.response_processor import ResponseProcessor
             from app.db.repositories.bot_config_repo import BotConfigRepository
             from app.db.repositories.conversation_repo import ConversationRepository
             from app.db.repositories.profile_repo import ProfileRepository
@@ -632,6 +638,7 @@ class ProactiveScheduler:
                 user=user,
                 memory_facts=memory_facts[:5],
                 current_topic="",
+                gap_mode="proactive",
             )
 
             provider = get_llm_provider("proactive")
@@ -650,7 +657,7 @@ class ProactiveScheduler:
                         user, service, "trivia"
                     )
                 raise
-            response = response.strip()
+            response = ResponseProcessor.strip_time_tags(response).strip()
             if not response and share_kind == "news":
                 logger.warning(
                     "分享型时事内容为空，降级为趣事: user=%s", user.id
@@ -763,6 +770,7 @@ class ProactiveScheduler:
         """为到期事件生成主动跟进消息内容。"""
         try:
             from app.conversation.context_manager import ContextManager
+            from app.conversation.response_processor import ResponseProcessor
             from app.db.repositories.bot_config_repo import BotConfigRepository
             from app.db.repositories.conversation_repo import ConversationRepository
             from app.db.repositories.profile_repo import ProfileRepository
@@ -810,6 +818,7 @@ class ProactiveScheduler:
                 emotion_hint="",
                 user=user,
                 current_topic="",
+                gap_mode="proactive",
             )
             provider = get_llm_provider("proactive")
             response = await provider.complete(
@@ -817,6 +826,7 @@ class ProactiveScheduler:
                 temperature=settings.proactive_temperature,
                 max_tokens=settings.proactive_max_tokens,
             )
+            response = ResponseProcessor.strip_time_tags(response)
             if len(response) > 100:
                 response = response[:100]
             return response.strip()

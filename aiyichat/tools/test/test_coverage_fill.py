@@ -2,10 +2,7 @@
 
 覆盖：
 - admin/auth：会话创建/校验/销毁/require_admin 各分支
-- admin/routes/settings：reload_settings（直接调用，该路由未挂载）
-- profiles/renderer：render / render_brief
 - prompt_assembler：imagegen 注入块、记忆段、历史过滤、示例选取
-- webhook_handler：/list /select 命令分支
 - imagegen_service：dashscope/gemini 编辑、定妆照读取、纯文生图
 - emotion_detector：补充分支
 """
@@ -173,49 +170,6 @@ class TestAdminAuth:
         _run(body())
 
 
-class TestSettingsRoute:
-    """未挂载的 settings 路由函数直调。"""
-
-    def test_reload_settings(self) -> None:
-        async def body():
-            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_settings_route"]
-            try:
-                from app.admin.routes.settings import reload_settings
-
-                resp = await reload_settings(_s="admin")
-                import json as _json
-                body_data = _json.loads(bytes(resp.body).decode())
-                assert body_data["status"] == "ok"
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-
-class TestRenderer:
-    """Profile 渲染器。"""
-
-    def test_render_and_brief(self) -> None:
-        from app.models.profile import (
-            ProfileIdentity,
-            ProfilePersonality,
-            PromptProfileInDB,
-        )
-        from app.profiles.renderer import ProfileRenderer
-
-        profile = PromptProfileInDB(
-            _id="000000000000000000000001",
-            slug="r", name="角色",
-            source="来源",
-            identity=ProfileIdentity(background="很长的背景介绍" * 10),
-            personality=ProfilePersonality(care_style="温柔"),
-        )
-        renderer = ProfileRenderer()
-        assert "角色" in renderer.render(profile)
-        brief = renderer.render_brief(profile)
-        assert "角色" in brief and "..." in brief
-
-
 class TestPromptAssemblerImageGen:
     """Prompt 组装的图片能力注入与历史过滤。"""
 
@@ -314,92 +268,6 @@ class TestPromptAssemblerImageGen:
         ]
         filtered = asm._filter_history(history, "旅行计划")
         assert len(filtered) <= 15 and len(filtered) >= 5
-
-
-class TestWebhookCommands:
-    """webhook 命令分支。"""
-
-    def test_list_and_select(self) -> None:
-        async def body():
-            from app.adapters import webhook_handler
-
-            msg = SimpleNamespace(
-                platform="qq", user_id="u-1", bot_id="b-1",
-                message_id="m-1", is_group=False, group_id="", nickname="小明",
-            )
-            profile = SimpleNamespace(
-                name="林黛玉", slug="lin-daiyu", source="红楼梦",
-                dialogue_strategy=SimpleNamespace(greeting="你好"),
-            )
-            fake_engine = SimpleNamespace(
-                list_available_profiles=AsyncMock(return_value=[profile]),
-                switch_profile=AsyncMock(return_value=profile),
-            )
-            with patch.object(
-                webhook_handler, "ConversationEngine", lambda bot_id="": fake_engine
-            ):
-                # /list
-                out = await webhook_handler._handle_command("/list", msg)
-                assert "林黛玉" in out
-                # /select 按名称
-                out = await webhook_handler._handle_command("/select 林黛玉", msg)
-                assert "已切换" in out
-                # /select 无参数
-                out = await webhook_handler._handle_command("/select", msg)
-                assert "请指定角色名" in out
-                # /select 未找到
-                out = await webhook_handler._handle_command("/select 不存在", msg)
-                assert "未找到" in out
-                # /help
-                out = await webhook_handler._handle_command("/help", msg)
-                assert "使用帮助" in out
-                # 未知
-                out = await webhook_handler._handle_command("/xxx", msg)
-                assert "未知指令" in out
-
-        _run(body())
-
-    def test_list_empty(self) -> None:
-        async def body():
-            from app.adapters import webhook_handler
-
-            msg = SimpleNamespace(
-                platform="qq", user_id="u-1", bot_id="b-1",
-                message_id="m-1", is_group=False, group_id="", nickname="x",
-            )
-            fake_engine = SimpleNamespace(
-                list_available_profiles=AsyncMock(return_value=[]),
-            )
-            with patch.object(
-                webhook_handler, "ConversationEngine", lambda bot_id="": fake_engine
-            ):
-                out = await webhook_handler._handle_command("/list", msg)
-                assert "暂无可用角色" in out
-
-        _run(body())
-
-    def test_process_and_reply(self) -> None:
-        async def body():
-            from app.adapters import webhook_handler
-
-            msg = SimpleNamespace(
-                platform="qq", user_id="u-1", bot_id="b-1",
-                content="你好", nickname="小明",
-                message_id="m-1", is_group=False, group_id="",
-            )
-            fake_engine = SimpleNamespace(
-                handle_message=AsyncMock(return_value=SimpleNamespace(text="回复"))
-            )
-            with patch.object(
-                webhook_handler, "ConversationEngine", lambda bot_id="": fake_engine
-            ), patch.object(
-                webhook_handler.qq_adapter, "send_message",
-                new=AsyncMock(return_value=True),
-            ):
-                await webhook_handler._process_and_reply(msg)
-                fake_engine.handle_message.assert_awaited()
-
-        _run(body())
 
 
 class TestImageGenEditBranches:

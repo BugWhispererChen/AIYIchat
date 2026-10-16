@@ -178,13 +178,6 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("conversation_id", 1), ("created_at", 1), ("_id", 1)],
     )
     await _safe_create_index(db.messages, "role")
-    # 用户与 Bot 绑定关系：一个用户+一个 Bot 仅一条绑定，声明为唯一索引
-    # （与存量部署中已存在的唯一索引规格一致，避免同名索引规格冲突）
-    await _safe_create_index(
-        db.user_bot_bindings,
-        [("user_id", 1), ("bot_id", 1)],
-        unique=True,
-    )
     # 主动消息记录：按状态+发送时间、创建时间索引（供管理面板统计/分页）
     await _safe_create_index(
         db.proactive_records,

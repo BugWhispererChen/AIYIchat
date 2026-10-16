@@ -1023,70 +1023,6 @@ class WeChatClient(ChannelAdapter):
         except Exception as e:
             logger.error("%s 发送图片异常: %s", self._label, e)
 
-    async def send_voice(
-        self, to_user_id: str, silk_data: bytes, duration: int
-    ) -> None:
-        """发送语音（silk 格式，官方 CDN 上传）。"""
-        upload_result = await self._upload_cdn_media(
-            silk_data, to_user_id, "voice"
-        )
-        if not upload_result:
-            raise RuntimeError("语音 CDN 上传失败")
-
-        cdn_media = upload_result["cdn_media"]
-
-        session = await self._ensure_session()
-        payload: dict = {
-            "msg": {
-                "from_user_id": "",
-                "to_user_id": to_user_id,
-                "client_id": "ec-%s" % uuid.uuid4().hex[:12],
-                "message_type": 2,
-                "message_state": 2,
-                "context_token": self._get_user_context_token(to_user_id),
-                "item_list": [
-                    {
-                        "type": 3,
-                        "voice_item": {
-                            "media": cdn_media,
-                            "encode_type": 6,       # silk 编码
-                            "bits_per_sample": 16,
-                            "sample_rate": 24000,
-                            "playtime": duration,   # 毫秒
-                        },
-                    }
-                ],
-            },
-            "base_info": {"channel_version": "2.0.0"},
-        }
-
-        try:
-            async with session.post(
-                SENDMESSAGE_URL,
-                headers=self._get_headers(),
-                json=payload,
-            ) as resp:
-                resp_text = await resp.text()
-                try:
-                    data = json.loads(resp_text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s 语音 sendmessage 响应解析失败: %s",
-                        self._label, resp_text[:100],
-                    )
-                    return
-                ret = data.get("ret")
-                if ret is not None and ret != 0:
-                    logger.error(
-                        "%s 发送语音失败: %s", self._label, data
-                    )
-                else:
-                    logger.info(
-                        "%s 语音已发送给 %s", self._label, to_user_id
-                    )
-        except Exception as e:
-            logger.error("%s 发送语音异常: %s", self._label, e)
-
     async def send_file(
         self, to_user_id: str, file_data: bytes, file_name: str
     ) -> None:
@@ -1548,11 +1484,11 @@ class WeChatBotManager:
             try:
                 changed = await settings.reload()
                 if changed:
-                    llm_fields = {
-                        "llm_base_url", "llm_api_key",
-                        "llm_model", "llm_timeout_seconds",
-                    }
-                    if changed & llm_fields:
+                    # Provider 由 model_configs 分组与各功能的 config_id 引用决定
+                    if changed & {"model_configs"} or any(
+                        f.endswith(("_config_id", "_timeout_seconds"))
+                        for f in changed
+                    ):
                         from app.llm.provider_factory import reset_provider
 
                         reset_provider()

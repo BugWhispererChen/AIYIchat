@@ -4,7 +4,7 @@
 - emotion_detector：关键词检测/否定/强度/演变/LLM 降级
 - focus_tracker：提取解析/分类/冲突消解/事件（mock LLM + mongomock）
 - context_manager：窗口/token 预算/增量摘要（mock LLM + mongomock）
-- profile_resolver / 长度软引导 / topic_manager
+- 引擎角色解析 / 长度软引导 / topic_manager
 - openai_provider / provider_factory
 """
 
@@ -41,24 +41,14 @@ class TestEmotionDetector:
         # "不难过" 被否定过滤 → 无情绪
         assert _detect_core("我一点也不难过") is None
 
-    def test_intensity_and_hint(self) -> None:
-        from app.conversation.emotion_detector import (
-            EmotionResult,
-            _compute_intensity,
-            get_emotion_hint,
-        )
+    def test_intensity(self) -> None:
+        from app.conversation.emotion_detector import _compute_intensity
 
         # 高强度词
         assert _compute_intensity("我想死了", 1) == 1.0
         # 低强度前缀降权
         low = _compute_intensity("有点难过", 1)
         assert low < 0.5
-
-        # get_emotion_hint 三种入参
-        assert get_emotion_hint(None) is None
-        assert get_emotion_hint("sad", 0.9)
-        er = EmotionResult(emotion="happy", intensity=0.6, hint="开心")
-        assert get_emotion_hint(er) == "开心"
 
     def test_detect_with_history_evolution(self) -> None:
         from app.conversation.emotion_detector import detect_emotion_with_history
@@ -153,42 +143,6 @@ class TestTopicManager:
         assert "A→B" in ctx2
 
 
-class TestProfileResolver:
-    """角色解析。"""
-
-    def test_resolve_priorities(self) -> None:
-        async def body():
-            from app.conversation.profile_resolver import ProfileResolver
-
-            locked = SimpleNamespace(slug="locked")
-            active = SimpleNamespace(is_active=True, id="p-1")
-            inactive = SimpleNamespace(is_active=False, id="p-2")
-
-            repo = SimpleNamespace(
-                find_by_slug=AsyncMock(return_value=locked),
-                find_by_id=AsyncMock(return_value=active),
-            )
-            # 锁定优先
-            r = ProfileResolver(repo, locked_profile_slug="locked")
-            assert await r.resolve("p-1") is locked
-
-            # 无锁定 + active profile_id
-            r2 = ProfileResolver(repo)
-            assert await r2.resolve("p-1") is active
-
-            # profile_id 非活跃 → 返回 None（不再默认兜底）
-            repo.find_by_id = AsyncMock(return_value=inactive)
-            r3 = ProfileResolver(repo)
-            assert await r3.resolve("p-2") is None
-
-            # 无 profile_id → 返回 None，提示文案引导创建角色
-            assert await r3.resolve(None) is None
-            assert "创建角色" in r3.no_profile_message()
-
-        _run(body())
-
-
-class TestFocusTracker:
     """焦点追踪。"""
 
     def test_should_extract(self) -> None:

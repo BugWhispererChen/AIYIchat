@@ -121,30 +121,9 @@ class AppSettingsDocument(BaseModel):
     chat_import_max_tokens: int = 2048
     chat_import_timeout_seconds: int = 60
 
-    # ── 弃用字段（仅保留供迁移读取，运行时不再使用）────────
-    llm_base_url: str = "https://api.deepseek.com/v1"
-    llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"
-    llm_temperature: float = 0.85
-    llm_max_tokens: int = 1024
-    llm_timeout_seconds: int = 15
-    # 辅助任务模型（弃用，迁移时用于生成 aux-default 组）
-    llm_aux_base_url: str = ""
-    llm_aux_api_key: str = ""
-    llm_aux_model: str = ""
-
-    # QQ Bot (legacy 单Bot模式)
-    qq_app_id: str = ""
-    qq_app_secret: str = ""
-    qq_bot_token: str = ""
-    qq_sandbox_mode: bool = True
-
     # 对话
     context_window_size: int = 20
     summary_trigger_count: int = 40
-
-    # 限频
-    rate_limit_per_user: int = 30
 
     # 管理后台
     admin_username: str = "admin"
@@ -160,7 +139,6 @@ class AppSettingsDocument(BaseModel):
 
     # Vision
     vision_enabled: bool = False
-    vision_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     vision_config_id: str = DASHSCOPE_DEFAULT_CONFIG_ID
 
     # TTS
@@ -184,7 +162,6 @@ class AppSettingsDocument(BaseModel):
 
     # 文本向量化（长期记忆语义检索/去重）
     embedding_enabled: bool = False
-    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_config_id: str = DASHSCOPE_DEFAULT_CONFIG_ID
 
     # 记忆语义检索
@@ -219,8 +196,6 @@ class AppSettingsDocument(BaseModel):
     memory_inject_time_suffix: bool = True  # 记忆注入追加"（记录于 N 天前）"后缀
     # jionlp 相对时间归一化（依赖缺失/导入失败时自动降级为纯 LLM，不阻断主链路）
     time_jionlp_enabled: bool = True
-    # 弃用：时区统一由 default_timezone_offset 接管，仅保留供迁移脚本读取存量值
-    chat_timezone_offset: int = 8
 
     # 上下文 token 预算
     context_token_budget: int = 3000
@@ -243,8 +218,6 @@ class AppSettingsDocument(BaseModel):
     # 主动关怀免打扰时段（用户本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22
     proactive_quiet_hour_end: int = 8
-    # 弃用：时区统一由 default_timezone_offset 接管，仅保留供迁移脚本读取存量值
-    proactive_timezone_offset: int = 8
 
     # 分享型主动消息（时事/新闻/见闻/趣事）：召回触发点按概率替代关怀型内容，
     # 不新增发送频次，免打扰/月度配额/通道预检/重试熔断全部复用

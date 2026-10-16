@@ -5,19 +5,27 @@
 ## [Unreleased]
 
 ### 移除
-- **商用授权体系**：删除 `app/license` 模块、授权管理路由与页面、发证工具 `license_issuer`，项目转为完全开源（MIT）
-- **聊天记录导出工具**：删除 `chat_exporter` 与 `_ref_src`（含密钥提取代码），角色克隆改为用户自行准备 JSON 文件上传
-- **Cython 混淆构建链路**：部署包改为纯源码形态，打包流程从 7 步简化为 4 步
+- **商用授权体系**：删除授权校验模块、授权管理路由与页面、配套发证工具，项目转为完全开源（MIT）
+- **聊天记录导出工具**：角色克隆改为用户自行准备符合 schema 的 JSON 文件上传，不再提供导出工具下载
+- **代码混淆构建链路**：部署包改为纯源码形态
+- **遗留配置与死代码**：`LLM_*` 直连字段族、QQ 单 Bot 配置（`QQ_APP_ID` / `QQ_APP_SECRET` /
+  `QQ_BOT_TOKEN` / `QQ_SANDBOX_MODE`）与 QQ webhook 接入通道、`RATE_LIMIT_PER_USER` 及其限流模块、
+  时区双写兼容垫片（`chat_timezone_offset` / `proactive_timezone_offset`）、零引用的错误码模块、
+  LLM 降级链与无生产者的业务指标端点
+- **个人版数量限额**（账号/角色/Bot/服务），全部功能无限制使用
+- 对外 API 的 402 授权拦截中间件
 
 ### 新增
 - 开源治理文件：`LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md`、GitHub Issue/PR 模板
 - `.gitattributes`：固化 shell 脚本 LF 换行符策略，规避 Windows 检出污染 Linux 执行
 
 ### 变更
-- 角色克隆页改为展示 JSON 格式说明（schema、字段含义、合规提示），不再提供导出工具下载
+- 角色克隆页改为展示 JSON 格式说明（schema、字段含义、合规提示）
 - 管理后台移除「授权管理」导航项与授权横幅
-- 移除个人版数量限额（账号/角色/Bot/服务），全部功能无限制使用
-- 移除对外 API 的 402 授权拦截中间件
+- AI 模型连接统一由 `model_configs` 凭证分组 + 各功能 `{task}_config_id` 引用；首次启动按
+  `.env` 的 `DASHSCOPE_API_KEY` 自动生成 5 组默认配置，其余在管理后台「AI 模型配置」页维护
+- 时区收敛为单一源 `default_timezone_offset`（对话时间感知与主动关怀免打扰共用）
+- README 与 `.env.example` 重写：删除不存在的变量与失效默认值，补齐部署者需要的实际配置项
 
 ---
 

@@ -1,8 +1,7 @@
 """model_registry 与 provider_factory 单元测试。
 
 覆盖：
-- resolve_model_config 按 task 解析引用的基础配置组
-- 功能级 model 覆盖优先于组 default_model
+- resolve_model_config 按 task 解析引用的基础配置组（模型取组的 default_model）
 - 未引用/组不存在/无密钥/无模型 时抛 RuntimeError（严格无回退）
 - provider_factory 按 task 缓存与 reset
 """
@@ -28,13 +27,13 @@ def _settings(model_configs=None, **overrides) -> SimpleNamespace:
             {
                 "id": "dashscope-default", "name": "百炼",
                 "base_url": "http://ds", "api_key": "dkey",
-                "default_model": "",
+                "default_model": "ds-model",
             },
         ],
-        "chat_config_id": "text-default", "chat_model": "", "chat_timeout_seconds": 15,
-        "summary_config_id": "text-default", "summary_model": "", "summary_timeout_seconds": 30,
-        "vision_config_id": "dashscope-default", "vision_model": "qwen-vl-max",
-        "embedding_config_id": "dashscope-default", "embedding_model": "text-embedding-v3",
+        "chat_config_id": "text-default", "chat_timeout_seconds": 15,
+        "summary_config_id": "text-default", "summary_timeout_seconds": 30,
+        "vision_config_id": "dashscope-default",
+        "embedding_config_id": "dashscope-default",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -52,17 +51,13 @@ class TestResolveModelConfig:
             assert cfg.model == "text-model"
             assert cfg.timeout == 15
 
-    def test_feature_model_override(self) -> None:
-        """功能级 model 覆盖应优先于组 default_model。"""
-        with patch.object(mr, "settings", _settings(chat_model="gpt-4o")):
-            assert mr.resolve_model_config("chat").model == "gpt-4o"
-
-    def test_media_uses_own_model(self) -> None:
-        """媒体功能使用自身 *_model 与所引用组的密钥。"""
+    def test_media_uses_group_model(self) -> None:
+        """媒体功能取所引用组的默认模型与密钥，超时用媒体默认值。"""
         with patch.object(mr, "settings", _settings()):
             cfg = mr.resolve_model_config("vision")
-            assert cfg.model == "qwen-vl-max"
+            assert cfg.model == "ds-model"
             assert cfg.api_key == "dkey"
+            assert cfg.timeout == 30
 
     def test_missing_config_raises(self) -> None:
         """config_id 指向不存在的组应抛错（无回退）。"""
@@ -81,12 +76,12 @@ class TestResolveModelConfig:
                 mr.resolve_model_config("chat")
 
     def test_no_model_raises(self) -> None:
-        """既无功能级 model 又无组默认模型应抛错。"""
+        """组无默认模型时抛错（严格无回退）。"""
         cfgs = [{
             "id": "dashscope-default", "name": "d",
             "base_url": "u", "api_key": "k", "default_model": "",
         }]
-        with patch.object(mr, "settings", _settings(model_configs=cfgs, vision_model="")):
+        with patch.object(mr, "settings", _settings(model_configs=cfgs)):
             with pytest.raises(RuntimeError):
                 mr.resolve_model_config("vision")
 
@@ -105,7 +100,7 @@ class TestProviderFactory:
 
     def test_different_tasks_different_providers(self) -> None:
         """不同 task 使用各自模型，返回不同实例。"""
-        cfg = _settings(summary_config_id="dashscope-default", summary_model="ds-model")
+        cfg = _settings(summary_config_id="dashscope-default")
         with patch.object(mr, "settings", cfg):
             pf.reset_provider()
             chat = pf.get_llm_provider("chat")

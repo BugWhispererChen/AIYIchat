@@ -44,7 +44,7 @@
 - 预置角色：**麦筱悠**（在校大学生）+ 5 位女友（**苏晚晴、林小满、顾清欢、
   唐可可、江屿**）+ 5 位男友（**陆知行、秦烈、沈砚、许念安、程叙**），
   人设、语言风格、性格维度差异化设计，各自绑定不同官方音色并配有定妆照
-  （种子脚本 `tools/seed_companion_profiles.py`，按 slug 幂等 upsert）
+  （种子脚本 `aiyichat/tools/seed_companion_profiles.py`，按 slug 幂等 upsert）
 - 支持自定义角色：通过管理后台创建向导（LLM 生成草稿 → 定妆照 → 音色 → 预览确认）
 - 角色与 Bot / 用户可灵活绑定，按会话解析当前角色配置
 
@@ -77,12 +77,15 @@
 
 | 能力 | 实现 | 说明 |
 |------|------|------|
-| 语音识别（ASR） | 阿里云 Paraformer | 听懂用户发来的语音消息 |
-| 语音合成（TTS） | 阿里云 CosyVoice / qwen-audio | 以预置或复刻音色发语音回复 |
-| 视觉理解（Vision） | 阿里云 Qwen-VL | 看懂用户发来的图片 |
-| 图像生成（ImageGen） | 阿里云 Wanx | 按对话语境为用户画图 |
+| 语音识别（ASR） | 阿里云百炼 语音识别 | 听懂用户发来的语音消息 |
+| 语音合成（TTS） | 阿里云百炼 语音合成 | 以预置或复刻音色发语音回复 |
+| 视觉理解（Vision） | 阿里云百炼 视觉模型 | 看懂用户发来的图片 |
+| 图像生成（ImageGen） | 阿里云百炼 图像生成与编辑 | 按对话语境为用户画图 |
 
-此外还包含：用户级配额管理与限流、响应安全过滤、管理后台（仪表盘、角色、用户、
+各能力的具体模型名与接口凭证在管理后台「AI 模型配置」页维护（可换供应商/模型），
+`.env` 只需提供一个百炼 API Key。
+
+此外还包含：用户级配额管理、响应安全过滤、管理后台（仪表盘、角色、用户、
 对话、Bot、多媒体设置、配额，配置热重载）等配套能力。
 
 ---
@@ -108,7 +111,7 @@ NormalizedMessage（统一消息格式）
     ↓
 conversation/engine.py（对话引擎）
     ↓
-profile_resolver + context_manager + emotion_detector
+角色解析 + context_manager + emotion_detector
     ↓
 prompt_assembler → llm/openai_provider.py（LLM 调用）
     ↓
@@ -125,7 +128,7 @@ adapters 回发消息（文本 / 语音 / 图片）
 | `app/conversation/` | 对话引擎：情绪检测、角色解析、上下文管理、响应后处理 |
 | `app/llm/` | LLM Provider 抽象与工厂，Prompt 组装 |
 | `app/profiles/` | 角色定义、渲染与种子数据 |
-| `app/services/` | ASR / TTS / Vision / ImageGen / 配额 / 存储等业务服务 |
+| `app/services/` | ASR / TTS / Vision / ImageGen / 声音复刻 / 媒体存储 / 表情包等业务服务 |
 | `app/admin/` | Web 管理后台（认证、仪表盘、全功能管理页） |
 | `app/db/repositories/` | MongoDB 数据仓库层 |
 | `app/proactive/` | 主动关怀调度器 |
@@ -148,7 +151,7 @@ cd aiyichat
 
 # 1. 准备配置
 cp .env.example .env
-# 编辑 .env：填入数据库连接、LLM 与多模态服务的 API Key、Bot 密钥等
+# 编辑 .env：填入百炼 API Key（文本 + 多媒体共用）与管理后台密码
 
 # 2. 构建并启动
 docker compose up -d --build
@@ -166,9 +169,10 @@ docker compose logs --tail=50 app
 QQ / 微信 Bot 在启动后通过管理后台的 Bot 管理页面添加，配置保存于数据库并支持热加载，
 无需本地配置文件。
 
-`.env` 关键配置项包括：MongoDB 连接串、LLM 模型与超时（建议 `llm_timeout_seconds=25`）、
-Embedding 模型（需显式指定专用向量模型，避免回退到聊天模型导致报错）、
-TTS / ASR / Vision / ImageGen 模型选择、管理员账号等。完整模板见 `.env.example`。
+`.env` 关键配置项包括：MongoDB 连接串、`DASHSCOPE_API_KEY`、多模态开关
+（`ASR_ENABLED` / `VISION_ENABLED` / `TTS_ENABLED` / `IMAGEGEN_ENABLED`）、
+管理员账号等；模型名称与分组引用存于数据库，在管理后台维护。完整模板与说明见
+`.env.example` 与 [aiyichat/README.md](aiyichat/README.md)。
 
 ---
 
@@ -188,8 +192,9 @@ TTS / ASR / Vision / ImageGen 模型选择、管理员账号等。完整模板�
 - **预置表情包**（`data/stickers/`）：来自 [ChineseBQB](https://github.com/zhaoolee/ChineseBQB) 开源表情包数据集，
   素材多为网络流行图，可能存在原始作者版权，商用前请由部署方自行评估；
   如有异议可在管理后台「表情包管理」页逐条停用或删除，并替换为自有素材。详见 [data/stickers/NOTICE.md](aiyichat/data/stickers/NOTICE.md)
-- **预置角色定妆照**（`data/preset_portraits/`）：由项目内置 ImageGen 服务（阿里云 Wanx）依
-  `tools/seed_companion_profiles.py` 中的 prompt 生成，非真人肖像、非第三方素材。详见 [data/preset_portraits/NOTICE.md](aiyichat/data/preset_portraits/NOTICE.md)
+- **预置角色定妆照**（`data/preset_portraits/`）：由项目内置 ImageGen 服务（阿里云百炼
+  图像生成，默认 `qwen-image` 系列）依 `aiyichat/tools/seed_companion_profiles.py` 中的 prompt 生成，
+  非真人肖像、非第三方素材。详见 [data/preset_portraits/NOTICE.md](aiyichat/data/preset_portraits/NOTICE.md)
 
 ---
 
@@ -204,7 +209,7 @@ TTS / ASR / Vision / ImageGen 模型选择、管理员账号等。完整模板�
 - 主动关怀调度（含勿扰时间）
 - 四路多模态（ASR / TTS / Vision / ImageGen）与声音复刻
 - 管理后台全功能 + 配置热重载
-- 用户配额体系与限流
+- 用户配额体系
 - Docker Compose 一键部署
 
 ### 规划中
@@ -212,7 +217,7 @@ TTS / ASR / Vision / ImageGen 模型选择、管理员账号等。完整模板�
 - 更多预置角色与角色市场式管理
 - 记忆系统的语义检索增强
 - 多轮对话中的更自然的多模态穿插交互
-- 更完善的可观测性（对话质量、服务调用指标看板）
+- 可观测性建设（对话质量与服务调用指标看板）
 
 ---
 

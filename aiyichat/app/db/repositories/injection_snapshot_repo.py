@@ -6,7 +6,6 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from app.db.mongo import get_database
 from app.models.injection_snapshot import InjectionSnapshotInDB
@@ -73,21 +72,6 @@ class InjectionSnapshotRepository:
         async for doc in cursor:
             result.append(InjectionSnapshotInDB.from_mongo(doc))
         return result
-
-    async def latest_by_service(
-        self, service_id: str
-    ) -> Optional[InjectionSnapshotInDB]:
-        """查询指定服务最新一条快照。"""
-        doc = await self._collection().find_one(
-            {"service_id": service_id}, sort=[("created_at", -1)]
-        )
-        if doc is None:
-            return None
-        return InjectionSnapshotInDB.from_mongo(doc)
-
-    async def count_by_service(self, service_id: str) -> int:
-        """统计指定服务的快照条数。"""
-        return await self._collection().count_documents({"service_id": service_id})
 
     @staticmethod
     def _now() -> datetime:

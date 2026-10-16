@@ -8,11 +8,9 @@ from dotenv import dotenv_values
 
 from app.db.mongo import get_database
 from app.models.app_settings import (
-    DASHSCOPE_DEFAULT_CONFIG_ID,
     DEFAULT_CONFIG_REFS,
     DEFAULT_MODEL_GROUPS,
     PLACEHOLDER_API_KEY,
-    TEXT_DEFAULT_CONFIG_ID,
     AppSettingsDocument,
     ModelConfig,
 )
@@ -74,23 +72,14 @@ class AppSettingsRepository:
         logger.info("Seeded app_settings from .env")
         return True
 
-    async def migrate_model_configs_if_needed(
-        self, aux_source: dict[str, Any] | None = None
-    ) -> bool:
+    async def migrate_model_configs_if_needed(self) -> bool:
         """为已存在的配置文档生成基础配置组与功能引用（幂等）。
 
         仅当文档存在且 model_configs 为空时执行；返回是否执行了迁移。
-        aux_source 用于回填旧部署中仅存在于 .env 的 llm_aux_* 字段。
         """
         doc = await self.get_document()
         if doc is None or doc.model_configs:
             return False
-
-        # 旧部署的辅助模型可能仅配置在 .env（不在 DB），此处回填以便生成 aux-default 组
-        if aux_source and not doc.llm_aux_model and aux_source.get("llm_aux_model"):
-            doc.llm_aux_base_url = str(aux_source.get("llm_aux_base_url", ""))
-            doc.llm_aux_api_key = str(aux_source.get("llm_aux_api_key", ""))
-            doc.llm_aux_model = str(aux_source.get("llm_aux_model", ""))
 
         updates = build_model_configs_migration(doc)
         await self.upsert(updates)
@@ -105,51 +94,18 @@ def build_model_configs_migration(doc: AppSettingsDocument) -> dict[str, Any]:
     """生成默认基础配置组与功能引用。
 
     幂等：仅在 model_configs 为空时调用。返回需写入（upsert/setattr）的字段字典。
-    - 存在旧配置（llm_api_key 有效）：text-default 由旧 llm_* 生成，供全部文本功能引用；
-      dashscope-default 由旧 vision_base_url + dashscope_api_key 生成，供媒体功能引用；
-      旧 llm_aux_model 生成独立 aux-default 组，focus/emotion/summary 引用该组。
-    - 未配置任何 AI 模型：按 DEFAULT_MODEL_GROUPS 生成 5 组默认分组，
-      api_key 留空，用户仅需在管理后台填入 API Key 即可使用。
+    按 DEFAULT_MODEL_GROUPS 生成 5 组默认分组；.env 已填 DASHSCOPE_API_KEY 时直接
+    注入各组 api_key（首次部署即可用），否则留空由管理后台「AI 模型配置」页填写。
     """
-    if doc.llm_api_key and doc.llm_api_key != PLACEHOLDER_API_KEY:
-        groups: list[dict[str, Any]] = [
-            ModelConfig(
-                id=TEXT_DEFAULT_CONFIG_ID,
-                name="默认文本模型",
-                base_url=doc.llm_base_url,
-                api_key=doc.llm_api_key,
-                default_model=doc.llm_model,
-            ).model_dump(),
-            ModelConfig(
-                id=DASHSCOPE_DEFAULT_CONFIG_ID,
-                name="阿里云百炼",
-                base_url=doc.vision_base_url,
-                api_key=doc.dashscope_api_key,
-                default_model="",
-            ).model_dump(),
-        ]
-
-        updates: dict[str, Any] = {"model_configs": groups}
-
-        # 旧辅助模型生成独立 aux-default 组，focus/emotion/summary 引用该组
-        if doc.llm_aux_model:
-            aux_group = ModelConfig(
-                id="aux-default",
-                name="辅助任务模型",
-                base_url=doc.llm_aux_base_url or doc.llm_base_url,
-                api_key=doc.llm_aux_api_key or doc.llm_api_key,
-                default_model=doc.llm_aux_model,
-            ).model_dump()
-            groups.append(aux_group)
-            for task in ("focus", "emotion", "summary"):
-                updates[f"{task}_config_id"] = "aux-default"
-
-        return updates
-
-    # 未配置任何 AI 模型：生成默认基础配置组并写入功能引用
+    api_key = (
+        doc.dashscope_api_key
+        if doc.dashscope_api_key and doc.dashscope_api_key != PLACEHOLDER_API_KEY
+        else ""
+    )
     return {
         "model_configs": [
-            ModelConfig(**group).model_dump() for group in DEFAULT_MODEL_GROUPS
+            ModelConfig(**{**group, "api_key": api_key}).model_dump()
+            for group in DEFAULT_MODEL_GROUPS
         ],
         **DEFAULT_CONFIG_REFS,
     }
@@ -159,7 +115,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
     """将 .env 字符串值转换为 AppSettingsDocument 的字段类型。"""
     result: dict[str, Any] = {}
     bool_fields = {
-        "use_mock_db", "qq_sandbox_mode", "asr_enabled",
+        "use_mock_db", "asr_enabled",
         "vision_enabled", "tts_enabled", "tts_expression_enabled", "imagegen_enabled",
         "memory_graph_enabled",
         # 语音动态触发窗口开关
@@ -172,8 +128,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "memory_fact_validity_enabled", "memory_expired_filter_enabled",
     }
     int_fields = {
-        "llm_max_tokens", "llm_timeout_seconds", "context_window_size",
-        "summary_trigger_count", "rate_limit_per_user", "admin_session_hours",
+        "context_window_size",
+        "summary_trigger_count", "admin_session_hours",
         "chat_max_tokens", "chat_timeout_seconds",
         "proactive_max_tokens", "proactive_timeout_seconds",
         "focus_max_tokens", "focus_timeout_seconds",
@@ -182,18 +138,17 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "chat_import_max_tokens", "chat_import_timeout_seconds",
         "proactive_max_retries", "proactive_monthly_limit",
         "proactive_quiet_hour_start", "proactive_quiet_hour_end",
-        "proactive_timezone_offset", "chat_import_chunk_size",
-        # 对话时间感知（单一时区源 + 标签阈值 + 弃用的 chat 侧偏移）
+        "chat_import_chunk_size",
+        # 对话时间感知（单一时区源 + 标签阈值）
         "default_timezone_offset", "message_time_gap_minutes",
         "time_session_gap_hours", "time_reunion_gap_hours",
-        "chat_timezone_offset",
         # 语音动态触发窗口时长（分钟）
         "voice_window_min_minutes", "voice_window_max_minutes",
         # 聊天记录导入时区偏移
         "chat_import_timezone_offset",
     }
     float_fields = {
-        "llm_temperature", "proactive_llm_temperature",
+        "proactive_llm_temperature",
         "chat_temperature", "proactive_temperature", "focus_temperature",
         "emotion_temperature", "summary_temperature", "chat_import_temperature",
     }

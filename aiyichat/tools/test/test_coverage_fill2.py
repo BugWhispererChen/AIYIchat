@@ -1,4 +1,4 @@
-"""收尾批 2：补齐 auth 路由、bot_config、audio 转换的覆盖。"""
+"""收尾批 2：补齐 bot_config 加载、audio 转换、图片压缩的覆盖。"""
 
 import asyncio
 import sys
@@ -7,65 +7,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import mongomock_motor
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
 
-from app.config import settings
 from app.db import mongo
 
 
 def _run(coro):
     return asyncio.run(coro)
 
-
-class TestAuthRouter:
-    """独立 auth_router（登录/登出页）。"""
-
-    def _app(self) -> FastAPI:
-        from app.admin.routes.auth import auth_router
-
-        app = FastAPI()
-        app.include_router(auth_router)
-        return app
-
-    def test_login_logout_flow(self) -> None:
-        async def body():
-            from app.admin import auth
-
-            app = self._app()
-            old_pw = settings.admin_password
-            settings.admin_password = "pw"
-            try:
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://t") as c:
-                    # 登录页
-                    resp = await c.get("/admin/login")
-                    assert resp.status_code == 200
-
-                    # 密码错误 → 401 + 错误提示
-                    resp = await c.post("/admin/login", data={
-                        "username": "admin", "password": "bad",
-                    })
-                    assert resp.status_code == 401 and "用户名或密码错误" in resp.text
-
-                    # 登录成功 → 303 + cookie
-                    resp = await c.post("/admin/login", data={
-                        "username": "admin", "password": "pw",
-                    })
-                    assert resp.status_code == 303
-                    token = resp.cookies.get("admin_session")
-                    assert token
-
-                    # 登出
-                    resp = await c.get(
-                        "/admin/logout", cookies={"admin_session": token}
-                    )
-                    assert resp.status_code == 303
-            finally:
-                settings.admin_password = old_pw
-                auth._sessions.clear()
-
-        _run(body())
 
 
 class TestBotConfigLoader:
@@ -137,22 +85,6 @@ class TestAudioConversions:
             ):
                 silk = await audio_utils.wav_to_silk(b"wav-input")
                 assert silk == b"SILKDATA"
-
-        _run(body())
-
-    def test_mp3_to_silk(self) -> None:
-        async def body():
-            from app.services import audio_utils
-
-            fake_pilk = self._install_fake_pilk()
-            fake_subprocess = SimpleNamespace(
-                run=lambda *a, **k: SimpleNamespace(returncode=0)
-            )
-            with patch.dict(
-                sys.modules, {"pilk": fake_pilk, "subprocess": fake_subprocess}
-            ):
-                silk, duration = await audio_utils.mp3_to_silk(b"mp3-input")
-                assert silk == b"SILKDATA" and duration == 1000
 
         _run(body())
 

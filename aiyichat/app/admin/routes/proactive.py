@@ -126,8 +126,8 @@ async def save_quiet_hours(
 ) -> RedirectResponse:
     """保存免打扰时段与用户时区：落库 -> 热重载（调度器运行时读取，无需重启）。
 
-    时区写入单一源 default_timezone_offset（已弃用的 proactive_timezone_offset
-    同步写入相同值），避免运营改了主动关怀时区后对话侧仍用旧时区。
+    时区只写单一源 default_timezone_offset，对话时间感知与主动关怀共用它，
+    避免运营改了主动关怀时区后对话侧仍用旧时区。
     """
     from app.config import settings
     from app.db.repositories.app_settings_repo import AppSettingsRepository
@@ -137,8 +137,6 @@ async def save_quiet_hours(
         "proactive_quiet_hour_start": max(0, min(23, quiet_start)),
         "proactive_quiet_hour_end": max(0, min(23, quiet_end)),
         "default_timezone_offset": tz,
-        "proactive_timezone_offset": tz,  # 弃用字段同步，保障旧版本回滚不丢配置
-        "chat_timezone_offset": tz,
     })
     await settings.reload()
 

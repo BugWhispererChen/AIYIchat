@@ -93,36 +93,6 @@
         <button type="submit">开始分析</button>
     </form>
 </div>
-
-<!-- JSON格式说明 -->
-<div class="card" style="margin-top:1rem;">
-    <details>
-        <summary>JSON文件格式说明</summary>
-        <div style="padding-top:0.5rem;">
-            <p>JSON文件应为消息数组，每条消息包含以下字段：</p>
-            <pre style="background:var(--pico-code-background-color);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.85rem;">[
-  {
-    "timestamp": "2024-03-15T14:23:01",
-    "sender": "张三",
-    "content": "今天天气真好啊",
-    "is_target": true
-  },
-  {
-    "timestamp": "2024-03-15T14:23:15",
-    "sender": "我",
-    "content": "是啊，要不要出去走走？",
-    "is_target": false
-  }
-]</pre>
-            <ul>
-                <li><code>timestamp</code>: 消息时间（ISO 8601格式或Unix时间戳）</li>
-                <li><code>sender</code>: 发送者名称</li>
-                <li><code>content</code>: 消息文本内容</li>
-                <li><code>is_target</code>: true=目标联系人的消息, false=自己的消息</li>
-            </ul>
-        </div>
-    </details>
-</div>
 {% endif %}
 
 <p style="margin-top:1rem;"><a href="/admin/profiles">&larr; 返回角色列表</a></p>

@@ -19,9 +19,6 @@ _DEFAULT_MEDIA_TIMEOUT = 30
 TEXT_TASKS = frozenset({
     "chat", "proactive", "focus", "emotion", "summary", "chat_import",
 })
-MEDIA_TASKS = frozenset({
-    "asr", "tts", "imagegen", "imagegen_edit", "vision", "embedding",
-})
 
 
 @dataclass

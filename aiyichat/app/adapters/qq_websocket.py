@@ -48,7 +48,6 @@ GATEWAY_URL_PROD = "https://api.sgroup.qq.com/gateway"
 OP_DISPATCH = 0
 OP_HEARTBEAT = 1
 OP_IDENTIFY = 2
-OP_RESUME = 6
 OP_RECONNECT = 7
 OP_INVALID_SESSION = 9
 OP_HELLO = 10
@@ -83,7 +82,6 @@ class QQWebSocketClient:
         self._label = f"[{bot_config.name or bot_config.id}]"
         self._access_token: str = ""
         self._token_expires_at: float = 0
-        self._session_id: str = ""
         self._sequence: int | None = None
         self._heartbeat_interval: float = 45.0
         self._ws = None
@@ -212,7 +210,6 @@ class QQWebSocketClient:
                 event_type, event_data
             )
         elif event_type == "READY":
-            self._session_id = event_data.get("session_id", "")
             bot_name = event_data.get("user", {}).get(
                 "username", "unknown"
             )
@@ -1037,7 +1034,6 @@ class QQWebSocketClient:
                                 "%s 无效 session",
                                 self._label,
                             )
-                            self._session_id = ""
                             break
 
                     if heartbeat_task:
@@ -1175,11 +1171,11 @@ class BotManager:
                 from app.config import settings
                 changed = await settings.reload()
                 if changed:
-                    llm_fields = {
-                        "llm_base_url", "llm_api_key",
-                        "llm_model", "llm_timeout_seconds",
-                    }
-                    if changed & llm_fields:
+                    # Provider 由 model_configs 分组与各功能的 config_id 引用决定
+                    if changed & {"model_configs"} or any(
+                        f.endswith(("_config_id", "_timeout_seconds"))
+                        for f in changed
+                    ):
                         from app.llm.provider_factory import reset_provider
                         reset_provider()
                         logger.info("LLM provider 已重建")

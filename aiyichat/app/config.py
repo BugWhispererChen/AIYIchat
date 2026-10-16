@@ -43,19 +43,6 @@ class _RuntimeSettings:
     mongodb_database: str = "aiyichat"
     use_mock_db: bool = False
 
-    # LLM 主模型（弃用直连字段，仅供迁移；运行时改用 model_configs + chat_*）
-    llm_base_url: str = "https://api.deepseek.com/v1"
-    llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"
-    llm_temperature: float = 0.85
-    llm_max_tokens: int = 1024
-    llm_timeout_seconds: int = 15
-
-    # 辅助任务模型（弃用，迁移时用于生成 aux-default 组）
-    llm_aux_base_url: str = ""
-    llm_aux_api_key: str = ""
-    llm_aux_model: str = ""
-
     # 基础配置：可复用的连接凭证组（名称+base_url+api_key+默认model）
     model_configs: list = []
 
@@ -86,12 +73,6 @@ class _RuntimeSettings:
     chat_import_temperature: float = 0.7
     chat_import_max_tokens: int = 2048
     chat_import_timeout_seconds: int = 60
-
-    # QQ Bot (legacy 单Bot模式)
-    qq_app_id: str = ""
-    qq_app_secret: str = ""
-    qq_bot_token: str = ""
-    qq_sandbox_mode: bool = True
 
     # 对话
     context_window_size: int = 20
@@ -140,14 +121,9 @@ class _RuntimeSettings:
     memory_inject_time_suffix: bool = True  # 记忆注入追加"（记录于 N 天前）"后缀
     # jionlp 相对时间归一化（依赖缺失/导入失败时自动降级为纯 LLM，不阻断主链路）
     time_jionlp_enabled: bool = True
-    # 弃用：时区统一由 default_timezone_offset 接管，仅保留供迁移脚本读取存量值
-    chat_timezone_offset: int = 8
 
     # 主动消息
     proactive_llm_temperature: float = 0.92  # 主动消息LLM温度
-
-    # 限频
-    rate_limit_per_user: int = 30
 
     # 管理后台
     admin_username: str = "admin"
@@ -163,7 +139,6 @@ class _RuntimeSettings:
 
     # Vision
     vision_enabled: bool = False
-    vision_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     vision_config_id: str = "dashscope-default"
 
     # TTS
@@ -187,7 +162,6 @@ class _RuntimeSettings:
 
     # 文本向量化（长期记忆语义检索/去重；关闭或无密钥时自动降级到规则逻辑）
     embedding_enabled: bool = False
-    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_config_id: str = "dashscope-default"
 
     # 记忆语义检索
@@ -228,8 +202,6 @@ class _RuntimeSettings:
     # 主动关怀免打扰时段（用户本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22
     proactive_quiet_hour_end: int = 8
-    # 弃用：时区统一由 default_timezone_offset 接管，仅保留供迁移脚本读取存量值
-    proactive_timezone_offset: int = 8
 
     # 分享型主动消息（时事/新闻/见闻/趣事）：在召回触发点按概率替代关怀型内容，
     # 不新增发送频次，免打扰/月度配额/通道预检/重试熔断全部复用
@@ -248,10 +220,6 @@ class _RuntimeSettings:
     # 内容安全：运营追加词表（与内置词库合并，变更后重建 SafetyChecker）
     safety_crisis_extra: list = []
     safety_forbidden_extra: list = []
-
-    # LLM 降级链：主模型失败时自动切换备用模型
-    llm_fallback_enabled: bool = True
-    llm_fallback_model: str = ""  # 备用模型标识（对应 model_configs 中的 id）
 
     # 表情包（AI 主动发送/理解用户表情/以图回图；语义检索 + 关键词兜底）
     sticker_enabled: bool = False  # 表情包发送总开关（需表情库非空）
@@ -328,9 +296,6 @@ class _RuntimeSettings:
     def _fields(cls) -> set[str]:
         return {
             "app_env", "log_level", "mongodb_uri", "mongodb_database", "use_mock_db",
-            "llm_base_url", "llm_api_key", "llm_model", "llm_temperature",
-            "llm_max_tokens", "llm_timeout_seconds",
-            "llm_aux_base_url", "llm_aux_api_key", "llm_aux_model",
             "model_configs",
             "chat_config_id", "chat_temperature",
             "chat_max_tokens", "chat_timeout_seconds", "chat_presence_penalty",
@@ -344,7 +309,6 @@ class _RuntimeSettings:
             "summary_max_tokens", "summary_timeout_seconds",
             "chat_import_config_id", "chat_import_temperature",
             "chat_import_max_tokens", "chat_import_timeout_seconds",
-            "qq_app_id", "qq_app_secret", "qq_bot_token", "qq_sandbox_mode",
             "context_window_size", "summary_trigger_count",
             "memory_max_facts", "memory_extract_interval", "memory_inject_limit",
             "summary_max_length", "topic_history_max", "proactive_llm_temperature",
@@ -356,22 +320,21 @@ class _RuntimeSettings:
             "reply_jitter_similarity_warn",
             "reply_jitter_window", "reply_jitter_retry_max",
             "reply_jitter_retry_temp_step",
-            "message_time_enabled", "message_time_gap_minutes", "chat_timezone_offset",
+            "message_time_enabled", "message_time_gap_minutes",
             "time_session_gap_hours", "time_reunion_gap_hours",
             "default_timezone_offset", "time_anchor_enabled", "time_idle_hint_enabled",
             "time_day_separator_enabled", "message_time_tag_year_enabled",
             "memory_inject_time_suffix", "time_jionlp_enabled",
-            "rate_limit_per_user",
             "admin_username", "admin_password", "admin_session_hours",
             "dashscope_api_key",
             "asr_enabled", "asr_config_id",
-            "vision_enabled", "vision_base_url", "vision_config_id",
+            "vision_enabled", "vision_config_id",
             "tts_enabled", "tts_config_id", "tts_expression_enabled",
             "voice_dynamic_enabled", "voice_window_min_minutes",
             "voice_window_max_minutes",
             "imagegen_enabled", "imagegen_config_id",
             "imagegen_edit_enabled", "imagegen_edit_config_id",
-            "embedding_enabled", "embedding_base_url", "embedding_config_id",
+            "embedding_enabled", "embedding_config_id",
             "memory_retrieve_topk", "memory_semantic_weight",
             "memory_fact_validity_enabled", "memory_expired_filter_enabled",
             "memory_max_entities", "memory_entity_scan_turns",
@@ -383,13 +346,11 @@ class _RuntimeSettings:
             "proactive_enabled", "proactive_max_retries",
             "proactive_monthly_limit",
             "proactive_quiet_hour_start", "proactive_quiet_hour_end",
-            "proactive_timezone_offset",
             "proactive_share_enabled", "proactive_share_ratio",
             "proactive_share_news_ratio",
             "chat_import_chunk_size",
             "chat_import_timezone_offset",
             "safety_crisis_extra", "safety_forbidden_extra",
-            "llm_fallback_enabled", "llm_fallback_model",
             "sticker_enabled", "sticker_seed_enabled", "sticker_max_per_turn",
             "sticker_similarity_threshold", "sticker_reply_probability",
             "sticker_casual_probability", "sticker_max_dimension",
@@ -405,15 +366,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         mongodb_uri: str = Field(default="mongodb://localhost:27017")
         mongodb_database: str = Field(default="aiyichat")
         use_mock_db: bool = Field(default=False)
-        llm_base_url: str = Field(default="https://api.deepseek.com/v1")
-        llm_api_key: str = Field(default="")
-        llm_model: str = Field(default="deepseek-chat")
-        llm_temperature: float = Field(default=0.85)
-        llm_max_tokens: int = Field(default=1024)
-        llm_timeout_seconds: int = Field(default=15)
-        llm_aux_base_url: str = Field(default="")
-        llm_aux_api_key: str = Field(default="")
-        llm_aux_model: str = Field(default="")
         model_configs: list = Field(default_factory=list)
         chat_config_id: str = Field(default="text-default")
         chat_temperature: float = Field(default=0.85)
@@ -440,10 +392,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         chat_import_temperature: float = Field(default=0.7)
         chat_import_max_tokens: int = Field(default=2048)
         chat_import_timeout_seconds: int = Field(default=60)
-        qq_app_id: str = Field(default="")
-        qq_app_secret: str = Field(default="")
-        qq_bot_token: str = Field(default="")
-        qq_sandbox_mode: bool = Field(default=True)
         context_window_size: int = Field(default=20)
         summary_trigger_count: int = Field(default=40)
         memory_max_facts: int = Field(default=30)
@@ -475,9 +423,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         message_time_tag_year_enabled: bool = Field(default=True)
         memory_inject_time_suffix: bool = Field(default=True)
         time_jionlp_enabled: bool = Field(default=True)
-        chat_timezone_offset: int = Field(default=8)
         proactive_llm_temperature: float = Field(default=0.92)
-        rate_limit_per_user: int = Field(default=30)
         admin_username: str = Field(default="admin")
         admin_password: str = Field(default="")
         admin_session_hours: int = Field(default=24)
@@ -485,7 +431,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         asr_enabled: bool = Field(default=False)
         asr_config_id: str = Field(default="dashscope-default")
         vision_enabled: bool = Field(default=False)
-        vision_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1")
         vision_config_id: str = Field(default="dashscope-default")
         tts_enabled: bool = Field(default=False)
         tts_config_id: str = Field(default="dashscope-default")
@@ -498,7 +443,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         imagegen_edit_enabled: bool = Field(default=False)
         imagegen_edit_config_id: str = Field(default="dashscope-default")
         embedding_enabled: bool = Field(default=False)
-        embedding_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1")
         embedding_config_id: str = Field(default="dashscope-default")
         memory_retrieve_topk: int = Field(default=8)
         memory_semantic_weight: float = Field(default=0.6)
@@ -522,7 +466,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         proactive_monthly_limit: int = Field(default=4)
         proactive_quiet_hour_start: int = Field(default=22)
         proactive_quiet_hour_end: int = Field(default=8)
-        proactive_timezone_offset: int = Field(default=8)
         proactive_share_enabled: bool = Field(default=True)
         proactive_share_ratio: float = Field(default=0.5)
         proactive_share_news_ratio: float = Field(default=0.5)
@@ -530,8 +473,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         chat_import_timezone_offset: int = Field(default=8)
         safety_crisis_extra: list = Field(default_factory=list)
         safety_forbidden_extra: list = Field(default_factory=list)
-        llm_fallback_enabled: bool = Field(default=True)
-        llm_fallback_model: str = Field(default="")
         sticker_enabled: bool = Field(default=False)
         sticker_seed_enabled: bool = Field(default=True)
         sticker_max_per_turn: int = Field(default=1)
@@ -567,15 +508,10 @@ async def load_settings_from_db() -> set[str]:
     if seeded:
         logger.info("App settings seeded from .env to database")
 
-    # 迁移：为旧文档生成基础配置组（幂等；aux 字段可能仅存于 .env）
-    aux_source = {
-        "llm_aux_base_url": settings.llm_aux_base_url,
-        "llm_aux_api_key": settings.llm_aux_api_key,
-        "llm_aux_model": settings.llm_aux_model,
-    }
-    migrated = await repo.migrate_model_configs_if_needed(aux_source)
+    # 迁移：为缺失基础配置组的存量文档补齐（幂等）
+    migrated = await repo.migrate_model_configs_if_needed()
     if migrated:
-        logger.info("App settings model_configs migrated from legacy fields")
+        logger.info("App settings model_configs 已补齐默认分组")
 
     doc = await repo.get_document()
     if doc is None:

@@ -32,7 +32,7 @@ class TestIsQuietHours:
     def _set(self, monkeypatch, start: int, end: int) -> None:
         monkeypatch.setattr(settings, "proactive_quiet_hour_start", start)
         monkeypatch.setattr(settings, "proactive_quiet_hour_end", end)
-        monkeypatch.setattr(settings, "proactive_timezone_offset", 8)
+        monkeypatch.setattr(settings, "default_timezone_offset", 8)
 
     def test_late_night_is_quiet(self, monkeypatch) -> None:
         """跨午夜场景：23 点处于免打扰。"""

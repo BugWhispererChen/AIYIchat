@@ -6,7 +6,7 @@
 - 计数超过阈值时触发告警（可扩展到邮件/Webhook）
 
 使用方式：
-    from app.utils.error_tracker import track_error, get_error_stats
+    from app.utils.error_tracker import track_error
 
     try:
         ...
@@ -178,9 +178,6 @@ class ErrorTracker:
             int(record.last_seen - record.first_seen),
             record.message,
         )
-        # TODO: 扩展到管理后台通知/邮件/Webhook
-        # await self._send_to_admin(record)
-        # await self._send_email(record)
 
     async def get_stats(self) -> dict[str, Any]:
         """获取错误统计信息。"""
@@ -205,26 +202,6 @@ class ErrorTracker:
                 "aggregation_window": self.aggregation_window,
                 "alert_threshold": self.alert_threshold,
             }
-
-    async def clear_old_records(self, max_age: int = 3600) -> int:
-        """清理旧错误记录。
-
-        Args:
-            max_age: 最大保留时间（秒），默认 1 小时
-
-        Returns:
-            清理的记录数
-        """
-        async with self._lock:
-            now = time.time()
-            old_fingerprints = [
-                fp
-                for fp, r in self._errors.items()
-                if now - r.last_seen > max_age
-            ]
-            for fp in old_fingerprints:
-                del self._errors[fp]
-            return len(old_fingerprints)
 
 
 # 全局错误追踪器实例
@@ -257,10 +234,6 @@ async def track_error(
     """
     return await get_error_tracker().track(exc, context, force_log=force_log)
 
-
-async def get_error_stats() -> dict[str, Any]:
-    """获取错误统计信息的便捷函数。"""
-    return await get_error_tracker().get_stats()
 
 
 # 导入 asyncio 用于类型注解

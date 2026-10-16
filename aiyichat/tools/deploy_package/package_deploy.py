@@ -1,16 +1,16 @@
 """部署包打包脚本：导出 + 组装 + 打包为 tar.gz。
 
-默认从 Git 裸仓库拉取最新代码后打包，
-保证部署包内容与 Git 仓库完全一致（可追溯）。
+默认使用当前工作目录代码打包；指定 `--from-git` 时先经 Git 导出，
+保证部署包内容与某个提交完全一致（可追溯）。
 仅产出 Linux 部署包（tar.gz + deploy.sh）；Windows 产物形态为单独
 EXE 安装包，由本机 tools/windows_service/ 工具链构建，不走本脚本。
 
-用法（在具备 Docker 与 Git 裸仓库访问权限的打包机执行）：
-    python tools/deploy_package/package_deploy.py                    # 从 Git 拉取，产出 Linux 包（默认）
-    python tools/deploy_package/package_deploy.py --local            # 使用当前目录代码打包
+用法（在具备 Docker 的打包机执行，均在 aiyichat/ 目录）：
+    python tools/deploy_package/package_deploy.py            # 用当前目录代码打包（默认）
+    python tools/deploy_package/package_deploy.py --from-git # 先经 Git 导出再打包（需设 AIYICHAT_GIT_BARE_DIR）
 
 环境变量：
-    AIYICHAT_GIT_BARE_DIR  Git 裸仓库路径（默认 <bare-repo-path>）
+    AIYICHAT_GIT_BARE_DIR  Git 仓库路径（裸仓库或工作仓库均可，`--from-git` 必填）
     AIYICHAT_GIT_BRANCH    打包分支（默认 main）
 """
 
@@ -24,8 +24,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-# Git 裸仓库（版本历史权威来源，打包代码必须与之一致）
-GIT_BARE_DIR = os.environ.get("AIYICHAT_GIT_BARE_DIR", "<bare-repo-path>")
+# Git 仓库（版本历史权威来源，`--from-git` 模式下打包内容必须与之一致）
+GIT_BARE_DIR = os.environ.get("AIYICHAT_GIT_BARE_DIR", "")
 GIT_BRANCH = os.environ.get("AIYICHAT_GIT_BRANCH", "main")
 
 
@@ -42,12 +42,19 @@ def run_command(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]
 
 
 def pull_from_git(temp_dir: Path) -> Path | None:
-    """[1/4] 从 Git 裸仓库导出最新代码到临时目录。
+    """[1/4] 从 Git 仓库导出最新代码到临时目录。
 
     使用 git archive 导出目标分支的 aiyichat 子树，
     确保打包内容与 Git 仓库完全一致。
     """
-    print(f"[1/4] 从 Git 裸仓库拉取最新代码（{GIT_BRANCH}）...")
+    if not GIT_BARE_DIR:
+        print(
+            "错误：--from-git 需要设置环境变量 AIYICHAT_GIT_BARE_DIR 指向 Git 仓库；"
+            "若要用当前目录代码打包，请去掉 --from-git",
+            file=sys.stderr,
+        )
+        return None
+    print(f"[1/4] 从 Git 仓库导出最新代码（{GIT_BARE_DIR} @ {GIT_BRANCH}）...")
     archive_path = temp_dir / "aiyichat-latest.tar.gz"
     with archive_path.open("wb") as f:
         result = subprocess.run(
@@ -222,12 +229,7 @@ def main() -> int:
     parser.add_argument(
         "--from-git",
         action="store_true",
-        help="从 Git 裸仓库拉取代码后打包（默认行为）",
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help="使用当前目录代码打包（跳过 Git 拉取）",
+        help="先经 Git 导出代码再打包（需设置 AIYICHAT_GIT_BARE_DIR）",
     )
     parser.add_argument(
         "--platform",
@@ -238,10 +240,6 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.local and args.from_git:
-        print("错误：--local 与 --from-git 不能同时使用", file=sys.stderr)
-        return 1
-
     # 脚本位于 tools/deploy_package/ 下，项目根为上三级
     current_root = Path(__file__).resolve().parent.parent.parent
     date_str = datetime.now().strftime("%Y%m%d")
@@ -251,20 +249,20 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="aiyichat_deploy_") as temp_dir_str:
         temp_dir = Path(temp_dir_str)
 
-        # 1. 确定代码来源：默认从 Git 裸仓库拉取
+        # 1. 确定代码来源：默认用当前目录，--from-git 时先经 Git 导出
         project_root: Path
         runtime_dir: Path
-        if args.local:
-            project_root = current_root
-            runtime_dir = current_root
-            print(f"使用当前目录代码打包: {project_root}")
-        else:
+        if args.from_git:
             pulled_root = pull_from_git(temp_dir)
             if pulled_root is None:
                 return 1
             project_root = pulled_root
             # Git 导出内容缺失时，从运行环境目录补充资源
             runtime_dir = current_root
+        else:
+            project_root = current_root
+            runtime_dir = current_root
+            print(f"使用当前目录代码打包: {project_root}")
 
         # 校验源码目录存在
         source_app = project_root / "app"

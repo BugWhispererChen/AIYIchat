@@ -1,4 +1,4 @@
-"""QQ 适配器测试：qq_websocket / qq_adapter / webhook_handler。
+"""QQ WebSocket 适配器测试：qq_websocket。
 
 使用 monkeypatch 替换 httpx.AsyncClient，避免真实网络；
 用 mock 引擎覆盖消息事件处理与命令分发。
@@ -10,8 +10,6 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import mongomock_motor
-from httpx import ASGITransport, AsyncClient
 
 from app.adapters.qq_websocket import (
     BotManager,
@@ -20,7 +18,6 @@ from app.adapters.qq_websocket import (
     _QQ_FACE_RE,
 )
 from app.bot_config import BotConfig
-from app.db import mongo
 
 
 def _run(coro) -> None:
@@ -358,7 +355,6 @@ class TestMessageEvent:
             await client._handle_dispatch({
                 "t": "READY", "d": {"session_id": "s-1", "user": {"username": "bot"}},
             })
-            assert client._session_id == "s-1"
             await client._handle_dispatch({"t": "RESUMED", "d": {}})
 
         _run(body())
@@ -403,182 +399,3 @@ class TestBotManager:
         assert mgr.get_client("none") is None
         assert mgr.list_clients() == []
 
-
-class TestQQAdapter:
-    """QQAdapter（webhook 适配器）。"""
-
-    def test_verify_signature(self) -> None:
-        from app.adapters.qq_adapter import QQAdapter
-
-        adapter = QQAdapter()
-        adapter._app_secret = "secret"
-        import hashlib
-        import hmac
-
-        body = b'{"a":1}'
-        ts = "123"
-        msg = f"{ts}{body.decode()}"
-        sig = hmac.new(b"secret", msg.encode(), hashlib.sha256).hexdigest()
-        assert adapter.verify_signature(body, sig, ts) is True
-        assert adapter.verify_signature(body, "bad", ts) is False
-
-    def test_strip_at_mention(self) -> None:
-        from app.adapters.qq_adapter import QQAdapter
-
-        adapter = QQAdapter()
-        assert adapter._strip_at_mention("<@!123> 你好") == "你好"
-
-    def test_parse_incoming(self) -> None:
-        async def body():
-            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_qq_adapter"]
-            try:
-                from app.adapters.qq_adapter import QQAdapter
-
-                adapter = QQAdapter()
-                # C2C 私聊
-                msg = await adapter.parse_incoming({
-                    "t": "C2C_MESSAGE_CREATE",
-                    "d": {
-                        "id": "m-1",
-                        "author": {"user_openid": "u-1", "username": "小明"},
-                        "content": "你好",
-                    },
-                })
-                assert msg is not None and msg.is_group is False
-                assert msg.user_id == "u-1"
-
-                # 群@消息
-                msg = await adapter.parse_incoming({
-                    "t": "GROUP_AT_MESSAGE_CREATE",
-                    "d": {
-                        "id": "m-2",
-                        "author": {"member_openid": "u-2", "username": "群友"},
-                        "content": "<@!999> 在吗",
-                        "group_openid": "g-1",
-                    },
-                })
-                assert msg is not None and msg.is_group is True
-                assert msg.content == "在吗"
-
-                # 未知事件返回 None
-                assert await adapter.parse_incoming({"t": "OTHER", "d": {}}) is None
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-    def test_send_message(self) -> None:
-        async def body():
-            from app.adapters import qq_adapter as qq_mod
-
-            adapter = qq_mod.QQAdapter()
-            adapter._access_token = "AT"
-            adapter._token_expires_at = 9e18
-            FakeHttpxClient._response = FakeHttpxResponse(status_code=200)
-            with patch("app.adapters.qq_adapter.httpx.AsyncClient", FakeHttpxClient):
-                ok = await adapter.send_message("u-1", "hi", msg_id="m-1")
-                assert ok is True
-
-        _run(body())
-
-
-class TestWebhookHandler:
-    """QQ webhook 路由。"""
-
-    async def _setup_app(self):
-        mongo._db = mongomock_motor.AsyncMongoMockClient()["test_webhook"]
-        from app.main import app
-        return app
-
-    def _client(self, app) -> AsyncClient:
-        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-    def test_url_verification(self) -> None:
-        async def body():
-            app = await self._setup_app()
-            try:
-                async with self._client(app) as client:
-                    resp = await client.post("/qq/webhook", json={
-                        "op": 13,
-                        "d": {"plain_token": "pt", "event_ts": "123"},
-                    })
-                    assert resp.status_code == 200
-                    assert resp.json()["plain_token"] == "pt"
-                    assert resp.json()["signature"]
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-    def test_invalid_json(self) -> None:
-        async def body():
-            app = await self._setup_app()
-            try:
-                async with self._client(app) as client:
-                    resp = await client.post(
-                        "/qq/webhook", content=b"not-json",
-                        headers={"content-type": "application/json"},
-                    )
-                    assert resp.status_code == 400
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-    def test_message_dispatch_processing(self) -> None:
-        async def body():
-            app = await self._setup_app()
-            try:
-                async with self._client(app) as client:
-                    with patch(
-                        "app.adapters.webhook_handler.spawn",
-                        lambda coro: coro.close(),
-                    ):
-                        resp = await client.post("/qq/webhook", json={
-                            "t": "C2C_MESSAGE_CREATE",
-                            "d": {
-                                "id": "m-1",
-                                "author": {"user_openid": "u-1", "username": "小明"},
-                                "content": "你好",
-                            },
-                        })
-                    assert resp.status_code == 200
-                    assert resp.json()["status"] == "processing"
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-    def test_command_via_webhook(self) -> None:
-        async def body():
-            app = await self._setup_app()
-            try:
-                async with self._client(app) as client:
-                    with patch(
-                        "app.adapters.webhook_handler.qq_adapter.send_message",
-                        new=AsyncMock(return_value=True),
-                    ):
-                        resp = await client.post("/qq/webhook", json={
-                            "t": "C2C_MESSAGE_CREATE",
-                            "d": {
-                                "id": "m-1",
-                                "author": {"user_openid": "u-1", "username": "小明"},
-                                "content": "/help",
-                            },
-                        })
-                    assert resp.status_code == 200
-                    assert resp.json()["status"] == "ok"
-            finally:
-                mongo._db = None
-
-        _run(body())
-
-    def test_handle_command_helpers(self) -> None:
-        async def body():
-            from app.adapters.webhook_handler import _compute_verification_signature
-
-            sig = _compute_verification_signature({
-                "plain_token": "pt", "event_ts": "123",
-            })
-            assert isinstance(sig, str) and len(sig) == 64
-        _run(body())

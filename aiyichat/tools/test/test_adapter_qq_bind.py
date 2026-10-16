@@ -256,7 +256,8 @@ class TestAdminQQBindRoutes:
                         resp = await client.get(f"/admin/qq-bots/{bot.id}/poll-qr")
                     assert resp.json()["status"] == "waiting"
 
-                    # 轮询：成功 → 凭据写入（用路由保存的会话 bind_key 构造密文）
+                    # 轮询：绑定成功 → 凭据写入，验证流程转后台异步执行
+                    # （用路由保存的会话 bind_key 构造密文）
                     # 重置节流时间戳，避免被服务端节流拦截
                     from app.admin.routes.qq_bots import _last_poll_at, _pending_sessions
                     _last_poll_at.pop(bot.id, None)
@@ -272,7 +273,7 @@ class TestAdminQQBindRoutes:
                     })
                     with patch("app.adapters.qq_bind.httpx.AsyncClient", FakeHttpxClient):
                         resp = await client.get(f"/admin/qq-bots/{bot.id}/poll-qr")
-                    assert resp.json()["status"] == "success"
+                    assert resp.json()["status"] == "verifying"
 
                     updated = await _bot_config_repo.find_by_id(bot.id)
                     assert updated.app_id == "2048"

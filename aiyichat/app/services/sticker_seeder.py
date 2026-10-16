@@ -4,8 +4,7 @@
 按内容哈希幂等导入 MongoDB stickers 集合，并后台回填语义向量；
 manifest 中的 group 字段按名称 upsert 到 sticker_groups 集合并写入
 表情包的 group_id，存量哈希命中的老表情包若 group_id 为空则幂等回填。
-产物由开发期工具 tools/seed_sticker_assets.py 生成，随部署包携带，
-运行时不依赖外网。
+素材与 manifest 在开发期一次性生成后随仓库分发，运行时不依赖外网。
 """
 
 import hashlib

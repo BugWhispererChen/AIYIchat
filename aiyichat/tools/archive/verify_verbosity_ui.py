@@ -35,7 +35,7 @@ print(f"login: {r.status_code} -> {r.headers.get('location', '')}")
 
 # 角色列表 → 取第一个既有角色详情页（排除 create 向导链接）
 r = s.get(f"{base}/admin/profiles", timeout=15)
-import re
+import re  # noqa: E402
 slugs = [
     x for x in re.findall(r'href="/admin/profiles/([^"?]+)"', r.text)
     if x != "create" and not x.startswith("create")
@@ -62,7 +62,7 @@ ok_wizard = 'name="verbosity"' in r.text and "回复风格" in r.text
 print(f"[{'PASS' if ok_wizard else 'FAIL'}] 创建向导第一步含回复风格选项")
 
 # 保存链路：回读当前表单值（避免全量覆盖），仅改 verbosity 后提交
-import html as _html
+import html as _html  # noqa: E402
 
 
 def _read_form(page: str) -> dict:

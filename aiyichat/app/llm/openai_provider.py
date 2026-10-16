@@ -6,7 +6,6 @@ from typing import AsyncIterator
 
 from openai import AsyncOpenAI
 
-from app.config import settings
 from app.llm.base import LLMProvider, LLMUsage, ToolCall, ToolCompletion
 from app.llm.circuit_breaker import CircuitBreakerOpen, get_circuit_breaker
 
@@ -29,15 +28,15 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def __init__(
         self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        timeout: int | None = None,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout: int = 30,
     ):
-        self._base_url = base_url or settings.llm_base_url
-        self._api_key = api_key or settings.llm_api_key
-        self._model = model or settings.llm_model
-        self._timeout = timeout or settings.llm_timeout_seconds
+        self._base_url = base_url
+        self._api_key = api_key
+        self._model = model
+        self._timeout = timeout
 
         # DashScope 的 Qwen3 系列默认开启思考模式，会产生大量隐性延迟
         # （实测 3.1s vs 0.5s），对话场景无需思考链，显式关闭

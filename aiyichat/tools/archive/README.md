@@ -17,9 +17,10 @@
 | `manual_imagegen_edit_check.py` | `tools/test/` | 图像编辑模型人工对比选型，非自动化用例 |
 | `deploy.sh`、`deploy.ps1` | `tools/deploy_package/` | 部署包实际从 `aiyichat/` 根目录取 `deploy.sh`，Windows 走 EXE 安装包，这两个副本从未被引用 |
 | `add_model_configs.py` | `tools/migrations/` | 模型配置迁移已由 `app/config.py` 的 `load_settings_from_db` 自动完成 |
+| `add_time_awareness_fields.py` | `tools/migrations/` | 回填目标 `default_timezone_offset` 已是单一时区源并在 config 内置默认值；脚本原读取的 `proactive_timezone_offset` 已随兼容垫片删除，现跑会失效 |
+| `enable_default_features.py` | `tools/migrations/` | `support_strategy_enabled`/`consistency_check_enabled` 已在 `app/config.py` 默认启用并随首次 seed 落库 |
 | `backfill_last_active.py`、`merge_services_share_group.py`、`remove_bot_id_field.py` | `tools/migrations/` | 历史一次性数据修复/字段下线，线上已执行完毕 |
 | `seed_sticker_assets.py` | `tools/` | 开发期执行一次，产物 `data/stickers/` 与 `manifest.json` 已入库 |
 
-仍保留在原位、可随时手跑的幂等脚本：`tools/migrations/enable_default_features.py`、
-`tools/migrations/add_time_awareness_fields.py`，以及生产依赖 `tools/seed_companion_profiles.py`
-（被 `app/bootstrap.py` 运行时导入、被 `Dockerfile` COPY，**不可移动或删除**）。
+生产依赖 `tools/seed_companion_profiles.py`（被 `app/bootstrap.py` 运行时导入、被 `Dockerfile` COPY，
+**不可移动或删除**）仍保留原位。

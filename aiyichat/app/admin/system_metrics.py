@@ -55,24 +55,6 @@ class SystemMetrics:
             return f"{minutes}分钟"
 
 
-def get_cpu_percent() -> float:
-    """获取当前 CPU 占用率（百分比）。"""
-    return psutil.cpu_percent(interval=0.1)
-
-
-def get_memory_percent() -> float:
-    """获取当前内存占用率（百分比）。"""
-    return psutil.virtual_memory().percent
-
-
-def get_disk_usage_text() -> str:
-    """获取主分区磁盘使用情况，格式如 '32/400 GB'。"""
-    disk = psutil.disk_usage(_disk_root())
-    used_gb = disk.used / (1024 ** 3)
-    total_gb = disk.total / (1024 ** 3)
-    return f"{used_gb:.1f}/{total_gb:.1f} GB"
-
-
 def get_all_metrics() -> SystemMetrics:
     """获取所有系统资源指标的综合数据。
 

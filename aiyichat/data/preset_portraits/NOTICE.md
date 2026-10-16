@@ -1,7 +1,7 @@
 # 预置角色定妆照资源说明
 
-- **素材来源**：本目录 10 张定妆照均由项目内置的 ImageGen 服务（阿里云 Wanx 文生图）生成，
-  生成 prompt 见 `tools/seed_companion_profiles.py` 中各角色的 `appearance` 字段。
+- **素材来源**：本目录 10 张定妆照均由项目内置的 ImageGen 服务（阿里云百炼图像生成，
+  默认 `qwen-image` 系列）生成，生成 prompt 见 `tools/seed_companion_profiles.py` 中各角色的 `appearance` 字段。
 - **权属说明**：均为 AI 生成的虚构人物形象，非真人肖像，不含第三方受版权保护的素材。
   若你所在司法辖区对 AI 生成图像另有标注或登记要求，请由部署方自行履行。
 - **入库方式**：执行 seed 时按内容 sha256 幂等导入 MongoDB `media` 集合，

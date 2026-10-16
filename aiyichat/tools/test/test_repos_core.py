@@ -3,7 +3,7 @@
 覆盖：
 - db/mongo：connect_db / get_database / close_db / 索引创建
 - AccountRepository / UserRepository / ServiceRepository / BotConfigRepository
-- UserBotBindingRepository / QuotaRepository / QuotaTemplateRepository / OrderRepository
+- QuotaRepository / QuotaTemplateRepository / OrderRepository
 """
 
 import pytest
@@ -15,7 +15,6 @@ from app.db.repositories.order_repo import OrderRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_bot_binding_repo import UserBotBindingRepository
 from app.db.repositories.user_repo import UserRepository
 from app.models.account import AccountCreate, AccountUpdate
 from app.models.bot_config import BotConfigCreate, BotConfigUpdate
@@ -306,29 +305,6 @@ class TestBotConfigRepository:
 
             assert await repo.delete(bot.id) is True
             assert await repo.delete_by_account("acc-1") == 0
-
-        run_with_db(body)
-
-
-class TestUserBotBindingRepository:
-    """用户-Bot 绑定仓库测试集。"""
-
-    def test_crud(self) -> None:
-        async def body():
-            from app.models.user_bot_binding import UserBotBindingCreate
-
-            repo = UserBotBindingRepository()
-            binding = await repo.create(
-                UserBotBindingCreate(user_id="u-1", bot_id="b-1")
-            )
-            assert len(await repo.find_by_user("u-1")) == 1
-            assert await repo.find_by_user_and_bot("u-1", "b-1") is not None
-            assert await repo.find_by_user_and_bot("u-1", "none") is None
-            assert len(await repo.list_users_for_bot("b-1")) == 1
-
-            assert await repo.delete(binding.id) is True
-            await repo.create(UserBotBindingCreate(user_id="u-1", bot_id="b-2"))
-            assert await repo.delete_by_user("u-1") == 1
 
         run_with_db(body)
 

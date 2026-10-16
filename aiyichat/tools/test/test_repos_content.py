@@ -377,13 +377,11 @@ class TestAppSettingsRepository:
             assert await repo.get_document() is None
 
             # upsert 后可读取；model_configs 为空触发迁移
-            await repo.upsert({"llm_model": "test-model", "llm_aux_model": "aux-m"})
+            await repo.upsert({"chat_config_id": "text-default"})
             doc = await repo.get_document()
-            assert doc is not None and doc.llm_model == "test-model"
+            assert doc is not None and doc.chat_config_id == "text-default"
 
-            migrated = await repo.migrate_model_configs_if_needed(
-                aux_source={"llm_aux_model": "aux-m", "llm_aux_base_url": "http://aux"}
-            )
+            migrated = await repo.migrate_model_configs_if_needed()
             assert migrated is True
             # 二次迁移应为幂等 no-op
             assert await repo.migrate_model_configs_if_needed() is False
@@ -406,38 +404,31 @@ class TestAppSettingsRepository:
         """.env 字符串值按字段类型转换，非法值忽略。"""
         result = _coerce_env_to_doc({
             "USE_MOCK_DB": "true",
-            "LLM_MAX_TOKENS": "512",
-            "LLM_TEMPERATURE": "0.7",
-            "LLM_MODEL": "deepseek",
+            "CHAT_MAX_TOKENS": "512",
+            "CHAT_TEMPERATURE": "0.7",
+            "SUMMARY_TIMEOUT_SECONDS": "45",
             "CONTEXT_WINDOW_SIZE": "bad-int",
-            "CHAT_TEMPERATURE": "bad-float",
+            "PROACTIVE_TEMPERATURE": "bad-float",
             "EMPTY": None,
         })
         assert result["use_mock_db"] is True
-        assert result["llm_max_tokens"] == 512
-        assert result["llm_temperature"] == 0.7
-        assert result["llm_model"] == "deepseek"
+        assert result["chat_max_tokens"] == 512
+        assert result["chat_temperature"] == 0.7
+        assert result["summary_timeout_seconds"] == 45
         assert "context_window_size" not in result
-        assert "chat_temperature" not in result
+        assert "proactive_temperature" not in result
         assert "empty" not in result
 
     def test_build_model_configs_migration(self) -> None:
-        """旧字段（含有效 key）生成基础配置；辅助模型生成独立 aux-default 组。"""
-        doc = AppSettingsDocument(
-            llm_api_key="sk-main", llm_model="chat-m", llm_aux_model="aux-m"
-        )
+        """.env 已填有效百炼 Key 时注入全部默认分组。"""
+        doc = AppSettingsDocument(dashscope_api_key="sk-ds")
         updates = build_model_configs_migration(doc)
-        assert len(updates["model_configs"]) == 3
-        aux = updates["model_configs"][2]
-        assert aux["id"] == "aux-default"
-        assert aux["default_model"] == "aux-m"
-        assert updates["focus_config_id"] == "aux-default"
-        assert updates["emotion_config_id"] == "aux-default"
-        assert updates["summary_config_id"] == "aux-default"
+        assert len(updates["model_configs"]) == 5
+        assert all(g["api_key"] == "sk-ds" for g in updates["model_configs"])
 
     def test_build_model_configs_migration_default(self) -> None:
         """无有效 key 时生成默认分组（api_key 留空，由用户填入）。"""
-        doc = AppSettingsDocument(llm_model="chat-m", llm_aux_model="aux-m")
+        doc = AppSettingsDocument()
         updates = build_model_configs_migration(doc)
         assert len(updates["model_configs"]) == 5
         assert all(g["api_key"] == "" for g in updates["model_configs"])

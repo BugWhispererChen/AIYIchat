@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 TEMP_SERVICE_PREFIX = "[TEMP]"
 # Bot启动等待超时时间（秒）
 BOT_START_TIMEOUT = 10.0
-# 测试消息内容
-TEST_MESSAGE_CONTENT = "绑定成功，Bot已上线！"
 
 
 async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceInDB]:

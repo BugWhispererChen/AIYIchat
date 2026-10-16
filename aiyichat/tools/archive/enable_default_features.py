@@ -9,7 +9,7 @@
 若运营曾主动关闭这两项，请勿运行本脚本，或运行后在「功能实验室」重新关闭。
 
 执行方式（在服务器 Docker 容器内）：
-  docker exec aiyichat-app-1 python /app/tools/migrations/enable_default_features.py
+  docker exec aiyichat-app-1 python /app/tools/archive/enable_default_features.py
 """
 
 import os

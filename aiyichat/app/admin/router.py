@@ -17,7 +17,6 @@ from app.admin.routes.billing import billing_router
 from app.admin.routes.conversations import conversations_router
 from app.admin.routes.features import features_router
 from app.admin.routes.memories import memories_router
-from app.admin.routes.metrics import metrics_router
 from app.admin.routes.password import password_router
 from app.admin.routes.profiles import profiles_router
 from app.admin.routes.profile_create import profile_create_router
@@ -29,11 +28,6 @@ from app.admin.routes.qq_bots import qq_bots_router
 from app.admin.routes.wechat_bots import wechat_bots_router
 from app.admin.stats import get_dashboard_charts, get_dashboard_stats
 from app.admin.system_metrics import get_all_metrics
-from app.db.repositories.bot_config_repo import BotConfigRepository
-from app.db.repositories.conversation_repo import ConversationRepository
-from app.db.repositories.message_repo import MessageRepository
-from app.db.repositories.profile_repo import ProfileRepository
-from app.db.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +47,6 @@ def _to_beijing(dt):
 templates.env.filters["to_beijing"] = _to_beijing
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
-
-_profile_repo = ProfileRepository()
-_user_repo = UserRepository()
-_conv_repo = ConversationRepository()
-_msg_repo = MessageRepository()
-_bot_config_repo = BotConfigRepository()
 
 
 def _render(request: Request, name: str, ctx: dict | None = None, **kwargs):
@@ -271,19 +259,21 @@ async def multimedia_save(request: Request, _s: str = Depends(require_admin)) ->
 
 @admin_router.post("/api/reload-settings")
 async def reload_settings(_s: str = Depends(require_admin)):
-    """热重载配置（不重启服务），并重置 Provider / Vision / Embedding 缓存。"""
+    """热重载配置（不重启服务），并重置 Provider / Vision / Embedding / Safety 缓存。"""
     from app.config import settings
+    from app.conversation.safety_checker import reset_safety_checker
     from app.llm.provider_factory import reset_provider
     from app.services.embedding_service import reset_embedding_service
     from app.services.vision_service import reset_vision_service
 
     changed = await settings.reload()
 
-    # 配置变更后统一重置缓存，Provider / Vision / Embedding 下次调用时惰性重建
+    # 配置变更后统一重置缓存，各单例下次调用时惰性重建
     if changed:
         reset_provider()
         reset_vision_service()
         reset_embedding_service()
+        reset_safety_checker()
 
     return JSONResponse({
         "status": "ok",
@@ -318,6 +308,5 @@ admin_router.include_router(stickers_router)
 admin_router.include_router(safety_router)
 admin_router.include_router(proactive_router)
 admin_router.include_router(memories_router)
-admin_router.include_router(metrics_router)
 admin_router.include_router(billing_router)
 admin_router.include_router(password_router)

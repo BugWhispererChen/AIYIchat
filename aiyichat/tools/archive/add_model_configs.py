@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """数据迁移脚本：为 app_settings 生成可复用的"基础配置"组与各功能引用。
 
-将旧的扁平 LLM / 多媒体配置迁移为 model_configs（连接凭证组）+ 各功能
+将扁平的 LLM / 多媒体配置迁移为 model_configs（连接凭证组）+ 各功能
 {task}_config_id 引用。幂等：若 app_settings.model_configs 已非空则跳过。
 
-说明：应用启动时会自动执行等价的迁移（app.config.load_settings_from_db），
-本脚本用于手动/显式触发。注意旧的 llm_aux_* 若仅配置在 .env 而不在数据库，
-则本脚本无法据此生成 aux-default 组（该场景由应用启动时的自动迁移覆盖）。
+说明：应用启动时会自动补齐默认分组（app.config.load_settings_from_db →
+AppSettingsRepository.migrate_model_configs_if_needed），本脚本仅作手动/显式
+触发用途；它直接复用上述应用函数，因此行为随当前数据模型一致——按
+DEFAULT_MODEL_GROUPS 生成 5 组默认分组，旧的 llm_* / llm_aux_* 直连字段与
+aux-default 分组已随开源版清理移除。
 
 执行方式（在服务器 Docker 容器内）：
-  docker exec aiyichat-app-1 python /app/tools/migrations/add_model_configs.py
+  docker exec aiyichat-app-1 python /app/tools/archive/add_model_configs.py
 """
 
 import os

@@ -8,54 +8,53 @@
 | 文件 | 说明 |
 |------|------|
 | `package_deploy.py` | 打包主脚本：Git 导出 → 组装 → 打包为 tar.gz |
-| `build_package.sh` | 服务器端一键打包入口，打包成功后自动触发可用性测试 |
+| `build_package.sh` | 一键打包入口，打包成功后自动触发静态校验与可用性测试 |
 | `verify_package.sh` | 部署包静态完整性校验（tar 完整性/关键文件/源码齐全/敏感文件不入包） |
 | `test_deploy_package.sh` | 部署包运行级可用性测试（隔离容器 + 临时端口，不影响日常环境） |
-| `README.deploy.md` | 部署包用户文档（随部署包交付） |
 
 > 一键部署脚本 `deploy.sh` 位于 `aiyichat/` 项目根目录，打包时由 `package_deploy.py` 从根目录取并随包交付；
 > 本目录曾存在的 `deploy.sh`/`deploy.ps1` 副本从未被引用，已移至 `tools/archive/`。
 
 > Windows 产物形态为单独 EXE 安装包，由本机 `tools/windows_service/` 工具链构建，不走本目录流程。
 
-## 打包工作流（基于 Git 裸仓库）
+## 打包工作流
 
-**打包必须经过 Git 裸仓库中转**：打包脚本默认从裸仓库导出最新代码后再组装，
-确保部署包内容与 Git 仓库完全一致、可追溯。
+打包有两种代码来源，产出物完全一致：
 
-裸仓库路径与分支通过环境变量配置：
+- **默认（推荐、任何环境可复现）**：不带参数，直接用当前工作目录的代码组装；
+- **Git 导出（`--from-git`）**：先 `git archive` 从指定仓库导出再组装，保证「包内容 == 某个提交」，
+  避免未提交改动混入产物。仓库路径与分支由环境变量配置：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `AIYICHAT_GIT_BARE_DIR` | `<bare-repo-path>` | Git 裸仓库路径 |
+| `AIYICHAT_GIT_BARE_DIR` | 需自行指向本地仓库/裸仓库路径 | Git 仓库路径 |
 | `AIYICHAT_GIT_BRANCH` | `main` | 打包分支 |
 
-完整流程：
+流程：
 
-1. **本地提交修改**：`git add` + `git commit`（commit message 遵循「类型: 简要描述」规范）
-2. **推送到部署仓库**：`git push <deploy-remote> <branch>`
-3. **服务器一键打包**：在部署机仓库根目录执行 `bash tools/deploy_package/build_package.sh`
-   - 脚本自动完成：导出最新代码 → 组装 → 打包 → 运行级可用性测试（仅产出 Linux 包）
-   - 产物：仓库根目录下 `aiyichat-deploy-YYYYMMDD-linux.tar.gz`
-4. **下载部署包**：用 `scp` 从部署机取回本地
+1. **提交修改**：`git add` + `git commit`（commit message 遵循「类型: 简要描述」规范）
+2. **打包 + 自动可用性测试**：在 `aiyichat/` 目录执行
+   `bash tools/deploy_package/build_package.sh`（脚本内部会自行定位到 `aiyichat/`）
+   - 自动完成：取源码 → 组装 → 打包 → 静态校验 → 运行级可用性测试（仅产出 Linux 包）
+   - 产物：`aiyichat-deploy-YYYYMMDD-linux.tar.gz`
 
 ## 使用方法
 
 ### 生成部署包
 
 ```bash
-# 在 aiyichat 项目根目录执行
-python tools/deploy_package/package_deploy.py            # 默认：从 Git 裸仓库拉取代码后打包
-python tools/deploy_package/package_deploy.py --local    # 跳过 Git 拉取，使用当前目录代码打包
+# 以下命令均在 aiyichat/ 目录执行（含 app/、docker-compose.yml 的那一层）
+python tools/deploy_package/package_deploy.py              # 用当前目录代码打包（默认）
+python tools/deploy_package/package_deploy.py --from-git   # 先经 Git 导出再打包（需配环境变量）
 ```
 
-生成的部署包位于项目根目录：`aiyichat-deploy-{YYYYMMDD}-linux.tar.gz`
-（Git 拉取模式下输出到脚本运行环境的项目根）。仅产出 Linux 包
-（`--platform` 参数保留且仅支持 `linux`）。
+生成的部署包位于 `aiyichat/` 目录：`aiyichat-deploy-{YYYYMMDD}-linux.tar.gz`。
+仅产出 Linux 包（`--platform` 参数保留且仅支持 `linux`）。
 
 ### 校验与测试
 
 ```bash
+# 同样在 aiyichat/ 目录执行
 bash tools/deploy_package/verify_package.sh aiyichat-deploy-YYYYMMDD-linux.tar.gz
 bash tools/deploy_package/test_deploy_package.sh
 ```
@@ -70,7 +69,7 @@ bash tools/deploy_package/test_deploy_package.sh
 - `app/`：业务代码（Python 源码）
 - `data/stickers/`：预置表情包资源（启动时自动 seed 入库）
 - `data/preset_portraits/`：预置角色定妆照
-- `tools/seed_companion_profiles.py`：预置角色种子脚本（部署后手动执行）
+- `tools/seed_companion_profiles.py`：预置角色种子脚本（启动时自动 seed，也可手动重跑）
 - `docker-compose.yml`：Docker Compose 配置
 - `Dockerfile`：部署版镜像定义（单阶段）
 - `.env.example`：环境变量模板
@@ -138,15 +137,16 @@ bash tools/deploy_package/test_deploy_package.sh
 
 **症状**：`错误：git archive 失败`
 
-**原因**：`AIYICHAT_GIT_BARE_DIR` 指向的裸仓库不存在，或 `AIYICHAT_GIT_BRANCH` 分支名不匹配
+**原因**：`--from-git` 模式下 `AIYICHAT_GIT_BARE_DIR` 未设置或指向的仓库不存在，
+或 `AIYICHAT_GIT_BRANCH` 分支名不匹配
 
-**解决**：核对两个环境变量的实际取值；或改用 `--local` 从当前目录打包
+**解决**：核对两个环境变量的实际取值；或不带 `--from-git`，直接用当前目录打包
 
 ### 打包失败：源码目录不存在
 
 **症状**：`错误：源码目录不存在: .../app`
 
-**原因**：Git 导出内容缺少 `aiyichat/app/`，或 `--local` 模式下执行目录不是 `aiyichat/`
+**原因**：Git 导出内容缺少 `aiyichat/app/`，或当前目录不是 `aiyichat/`
 
 **解决**：确认在 `aiyichat/` 目录（含 `app/`、`docker-compose.yml` 的那一层）执行脚本
 
@@ -171,5 +171,5 @@ bash tools/deploy_package/test_deploy_package.sh
 - 本工具集与主代码库同步维护
 - 修改 `app/` 目录结构或新增随包资源时，需同步更新 `package_deploy.py` 的
   `assemble_package()` 与 `verify_package.sh` 的校验项
-- `README.deploy.md` 与 `aiyichat/README.md` 内容保持一致（后者随包交付为 `README.md`），
-  修改任一份时需同步另一份
+- 部署包内的用户文档即仓库中的 `aiyichat/README.md`（打包时交付为包根 `README.md`），
+  是唯一副本，改一处即可

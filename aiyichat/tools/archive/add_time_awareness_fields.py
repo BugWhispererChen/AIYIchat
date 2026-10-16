@@ -11,7 +11,7 @@
 
 幂等策略：仅对"缺失"的字段补写，不覆盖已有值；可重复执行。
 执行方式（在服务器 Docker 容器内）：
-  docker exec aiyichat-app-1 python /app/tools/migrations/add_time_awareness_fields.py
+  docker exec aiyichat-app-1 python /app/tools/archive/add_time_awareness_fields.py
 """
 
 import os

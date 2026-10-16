@@ -37,33 +37,27 @@ class TestModelRegistry:
     def test_resolve_success(self) -> None:
         old_cfgs = settings.model_configs
         old_cid = settings.chat_config_id
-        old_model = settings.chat_model
         try:
             self._install_config()
             settings.chat_config_id = "grp-1"
-            settings.chat_model = "chat-m"
             cfg = resolve_model_config("chat")
-            assert cfg.api_key == "sk-1" and cfg.model == "chat-m"
+            assert cfg.api_key == "sk-1" and cfg.model == "m-default"
             assert cfg.base_url == "http://x"
         finally:
             settings.model_configs = old_cfgs
             settings.chat_config_id = old_cid
-            settings.chat_model = old_model
 
     def test_resolve_uses_default_model(self) -> None:
         old_cfgs = settings.model_configs
         old_cid = settings.vision_config_id
-        old_model = settings.vision_model
         try:
             self._install_config()
             settings.vision_config_id = "grp-1"
-            settings.vision_model = ""
             cfg = resolve_model_config("vision")
             assert cfg.model == "m-default"
         finally:
             settings.model_configs = old_cfgs
             settings.vision_config_id = old_cid
-            settings.vision_model = old_model
 
     def test_resolve_errors(self) -> None:
         old_cfgs = settings.model_configs

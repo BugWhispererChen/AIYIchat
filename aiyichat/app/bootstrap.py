@@ -139,12 +139,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(TraceMiddleware)
 
-    from app.adapters.webhook_handler import qq_webhook_router
     from app.admin.router import admin_router
     from app.api.router import api_router
 
     app.include_router(api_router, prefix="/api")
-    app.include_router(qq_webhook_router)
     app.include_router(admin_router)
 
     @app.exception_handler(HTTPException)

@@ -108,7 +108,7 @@ def _intensity_descriptor(intensity: float) -> str:
             return desc
     return "略微"
 
-# 情绪标签到中文描述的映射（保留向后兼容）
+# 情绪标签到中文描述的映射（未命中专属分支时的兜底文案）
 EMOTION_LABELS: dict[str, str] = {
     "sad": "悲伤低落",
     "angry": "愤怒不满",
@@ -313,7 +313,7 @@ def _detect_core(text: str) -> tuple[str, float] | None:
 
 
 def detect_emotion(text: str) -> str | None:
-    """基于关键词匹配的轻量情绪检测（向后兼容接口）
+    """基于关键词匹配的轻量情绪检测（只返回标签，不含强度与演变提示）
 
     Args:
         text: 用户消息文本
@@ -325,37 +325,6 @@ def detect_emotion(text: str) -> str | None:
     if result is None:
         return None
     return result[0]
-
-
-def get_emotion_hint(
-    emotion_or_result: "str | EmotionResult | None" = None,
-    intensity: float = 0.5,
-) -> str | None:
-    """将情绪标签转为对LLM的中文提示
-
-    支持两种调用方式：
-    - get_emotion_hint(EmotionResult实例)
-    - get_emotion_hint(emotion_tag字符串, intensity)
-    - get_emotion_hint(None) → None（向后兼容）
-
-    Args:
-        emotion_or_result: EmotionResult对象、情绪标签字符串、或 None
-        intensity: 强度值（仅在传入字符串时使用）
-
-    Returns:
-        中文提示词，或 None
-    """
-    if emotion_or_result is None:
-        return None
-
-    if isinstance(emotion_or_result, EmotionResult):
-        return emotion_or_result.hint
-
-    # 字符串模式（向后兼容）
-    if isinstance(emotion_or_result, str):
-        return _get_intensity_hint(emotion_or_result, intensity) or None
-
-    return None
 
 
 def detect_emotion_with_history(

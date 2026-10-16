@@ -131,22 +131,6 @@ class EntityGraphService:
                 continue
             self._sync_relation_sync(service_id, entity.name, rel.target, rel.relation)
 
-    async def sync_relation(
-        self, service_id: str, src_name: str, dst_name: str, relation: str
-    ) -> None:
-        """同步关系边到图（fire-and-forget）。"""
-        if not self.enabled:
-            return
-        try:
-            await asyncio.to_thread(
-                self._sync_relation_sync, service_id, src_name, dst_name, relation
-            )
-        except Exception as e:
-            logger.warning(
-                "同步关系到图失败: service=%s, %s->%s, error=%s",
-                service_id, src_name, dst_name, e,
-            )
-
     def _sync_relation_sync(
         self, service_id: str, src_name: str, dst_name: str, relation: str
     ) -> None:

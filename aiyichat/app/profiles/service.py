@@ -40,10 +40,6 @@ class ProfileService:
         """根据 slug 获取角色档案。"""
         return await self.repo.find_by_slug(slug)
 
-    async def get_by_id(self, profile_id: str) -> Optional[PromptProfileInDB]:
-        """根据 ID 获取角色档案。"""
-        return await self.repo.find_by_id(profile_id)
-
     async def list_active(self, category: Optional[str] = None) -> list[PromptProfileInDB]:
         """列出所有活跃角色，可按分类筛选。"""
         return await self.repo.list_active(category)

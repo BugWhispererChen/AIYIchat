@@ -240,9 +240,3 @@ def get_circuit_breaker(task: str = "default") -> CircuitBreaker:
     if task not in _circuit_breakers:
         _circuit_breakers[task] = CircuitBreaker()
     return _circuit_breakers[task]
-
-
-def reset_all_circuit_breakers() -> None:
-    """重置所有熔断器（用于测试）。"""
-    global _circuit_breakers
-    _circuit_breakers = {}

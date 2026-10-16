@@ -117,7 +117,7 @@ class TTSService:
     ) -> bytes:
         """CosyVoice/Qwen-Audio 族：WebSocket SpeechSynthesizer，直接返回 mp3 字节。
 
-        语速不再使用数值参数，由 instruction 文案内的自然语言描述控制。
+        语速由 instruction 文案内的自然语言描述控制，不传数值参数。
         """
         import dashscope
         from dashscope.audio.tts_v2 import SpeechSynthesizer

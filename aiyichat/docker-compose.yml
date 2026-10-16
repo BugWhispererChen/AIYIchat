@@ -10,7 +10,8 @@ services:
         max-file: "3"
     volumes:
       - mongo_data:/data/db
-      - /opt/backups/mongodb:/backups
+      # 备份输出卷：宿主机可 docker cp 或挂到自有备份目录，应用本身不含备份逻辑
+      - mongo_backups:/backups
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -52,3 +53,4 @@ services:
 
 volumes:
   mongo_data:
+  mongo_backups:

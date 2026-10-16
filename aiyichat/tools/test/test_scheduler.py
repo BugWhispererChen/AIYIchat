@@ -84,7 +84,7 @@ class TestSchedulerHelpers:
         sched = ProactiveScheduler()
         old_start = settings.proactive_quiet_hour_start
         old_end = settings.proactive_quiet_hour_end
-        old_tz = settings.proactive_timezone_offset
+        old_tz = settings.default_timezone_offset
         try:
             # start == end → 未启用
             settings.proactive_quiet_hour_start = 5
@@ -94,7 +94,7 @@ class TestSchedulerHelpers:
             # 跨午夜 22~8：构造当前为凌晨 2 点
             settings.proactive_quiet_hour_start = 22
             settings.proactive_quiet_hour_end = 8
-            settings.proactive_timezone_offset = 8
+            settings.default_timezone_offset = 8
             with patch("app.proactive.scheduler.datetime") as mock_dt:
                 mock_dt.now.return_value = datetime(2026, 1, 1, 2, 0, tzinfo=timezone.utc)
                 assert sched._is_quiet_hours() is True
@@ -103,7 +103,7 @@ class TestSchedulerHelpers:
         finally:
             settings.proactive_quiet_hour_start = old_start
             settings.proactive_quiet_hour_end = old_end
-            settings.proactive_timezone_offset = old_tz
+            settings.default_timezone_offset = old_tz
 
     def test_can_send(self) -> None:
         sched = ProactiveScheduler()

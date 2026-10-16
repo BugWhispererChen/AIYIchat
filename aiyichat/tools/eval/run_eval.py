@@ -8,7 +8,8 @@
     python tools/eval/run_eval.py --dry-run       # 不调用 LLM，仅校验流水线
     python tools/eval/run_eval.py --cases xxx.json
 
-依赖运行时配置（LLM_API_KEY 等）；未配置时请使用 --dry-run 验证流水线。
+依赖运行时模型配置（管理后台「AI 模型配置」，或首次启动由 `.env` 的 DASHSCOPE_API_KEY 生成）；
+未配置时请使用 --dry-run 验证流水线。
 """
 
 import argparse

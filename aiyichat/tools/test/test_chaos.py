@@ -87,38 +87,6 @@ class TestLLMChaos:
 
         _run(body())
 
-    def test_llm_fallback_chain(self):
-        """LLM 降级链：主模型失败时自动切换。"""
-        from app.llm.fallback_chain import FallbackChain
-
-        async def body():
-            chain = FallbackChain()
-
-            # 模拟主 provider 失败
-            primary = AsyncMock()
-            primary.complete = AsyncMock(side_effect=TimeoutError("Primary timeout"))
-
-            # 模拟 profile
-            profile = SimpleNamespace(
-                greeting="你好，我是 AI 助手。",
-                name="小助手",
-            )
-
-            messages = [{"role": "user", "content": "你好"}]
-
-            result = await chain.complete_with_fallback(
-                primary_provider=primary,
-                messages=messages,
-                profile=profile,
-            )
-
-            # 应该使用降级方案
-            assert result.used_fallback is True
-            assert result.fallback_level >= 1
-            assert result.original_error is not None
-
-        _run(body())
-
 
 class TestMongoChaos:
     """MongoDB 故障注入测试。"""

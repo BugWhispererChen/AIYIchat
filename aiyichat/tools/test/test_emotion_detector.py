@@ -1,4 +1,4 @@
-from app.conversation.emotion_detector import detect_emotion, get_emotion_hint
+from app.conversation.emotion_detector import detect_emotion
 
 
 class TestEmotionDetector:
@@ -23,9 +23,3 @@ class TestEmotionDetector:
     def test_detect_neutral(self):
         assert detect_emotion("今天天气不错") is None
         assert detect_emotion("你好") is None
-
-    def test_emotion_hint(self):
-        assert "悲伤低落" in get_emotion_hint("sad")
-        assert get_emotion_hint("happy") == "开心愉悦"
-        assert get_emotion_hint(None) is None
-        assert get_emotion_hint("unknown") is None

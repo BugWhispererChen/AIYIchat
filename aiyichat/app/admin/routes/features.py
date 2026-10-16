@@ -248,9 +248,6 @@ async def features_save(
         session_gap, min(720, _int_or("time_reunion_gap_hours", settings.time_reunion_gap_hours))
     )
     updates["default_timezone_offset"] = tz
-    # 弃用字段同步写入，保障旧版本回滚不丢时区配置
-    updates["chat_timezone_offset"] = tz
-    updates["proactive_timezone_offset"] = tz
 
     # 表情包触发概率参数（浮点数，0~1 范围）
     def _float_or(name: str, current: float) -> float:

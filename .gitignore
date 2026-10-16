@@ -7,8 +7,6 @@ __pycache__/
 nul
 NUL
 /*.png
-# harness 分析报告产物（按日期生成，不入库）
-.qoder/better-harness/
 
 # 覆盖率/测试产物
 .coverage
@@ -17,12 +15,6 @@ htmlcov/
 
 # 临时与画布产物
 _canvas_tmp/
-.qoder/canvases/
-
-# 文档预览临时产物
-docs/_docx_preview/
-docs/_ppt_preview/
-docs/_docx_preview.pdf
 
 # 测试数据与音频
 aiyichat/data/chat_imports/

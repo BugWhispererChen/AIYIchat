@@ -150,20 +150,21 @@ cd aiyichat
 cp .env.example .env
 # 编辑 .env：填入数据库连接、LLM 与多模态服务的 API Key、Bot 密钥等
 
-# 2. 准备 Bot 配置（可选）
-cp bots.yaml.example bots.yaml
-
-# 3. 构建并启动
+# 2. 构建并启动
 docker compose up -d --build
 
-# 4. 查看启动日志
+# 3. 查看启动日志
 docker compose logs --tail=50 app
 ```
 
 启动后应用提供：
 
-- **管理后台**：`https://<host>:8848/admin`（登录后可管理角色、Bot、多媒体配置等）
+- **管理后台**：`https://<host>/admin`（默认 443 端口，由 `.env` 的 `HTTPS_PORT` 指定；
+  登录后可管理角色、Bot、多媒体配置等）
 - **健康检查**：`/api/health`
+
+QQ / 微信 Bot 在启动后通过管理后台的 Bot 管理页面添加，配置保存于数据库并支持热加载，
+无需本地配置文件。
 
 `.env` 关键配置项包括：MongoDB 连接串、LLM 模型与超时（建议 `llm_timeout_seconds=25`）、
 Embedding 模型（需显式指定专用向量模型，避免回退到聊天模型导致报错）、

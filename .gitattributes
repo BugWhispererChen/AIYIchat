@@ -2,7 +2,9 @@
 #
 # 背景：本仓库在 Windows 上开发（core.autocrlf=true），但 .sh 脚本与 Git hook
 # 实际在 Linux 服务器/容器内执行。若被检出为 CRLF，bash 会报
-# `$'\r': command not found` 而静默失效（曾导致 post-receive 部署钩子异常）。
+# `$'\r': command not found` 而静默失效（曾导致部署钩子异常）。
+# 注：部署裸仓库的 post-receive 钩子由服务器侧维护、不入库；下方的 post-receive
+# 规则仅在钩子脚本被纳入版本管理时生效。
 
 # Shell 脚本强制 LF（存储与检出均为 LF）
 *.sh text eol=lf

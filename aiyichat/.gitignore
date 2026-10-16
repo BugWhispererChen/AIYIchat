@@ -1,23 +1,24 @@
-__pycache__/
-*.pyc
-*.pyo
+# 本文件只保留 aiyichat/ 子目录专属的忽略规则；
+# 通用规则（__pycache__/、*.pyc/pyo、*.log、.venv/、*.db、部署包 tar.gz、
+# _decrypted/、_ref_src/、private_key*.enc 等）统一由仓库根 .gitignore 负责。
+
+# 本地配置（含 API Key，严禁入库；模板见 .env.example）
 .env
+
+# IDE 与打包元数据
 .idea/
 .vscode/
 *.egg-info/
 dist/
 build/
-docs/
-*.log
 
-# Python 虚拟环境（项目隔离）
-.venv/
+# 内部文档目录（含配置说明与重构计划，不入库）
+docs/
 
 # PyInstaller 构建产物
 *.spec
 
-# Windows 安装包构建产物与第三方依赖（MongoDB zip 等大文件不入库）
-tools/windows_service/build/
+# Windows 安装包构建产物与第三方依赖（MongoDB msi/zip 等大文件不入库）
 tools/windows_service/dist/
 tools/windows_service/vendor/
 tools/windows_service/logs/
@@ -28,12 +29,3 @@ certs/
 
 # 浏览器验证临时截图
 _tmp_preview/
-
-# 部署包（大二进制，不入库）
-aiyichat-deploy-*.tar.gz
-
-# 敏感数据加固：本地解密产物、私钥、数据库文件严禁入库
-_decrypted/
-_ref_src/
-private_key*.enc
-*.db

@@ -58,7 +58,7 @@ git grep -n -I --cached -E "sk-[A-Za-z0-9]{16,}|LTAI[A-Za-z0-9]{8,}|password.*[:
 ```
 功能: 微信Bot管理界面——扫码登录、状态管理、按钮布局优化
 修复: 修复WeChat Bot创建未注册到Manager的问题
-工具: 新增sync_to_server.py直接上传部署脚本
+工具: deploy_package 打包成功后自动触发部署包可用性测试
 ```
 
 ## PR 流程

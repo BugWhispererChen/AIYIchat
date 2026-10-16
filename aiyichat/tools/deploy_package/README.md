@@ -9,11 +9,12 @@
 |------|------|
 | `package_deploy.py` | 打包主脚本：Git 导出 → 组装 → 打包为 tar.gz |
 | `build_package.sh` | 服务器端一键打包入口，打包成功后自动触发可用性测试 |
-| `deploy.sh` | Linux 一键部署脚本（随部署包交付） |
-| `deploy.ps1` | Windows 一键部署脚本（随部署包交付） |
 | `verify_package.sh` | 部署包静态完整性校验（tar 完整性/关键文件/源码齐全/敏感文件不入包） |
 | `test_deploy_package.sh` | 部署包运行级可用性测试（隔离容器 + 临时端口，不影响日常环境） |
 | `README.deploy.md` | 部署包用户文档（随部署包交付） |
+
+> 一键部署脚本 `deploy.sh` 位于 `aiyichat/` 项目根目录，打包时由 `package_deploy.py` 从根目录取并随包交付；
+> 本目录曾存在的 `deploy.sh`/`deploy.ps1` 副本从未被引用，已移至 `tools/archive/`。
 
 > Windows 产物形态为单独 EXE 安装包，由本机 `tools/windows_service/` 工具链构建，不走本目录流程。
 

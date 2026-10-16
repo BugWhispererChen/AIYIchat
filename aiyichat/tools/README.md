@@ -6,11 +6,12 @@
 
 ```
 tools/
-├── seed_companion_profiles.py   # 预置角色种子数据（幂等 upsert）
-├── seed_sticker_assets.py       # 表情包资产种子数据
+├── seed_companion_profiles.py   # 预置角色种子数据（幂等 upsert；被 app/bootstrap.py 运行时导入，不可移动）
 ├── deploy_package/              # Linux 部署包构建与可用性测试
 ├── windows_service/             # Windows 服务安装包构建（PyInstaller + Inno Setup）
-├── migrations/                  # MongoDB schema 迁移
+├── migrations/                  # MongoDB schema 迁移（幂等补齐脚本）
+├── eval/                        # LLM 回复质量离线评估
+├── archive/                     # 已失效/一次性脚本留档，不参与测试与打包（见 archive/README.md）
 └── test/                        # pytest 自动化测试套件
 ```
 

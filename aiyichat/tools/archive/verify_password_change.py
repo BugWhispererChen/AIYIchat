@@ -16,10 +16,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# 本仓库为公开仓库：凭据与端口一律取自环境变量，严禁写死在源码中
+# 运行前需设置 DEPLOY_HOST / VERIFY_ORIGINAL_PW / VERIFY_NEW_PW（可选 VERIFY_ADMIN_PORT，默认 443）
 host = os.getenv("DEPLOY_HOST")
-base = f"https://{host}:8848"
-ORIGINAL_PW = "admin123"
-NEW_PW = "newpass-2026"
+base = f"https://{host}:{os.getenv('VERIFY_ADMIN_PORT', '443')}"
+ORIGINAL_PW = os.getenv("VERIFY_ORIGINAL_PW")
+NEW_PW = os.getenv("VERIFY_NEW_PW")
+if not host or not ORIGINAL_PW or not NEW_PW:
+    sys.exit("缺少环境变量：DEPLOY_HOST / VERIFY_ORIGINAL_PW / VERIFY_NEW_PW")
 
 s = requests.Session()
 _cert = next(

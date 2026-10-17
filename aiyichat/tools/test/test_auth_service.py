@@ -715,6 +715,29 @@ class TestRegistration:
 
         run_with_db(body)
 
+    def test_default_profile_skips_inactive(self) -> None:
+        """回落必须跳过已停用与草稿角色（按名称排序时停用角色可能排在最前）。
+
+        回归意义：`list_public()` 不看 is_active，曾据此选中停用角色，
+        新账号首条消息直接回"尚未配置角色"，且注册本身不报错、很难被发现。
+        """
+
+        async def body():
+            await _seed_web_env()
+            repo = ProfileRepository()
+            await repo.create(
+                PromptProfileCreate(slug="a-disabled", name="A 已停用角色", visibility="public", is_active=False)
+            )
+            await repo.create(
+                PromptProfileCreate(slug="b-draft", name="B 草稿", visibility="public", is_draft=True)
+            )
+            settings.web_default_profile_slug = ""
+            ident = await _register("skipinactive")
+            service = await ServiceRepository().find_by_user_and_bot(ident.user_id, settings.web_bot_id)
+            assert service.profile_id == "lin-yu"
+
+        run_with_db(body)
+
     def test_no_profile_configured(self) -> None:
         """既无默认角色也无可引用的公共角色 → 503 且回滚。"""
 

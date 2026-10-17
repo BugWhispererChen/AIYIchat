@@ -172,17 +172,20 @@ async def resolve_default_profile_id() -> str:
 
     引擎 `_resolve_profile` 同时接受角色 ObjectId 与 slug，故这里直接返回 slug；
     预置角色全部为 public，跨账号可用，无需为每个用户各建 Bot。
+
+    回落清单必须过滤 `is_active` 与草稿：`list_public()` 按名称排序且不看启用状态，
+    曾据此选中一个已停用的角色，导致新账号首条消息即回"尚未配置角色"。
     """
     repo = ProfileRepository()
     slug = settings.web_default_profile_slug.strip()
     if slug:
         profile = await repo.find_by_slug(slug)
-        if profile is not None and profile.is_active:
+        if profile is not None and profile.is_active and not profile.is_draft:
             return slug
-    public = await repo.list_public()
-    if not public:
+    candidates = [p for p in await repo.list_active() if not p.is_draft]
+    if not candidates:
         raise AuthError("profile_not_configured", "未配置可用的默认角色，请联系管理员", 503)
-    return public[0].slug
+    return candidates[0].slug
 
 
 async def ensure_web_bot_configured() -> None:

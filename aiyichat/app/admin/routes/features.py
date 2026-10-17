@@ -118,14 +118,20 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="proactive_event_enabled",
         label="事件驱动主动关怀",
-        desc="自动识别用户提及的未来事件（面试/考试等），到期后主动关心进展。",
+        desc=(
+            "控制到期后是否**主动发消息**跟进对方提过的事（面试/考试等）。"
+            "事件识别与对话中的自然关心始终启用，与本开关无关。"
+        ),
         dependency="依赖焦点抽取（长期记忆）正常工作",
         cost="llm",
     ),
     FeatureToggle(
         key="embedding_enabled",
         label="语义记忆检索",
-        desc="将长期记忆向量化，按语义相似度检索注入，显著提升'记得住'的体验。",
+        desc=(
+            "将长期记忆向量化，按语义相似度检索注入，显著提升'记得住'的体验。"
+            "注入已按稳定性分层（常驻事实留前缀、本轮召回结果后置），不会击穿 prompt 前缀缓存。"
+        ),
         dependency="需在「AI 模型配置」中为 embedding 功能配置 OpenAI 兼容的向量化服务（如百炼、OpenAI、硅基流动等）",
         cost="dashscope",
     ),

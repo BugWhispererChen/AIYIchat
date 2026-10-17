@@ -779,5 +779,86 @@ class TestMessageTimeAwareness:
         assert "已经结束" not in joined
 
 
+class TestDynamicMemoryInjection:
+    """记忆注入分层：动态层后置到紧贴用户输入的易变段，稳定层留在前缀段。
+
+    动机：逐轮变化的语义 top-k 若与 core 事实同处 system 第 2 段，
+    会使其后所有历史与指令 prompt cache miss（响应从几秒恶化到几十秒）。
+    """
+
+    def setup_method(self) -> None:
+        self.assembler = PromptAssembler()
+        self.profile = _make_test_profile()
+        self._saved = {
+            k: getattr(settings, k)
+            for k in (
+                "message_time_enabled", "memory_inject_time_suffix",
+                "memory_dynamic_max_chars", "default_timezone_offset",
+            )
+        }
+        settings.message_time_enabled = True
+        settings.memory_inject_time_suffix = False
+        settings.memory_dynamic_max_chars = 600
+        settings.default_timezone_offset = 8
+
+    def teardown_method(self) -> None:
+        for key, val in self._saved.items():
+            setattr(settings, key, val)
+
+    def _assemble(self, **kwargs) -> list:
+        return self.assembler.assemble(
+            profile=self.profile, history=[], user_input="你好", **kwargs,
+        )
+
+    def test_dynamic_facts_land_in_volatile_section(self) -> None:
+        """动态层出现在最后一段 system（紧贴 user_input），稳定层留在第 2 段。"""
+        msgs = self._assemble(
+            memory_facts=["用户是北京大学学生"],
+            dynamic_memory_facts=["用户上周面试了某公司"],
+        )
+        assert msgs[-1]["role"] == "user"
+        volatile = msgs[-2]["content"]
+        assert "【此刻想起的关于对方的事】" in volatile
+        assert "- 用户上周面试了某公司" in volatile
+        stable = msgs[1]["content"]
+        assert "用户上周面试了某公司" not in stable
+        assert "- 用户是北京大学学生" in stable
+
+    def test_no_dynamic_section_when_absent(self) -> None:
+        """未传动态层（主动关怀链路、回退模式）时不出现该段落。"""
+        joined = "\n".join(m["content"] for m in self._assemble(
+            memory_facts=["用户喜欢喝咖啡"],
+        ))
+        assert "此刻想起" not in joined
+
+    def test_dynamic_section_respects_char_budget(self) -> None:
+        """超出字符预算的尾部条目被丢弃，以锁定 token 增量。"""
+        settings.memory_dynamic_max_chars = 20
+        joined = "\n".join(m["content"] for m in self._assemble(
+            dynamic_memory_facts=[
+                "第一条很长很长很长很长很长",
+                "第二条也很长很长很长很长",
+                "第三条",
+            ],
+        ))
+        assert "第一条" in joined
+        assert "第三条" not in joined
+
+    def test_dynamic_section_carries_time_suffix(self) -> None:
+        """动态层多为一次性事件，需带“记录于 N 天前”供模型判断时效。"""
+        settings.memory_inject_time_suffix = True
+        fact = MemoryFact(
+            content="用户8月26日有面试", category="life_event",
+            created_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
+        )
+        with _frozen_now(datetime(2026, 9, 2, tzinfo=timezone.utc)):
+            msgs = self.assembler.assemble(
+                profile=self.profile, history=[], user_input="你好",
+                dynamic_memory_facts=[fact.content],
+                dynamic_memory_objs=[fact],
+            )
+        assert "（记录于 7 天前）" in msgs[-2]["content"]
+
+
 
 

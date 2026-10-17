@@ -64,7 +64,7 @@ _RESOLVE_SYSTEM_PROMPT = (
     '严格输出 JSON，不要其他内容：{"action": "ADD"}'
 )
 
-# 事件提取附加指令（仅在 proactive_event_enabled 开启时追加）
+# 事件提取附加指令（始终追加；是否主动跟进由 proactive_event_enabled 决定）
 # 要求直接输出绝对日期串：LLM 自行推算 days_from_now 整数时易错，
 # 且“下周三/9月15号”这类表达无法用整数天数准确表达（解析失败时回落整数逻辑）
 _EVENTS_ADDENDUM = (
@@ -233,9 +233,11 @@ class FocusTracker:
             if topic and topic != current_topic:
                 await self.memory_repo.append_topic_history(service_id, topic)
 
-            # 提取并保存待跟进事件（仅在开关开启时）
-            if settings.proactive_event_enabled:
-                await self._save_events(service_id, result.get("events", []))
+            # 提取并保存待跟进事件：与实体一样始终入库，不受 proactive_event_enabled 门控。
+            # 该开关的语义应是"是否主动发跟进消息"（扰民风险所在），
+            # 而事件抽取共用同一次 LLM 调用、几乎零成本；若把它也门控掉，
+            # 开关从关到开之后 pending_events 仍是空的，角色要等很久才"记起"对方的事。
+            await self._save_events(service_id, result.get("events", []))
 
             # 提取并保存实体关系（轻量关系图谱）
             await self._save_entities(service_id, result.get("entities", []))
@@ -610,13 +612,18 @@ class FocusTracker:
         for nf in new_facts:
             best_ef: MemoryFact | None = None
             best_sim = 0.0
+            # 记录本次配对是否由向量得出：字符级降级相似度不足以支撑"失效旧事实"的决定
+            best_by_vector = False
             for ef in existing_facts:
                 if nf.embedding and ef.embedding:
                     sim = cosine_similarity(nf.embedding, ef.embedding)
+                    by_vector = True
                 else:
                     sim = self._char_similarity(nf.content, ef.content)
+                    by_vector = False
                 if sim > best_sim:
                     best_sim, best_ef = sim, ef
+                    best_by_vector = by_vector
 
             if best_ef is None or best_sim < _SIM_AMBIGUOUS:
                 # 全新信息
@@ -631,7 +638,20 @@ class FocusTracker:
                 # 模糊区间：LLM 裁决
                 llm_resolve_used += 1
                 action = await self._decide_action(best_ef.content, nf.content)
-                if action == "UPDATE":
+                if (
+                    action == "UPDATE"
+                    and settings.memory_update_requires_vector
+                    and not best_by_vector
+                ):
+                    # 配对依据只是字符重叠度，不足以断定"同一件事被更新"：
+                    # 误失效会静默丢掉仍然有效的记忆，故降级为并存（只增不改）。
+                    logger.info(
+                        "冲突消解降级：字符配对不支持 UPDATE，改为并存 service=%s old=%s",
+                        service_id, best_ef.content[:30],
+                    )
+                    await self.memory_repo.add_facts(service_id, [nf])
+                    existing_facts.append(nf)
+                elif action == "UPDATE":
                     await self._apply_update(service_id, best_ef, nf)
                     existing_facts.remove(best_ef)
                     existing_facts.append(nf)
@@ -779,13 +799,13 @@ class FocusTracker:
         ) + entities_text + date_hint
         # 实体关系提取（始终启用）
         system_prompt += _ENTITIES_ADDENDUM
-        # 开启事件驱动时，追加事件提取指令
-        if settings.proactive_event_enabled:
-            system_prompt += _EVENTS_ADDENDUM
-        # 拼接完整输出格式说明
+        # 事件提取同样始终启用：它与事实/实体共用同一次 LLM 调用，边际成本只是一段提示词；
+        # 真正该门控的是"是否据此主动发消息"（由 proactive_event_enabled 决定），
+        # 否则开关从关到开之后事件库仍是空的
+        system_prompt += _EVENTS_ADDENDUM
+        # 拼接完整输出格式说明（事实 + 实体 + 事件三类字段）
         system_prompt += (
-            "\n\n完整输出格式：\n"
-            + _build_full_output_format(settings.proactive_event_enabled)
+            "\n\n完整输出格式：\n" + _build_full_output_format(True)
         )
 
         provider = get_llm_provider("focus")

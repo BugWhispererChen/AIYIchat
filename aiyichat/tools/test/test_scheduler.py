@@ -105,6 +105,62 @@ class TestSchedulerHelpers:
             settings.proactive_quiet_hour_end = old_end
             settings.default_timezone_offset = old_tz
 
+    def test_quiet_hours_falls_back_to_global_offset(self) -> None:
+        """未配置对方时区时回落到全局偏移（保持原行为，不 regress）。"""
+        sched = ProactiveScheduler()
+        old_tz = settings.default_timezone_offset
+        try:
+            settings.default_timezone_offset = 8
+            with patch("app.proactive.scheduler.datetime") as mock_dt:
+                mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+                sched._is_quiet_hours(SimpleNamespace(timezone=""), SimpleNamespace(timezone=""))
+                assert mock_dt.now.call_args[0][0] == timezone(timedelta(hours=8))
+        finally:
+            settings.default_timezone_offset = old_tz
+
+    def test_quiet_hours_uses_service_timezone(self) -> None:
+        """免打扰按 service.timezone 取当地小时，而非服务器全局偏移。
+
+        动机：按全局偏移判"深夜别打扰"，会在海外用户当地凌晨发消息，
+        既扰人，也暴露角色不关心对方身在何处。
+        """
+        from zoneinfo import ZoneInfo
+
+        try:
+            expected = ZoneInfo("America/Los_Angeles")
+        except Exception:
+            pytest.skip("本机缺少 tzdata，跳过 IANA 时区用例")
+        sched = ProactiveScheduler()
+        old_tz = settings.default_timezone_offset
+        try:
+            settings.default_timezone_offset = 8
+            with patch("app.proactive.scheduler.datetime") as mock_dt:
+                mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+                sched._is_quiet_hours(
+                    SimpleNamespace(timezone="America/Los_Angeles"),
+                    SimpleNamespace(timezone=""),
+                )
+                assert mock_dt.now.call_args[0][0] is expected
+        finally:
+            settings.default_timezone_offset = old_tz
+
+    def test_time_hint_prefers_user_timezone_when_service_empty(self) -> None:
+        """service 未设时区时按解析链回落到 user.timezone。"""
+        from zoneinfo import ZoneInfo
+
+        try:
+            expected = ZoneInfo("Asia/Tokyo")
+        except Exception:
+            pytest.skip("本机缺少 tzdata，跳过 IANA 时区用例")
+        sched = ProactiveScheduler()
+        with patch("app.proactive.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+            sched._time_hint(
+                SimpleNamespace(timezone=""),
+                SimpleNamespace(timezone="Asia/Tokyo"),
+            )
+            assert mock_dt.now.call_args[0][0] is expected
+
     def test_can_send(self) -> None:
         sched = ProactiveScheduler()
         # 管理器未注入 → False
@@ -279,7 +335,7 @@ class TestProcessService:
 
                     sched._user_repo.find_by_id = AsyncMock(return_value=user)
                     sched._can_send = lambda *a, **k: True
-                    sched._is_quiet_hours = lambda: False
+                    sched._is_quiet_hours = lambda *a, **k: False
                     sched._generate_content = AsyncMock(return_value=("你好呀", ""))
                     sched._send_message = AsyncMock(return_value=True)
 
@@ -466,7 +522,7 @@ class TestPendingEvents:
                     id="u-1", platform="qq", platform_id="oid-1",
                 )
                 sched._can_send = lambda *a, **k: True
-                sched._is_quiet_hours = lambda: False
+                sched._is_quiet_hours = lambda *a, **k: False
                 sched._generate_event_content = AsyncMock(return_value="面试怎么样啦？")
                 sched._send_message = AsyncMock(return_value=True)
 
@@ -586,7 +642,7 @@ class TestMultiBotRouting:
                 )
                 sched._user_repo.find_by_id = AsyncMock(return_value=user)
                 sched._can_send = lambda *a, **k: True
-                sched._is_quiet_hours = lambda: False
+                sched._is_quiet_hours = lambda *a, **k: False
                 sched._generate_content = AsyncMock(return_value=("你好呀", ""))
                 sched._send_message = AsyncMock(return_value=True)
 
@@ -658,7 +714,7 @@ class TestMultiBotRouting:
                     return_value=self._make_user(bot_openids={"b-1": "oid-b1"})
                 )
                 sched._can_send = lambda *a, **k: True
-                sched._is_quiet_hours = lambda: False
+                sched._is_quiet_hours = lambda *a, **k: False
                 sched._generate_content = AsyncMock(return_value=("在吗", ""))
                 client = SimpleNamespace(
                     send_proactive=AsyncMock(return_value=False),

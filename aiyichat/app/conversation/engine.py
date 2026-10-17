@@ -391,6 +391,12 @@ class ConversationEngine:
             self._retrieve_memories(service.context_key, text, backfill=True, history=history),
         )
         
+        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴用户输入段
+        (
+            memory_facts, memory_fact_objs,
+            dynamic_memory_facts, dynamic_memory_objs,
+        ) = self._prepare_memory_layers(scored_facts)
+
         last_user_at = _last_user_message_at(history)
         gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
         last_proactive_at, last_proactive_text = await self._recent_proactive_context(
@@ -451,7 +457,9 @@ class ConversationEngine:
             strategy_instruction=strategy_instruction,
             mood=mood,
             sticker_available=sticker_available,
-            memory_fact_objs=scored_facts,
+            memory_fact_objs=memory_fact_objs,
+            dynamic_memory_facts=dynamic_memory_facts,
+            dynamic_memory_objs=dynamic_memory_objs,
             conversation=conversation,
             time_audit=time_audit,
             topic_stall_hint=topic_stall_hint,
@@ -758,6 +766,12 @@ class ConversationEngine:
             scored_facts, injected_entities, pending_events,
         ) = await self._retrieve_memories(service.context_key, text, backfill=False, history=history)
 
+        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴用户输入段
+        (
+            memory_facts, memory_fact_objs,
+            dynamic_memory_facts, dynamic_memory_objs,
+        ) = self._prepare_memory_layers(scored_facts)
+
         last_user_at = _last_user_message_at(history)
         gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
         last_proactive_at, last_proactive_text = await self._recent_proactive_context(
@@ -817,7 +831,9 @@ class ConversationEngine:
             strategy_instruction=strategy_instruction,
             mood=mood,
             sticker_available=sticker_available,
-            memory_fact_objs=scored_facts,
+            memory_fact_objs=memory_fact_objs,
+            dynamic_memory_facts=dynamic_memory_facts,
+            dynamic_memory_objs=dynamic_memory_objs,
             conversation=conversation,
             time_audit=stream_time_audit,
             topic_stall_hint=topic_stall_hint,
@@ -983,11 +999,14 @@ class ConversationEngine:
         emotion_hint = emotion_result.hint if emotion_result else ""
 
         # 关键词未命中时降级 LLM 情绪识别（识别隐含情绪），由开关控制
+        # 长度门槛按中文实际取值：原先的 8 字符会把"好累啊""又加班到十点"
+        # 这类恰恰需要推断的短表达直接挡在 LLM 之外，使开关形同虚设；
+        # 下界保留是为了让"嗯""哦"这类无信息量消息不产生额外调用。
         if (
             allow_llm_fallback
             and emotion_result is None
             and settings.emotion_llm_fallback_enabled
-            and len(text.strip()) >= 8
+            and len(text.strip()) >= settings.emotion_llm_min_chars
         ):
             emotion_result = await detect_emotion_llm(text)
             if emotion_result:
@@ -1049,9 +1068,20 @@ class ConversationEngine:
                 mood = service_memory.mood
             now = datetime.now(timezone.utc)
             emb_service = get_embedding_service()
-            query_embedding: list[float] = (
-                await emb_service.embed(text) if emb_service.enabled else []
-            )
+            # 查询向量化带短超时护栏：embedding 客户端自身超时为 20s，过长；
+            # 记忆检索再慢也不该拖住对话，超时即放弃语义召回、退化为只注入稳定层。
+            query_embedding: list[float] = []
+            if emb_service.enabled:
+                try:
+                    query_embedding = await asyncio.wait_for(
+                        emb_service.embed(text),
+                        timeout=settings.memory_recall_timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "记忆语义召回超时(%.1fs)，本轮放弃动态检索: service=%s",
+                        settings.memory_recall_timeout_seconds, service_id,
+                    )
             # 两阶段检索：core 层（安全/身份）常驻注入，不占 top-k 名额；
             # episodic/semantic 层参与语义/时效排序取 top-k
             core_facts = [f for f in service_memory.facts if f.tier == "core"]
@@ -1185,6 +1215,34 @@ class ConversationEngine:
         )
 
     @staticmethod
+    def _prepare_memory_layers(
+        scored_facts: list[MemoryFact],
+    ) -> tuple[list[str], list[MemoryFact], list[str], list[MemoryFact]]:
+        """把检索结果按「注入稳定性」拆成（稳定层文本, 稳定层对象, 动态层文本, 动态层对象）。
+
+        稳定层 = core 层事实：常驻注入、逐轮基本不变，留在 system 前段可命中
+        prompt 前缀缓存；动态层 = 本轮语义 top-k 召回的 episodic/semantic 事实，
+        随当前输入变化，若也放前段会使其后全部历史与指令 cache miss，
+        因此改注入到紧贴用户输入的易变段（缓存未命中会让响应从几秒恶化到几十秒）。
+
+        两层各自返回平行的事实对象列表：动态层多为一次性事件，比稳定层更需要
+        "记录于 N 天前"后缀，故必须一并传出供渲染对齐。
+
+        memory_stable_in_prefix 关闭时全部归入稳定层、动态层为空，行为与改动前一致。
+        """
+        if settings.memory_stable_in_prefix:
+            stable = [f for f in scored_facts if f.tier == "core"]
+            dynamic = [f for f in scored_facts if f.tier != "core"]
+        else:
+            stable, dynamic = list(scored_facts), []
+        return (
+            [f.content for f in stable],
+            stable,
+            [f.content for f in dynamic],
+            dynamic,
+        )
+
+    @staticmethod
     def _select_pending_events(events: list[PendingEvent]) -> list[PendingEvent]:
         """筛选本轮可注入的待跟进事件：排除已跟进与无到期时间者，按到期时间近远排序取前 N 条。
 
@@ -1301,6 +1359,8 @@ class ConversationEngine:
         mood: CharacterMood | None = None,
         sticker_available: bool = False,
         memory_fact_objs: list[MemoryFact] | None = None,
+        dynamic_memory_facts: list[str] | None = None,
+        dynamic_memory_objs: list[MemoryFact] | None = None,
         conversation: ConversationInDB | None = None,
         time_audit: TimeAudit | None = None,
         topic_stall_hint: str = "",
@@ -1332,6 +1392,8 @@ class ConversationEngine:
             mood_hint=mood_hint,
             sticker_available=sticker_available,
             memory_fact_objs=memory_fact_objs,
+            dynamic_memory_facts=dynamic_memory_facts,
+            dynamic_memory_objs=dynamic_memory_objs,
             summary_start_at=getattr(conversation, "summary_start_at", None),
             summary_end_at=getattr(conversation, "summary_end_at", None),
             time_audit=time_audit,
@@ -1408,9 +1470,15 @@ class ConversationEngine:
                 logger.warning(
                     "一致性自检: user=%s, issues=%s", user_id, issues
                 )
+                # 禁用词与角色越界同等处理：原先只记日志等于没拦截，
+                # 与人格冲突的词仍会原样发到用户屏幕上
+                if any(issue.startswith("forbidden:") for issue in issues):
+                    full_text = self.consistency_checker.scrub_forbidden(
+                        full_text, profile.language_style.forbidden_words
+                    )
                 if "role_break" in issues:
                     full_text = self.consistency_checker.scrub(full_text)
-                    messages = [full_text]  # 清洗后回退为单条
+                messages = [full_text]  # 清洗后回退为单条
         return full_text, messages, image_specs, sticker_specs
 
     def _get_repeat_similarity(
@@ -1690,7 +1758,6 @@ class ConversationEngine:
                     mood,
                     emotion_tag,
                     text,
-                    clean_text,
                     getattr(profile.personality, "traits", {}) or {},
                 )
             )

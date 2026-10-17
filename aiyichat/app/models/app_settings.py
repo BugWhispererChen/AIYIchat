@@ -103,7 +103,7 @@ class AppSettingsDocument(BaseModel):
     # 焦点抽取（长期记忆）
     focus_config_id: str = TEXT_DEFAULT_CONFIG_ID
     focus_temperature: float = 0.0
-    focus_max_tokens: int = 128
+    focus_max_tokens: int = 384  # 事实+实体+事件三类 JSON，128 会截断
     focus_timeout_seconds: int = 20
     # 情绪识别
     emotion_config_id: str = TEXT_DEFAULT_CONFIG_ID
@@ -167,6 +167,12 @@ class AppSettingsDocument(BaseModel):
     # 记忆语义检索
     memory_retrieve_topk: int = 8
     memory_semantic_weight: float = 0.6
+    # 记忆注入分层（稳定层留前缀、动态层后置，防前缀缓存被击穿）
+    memory_stable_in_prefix: bool = True
+    memory_dynamic_max_chars: int = 600
+    memory_recall_timeout_seconds: float = 3.0
+    # UPDATE 裁决护栏：字符相似度降级配对时禁止失效旧事实（防误删有效记忆）
+    memory_update_requires_vector: bool = True
     # 记忆双时间轴（现实成立轴 valid_at/invalid_at + 系统录入轴 expired_at）
     memory_fact_validity_enabled: bool = True  # 冲突裁决 UPDATE 时软失效旧事实而不删除
     memory_expired_filter_enabled: bool = True  # 注入前硬过滤已失效事实（仅作用于新字段非空者）
@@ -177,6 +183,7 @@ class AppSettingsDocument(BaseModel):
 
     # 情感支持
     emotion_llm_fallback_enabled: bool = False
+    emotion_llm_min_chars: int = 4  # 降级 LLM 情绪识别的字符下界
     support_strategy_enabled: bool = True  # 纯规则零成本，默认启用
     character_mood_enabled: bool = True  # 角色心情系统：角色拥有自己的情绪状态并随对话演化
     extended_emotion_enabled: bool = True  # 扩展情绪检测开关（默认启用，支持 tired/excited/confused/nostalgic/grateful/shy）

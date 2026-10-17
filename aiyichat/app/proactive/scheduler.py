@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from app.config import settings
+from app.conversation.time_context import resolve_tz
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.proactive_repo import ProactiveRecordRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
@@ -102,8 +103,12 @@ class ProactiveScheduler:
                 await track_error(e, context={"component": "proactive_scheduler"})
             await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
-    def _is_quiet_hours(self) -> bool:
-        """判断当前是否处于免打扰时段（用户本地时区，配置驱动，默认 22:00-08:00）。
+    def _is_quiet_hours(self, service: object = None, user: object = None) -> bool:
+        """判断当前是否处于免打扰时段（**对方本地时区**，配置驱动，默认 22:00-08:00）。
+
+        时区走解析链 service.timezone → user.timezone → 全局默认偏移：
+        用全局偏移判"深夜别打扰"，会给海外或上夜班的人在当地凌晨发消息，
+        既扰人，也暴露角色并不关心对方身在何处。
 
         处于该时段时本轮跳过发送，等待下一轮扫描；白天恢复后自动触发。
         start == end 视为未启用免打扰。
@@ -112,7 +117,10 @@ class ProactiveScheduler:
         end = settings.proactive_quiet_hour_end
         if start == end:
             return False
-        tz = timezone(timedelta(hours=settings.default_timezone_offset))
+        tz, _label = resolve_tz(
+            getattr(service, "timezone", "") or "",
+            getattr(user, "timezone", "") or "",
+        )
         hour = datetime.now(tz).hour
         if start > end:
             # 跨午夜场景（如 22~8）：>=start 或 <end 都视为免打扰
@@ -244,7 +252,7 @@ class ProactiveScheduler:
 
         # 免打扰时段控制：提前到阶段判定之前，避免无谓的阶段计算
         # 处于深夜时段则跳过本轮，等待下一轮扫描（白天后自动触发）
-        if self._is_quiet_hours():
+        if self._is_quiet_hours(service, user):
             logger.info("免打扰时段，跳过本轮: user=%s", user.id)
             return
 
@@ -443,7 +451,7 @@ class ProactiveScheduler:
             last_content = last_record.content if last_record else ""
 
             # 获取用户本地时间与时间感知提示（用于生成与时间匹配的内容）
-            user_now, time_context, time_hint = self._time_hint()
+            user_now, time_context, time_hint = self._time_hint(service, user)
 
             # 组装提示词：指示 LLM 生成主动关怀消息（注入时间感知）
             proactive_instruction = (
@@ -501,13 +509,22 @@ class ProactiveScheduler:
             })
             return "", ""
 
-    def _time_hint(self) -> tuple[datetime, str, str]:
-        """获取用户本地时间与时间感知提示（关怀型/分享型共用）。
+    def _time_hint(
+        self, service: object = None, user: object = None
+    ) -> tuple[datetime, str, str]:
+        """获取对方本地时间与时间感知提示（关怀型/分享型共用）。
+
+        时区走解析链 service.timezone → user.timezone → 全局默认偏移，
+        与免打扰判定用同一个时区，避免出现"按 UTC+8 判定不深夜、
+        却按对方真实时区说这么晚还没睡"的自相矛盾。
 
         Returns:
-            (用户本地当前时间, 时间段词汇, 该时间段的生成提示)
+            (对方本地当前时间, 时间段词汇, 该时间段的生成提示)
         """
-        tz = timezone(timedelta(hours=settings.default_timezone_offset))
+        tz, _label = resolve_tz(
+            getattr(service, "timezone", "") or "",
+            getattr(user, "timezone", "") or "",
+        )
         user_now = datetime.now(tz)
         current_hour = user_now.hour
         if 0 <= current_hour < 5:
@@ -598,7 +615,7 @@ class ProactiveScheduler:
             )
             last_content = last_record.content if last_record else ""
 
-            user_now, time_context, _ = self._time_hint()
+            user_now, time_context, _ = self._time_hint(service, user)
 
             # 按类型构造内容指令：news=联网热点改写，trivia=创作普适趣事（禁写时事新闻）
             if share_kind == "news":
@@ -701,7 +718,7 @@ class ProactiveScheduler:
             return False
 
         # 免打扰时段：等待下一轮
-        if self._is_quiet_hours():
+        if self._is_quiet_hours(service, user):
             logger.info("免打扰时段，延迟事件跟进: user=%s", user.id)
             return False
 

@@ -59,7 +59,8 @@ class _RuntimeSettings:
     proactive_timeout_seconds: int = 30
     focus_config_id: str = "text-default"
     focus_temperature: float = 0.0
-    focus_max_tokens: int = 128
+    # 一次抽取需同时输出「事实 + 实体 + 事件」三类 JSON，128 会截断事件字段
+    focus_max_tokens: int = 384
     focus_timeout_seconds: int = 20
     emotion_config_id: str = "text-default"
     emotion_temperature: float = 0.0
@@ -168,6 +169,21 @@ class _RuntimeSettings:
     memory_retrieve_topk: int = 8  # 语义检索注入的记忆条数
     memory_semantic_weight: float = 0.6  # 语义相似度权重（其余归时效×类别）
 
+    # 记忆注入分层（防 prompt 前缀缓存被击穿）
+    # 稳定层（core tier，每轮基本不变）留在 system prompt 前段以命中前缀缓存；
+    # 动态层（随当前输入语义变化的 top-k 召回）改注入到紧贴用户输入的易变段。
+    # 依据：prompt_assembler 类注释即标注"缓存未命中会使响应从几秒恶化到几十秒"。
+    memory_stable_in_prefix: bool = True
+    # 动态层注入的字符预算（超出则丢弃尾部条目，控制 token 增量）
+    memory_dynamic_max_chars: int = 600
+    # 查询向量化的超时秒数：超时即放弃语义召回、降级为只注入稳定层，
+    # 绝不让记忆检索阻塞对话主链路（embedding 客户端自身超时为 20s，过长）
+    memory_recall_timeout_seconds: float = 3.0
+    # UPDATE 裁决护栏：相似度来自字符级降级算法时，禁止软失效旧事实（改为并存）。
+    # 中文里"我养了只猫"与"我喜欢猫"的字符重叠度就足以落进模糊区间，
+    # 据此失效会误删仍然有效的记忆；Mem0 v3 亦因误删代价高而转向 ADD-only。
+    memory_update_requires_vector: bool = True
+
     # 记忆双时间轴（现实成立轴 valid_at/invalid_at + 系统录入轴 expired_at）
     memory_fact_validity_enabled: bool = True  # 冲突裁决 UPDATE 时软失效旧事实而不删除
     memory_expired_filter_enabled: bool = True  # 注入前硬过滤已失效事实（仅作用于新字段非空者）
@@ -181,6 +197,9 @@ class _RuntimeSettings:
 
     # 情感支持
     emotion_llm_fallback_enabled: bool = False  # 关键词未命中时降级LLM情绪识别
+    # 降级识别的长度下界（字符）：低于此值视为"嗯/哦"一类无信息量消息，不产生额外调用。
+    # 原实现硬编码 8，会把"好累啊"这类真正需要推断的短表达挡在 LLM 之外。
+    emotion_llm_min_chars: int = 4
     support_strategy_enabled: bool = True  # 情感支持策略层（探索→安慰→行动）；纯规则零成本，默认启用
     character_mood_enabled: bool = True  # 角色心情系统：角色拥有自己的情绪状态并随对话演化
     extended_emotion_enabled: bool = True  # 扩展情绪检测开关（默认启用，支持 tired/excited/confused/nostalgic/grateful/shy）
@@ -336,10 +355,13 @@ class _RuntimeSettings:
             "imagegen_edit_enabled", "imagegen_edit_config_id",
             "embedding_enabled", "embedding_config_id",
             "memory_retrieve_topk", "memory_semantic_weight",
+            "memory_stable_in_prefix", "memory_dynamic_max_chars",
+            "memory_recall_timeout_seconds", "memory_update_requires_vector",
             "memory_fact_validity_enabled", "memory_expired_filter_enabled",
             "memory_max_entities", "memory_entity_scan_turns",
             "memory_entity_merge_threshold", "memory_graph_enabled", "memory_graph_path",
-            "emotion_llm_fallback_enabled", "support_strategy_enabled",
+            "emotion_llm_fallback_enabled", "emotion_llm_min_chars",
+            "support_strategy_enabled",
             "character_mood_enabled", "extended_emotion_enabled",
             "context_token_budget", "consistency_check_enabled",
             "proactive_event_enabled", "function_calling_enabled",
@@ -378,7 +400,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         proactive_timeout_seconds: int = Field(default=30)
         focus_config_id: str = Field(default="text-default")
         focus_temperature: float = Field(default=0.0)
-        focus_max_tokens: int = Field(default=128)
+        focus_max_tokens: int = Field(default=384)
         focus_timeout_seconds: int = Field(default=20)
         emotion_config_id: str = Field(default="text-default")
         emotion_temperature: float = Field(default=0.0)
@@ -446,6 +468,10 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         embedding_config_id: str = Field(default="dashscope-default")
         memory_retrieve_topk: int = Field(default=8)
         memory_semantic_weight: float = Field(default=0.6)
+        memory_stable_in_prefix: bool = Field(default=True)
+        memory_dynamic_max_chars: int = Field(default=600)
+        memory_recall_timeout_seconds: float = Field(default=3.0)
+        memory_update_requires_vector: bool = Field(default=True)
         memory_fact_validity_enabled: bool = Field(default=True)
         memory_expired_filter_enabled: bool = Field(default=True)
         memory_max_entities: int = Field(default=50)
@@ -454,6 +480,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         memory_graph_enabled: bool = Field(default=False)
         memory_graph_path: str = Field(default="./data/entity_graph")
         emotion_llm_fallback_enabled: bool = Field(default=False)
+        emotion_llm_min_chars: int = Field(default=4)
         support_strategy_enabled: bool = Field(default=True)
         character_mood_enabled: bool = Field(default=True)
         extended_emotion_enabled: bool = Field(default=True)

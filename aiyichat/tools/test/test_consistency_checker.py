@@ -42,3 +42,20 @@ class TestConsistencyChecker:
         scrubbed = self.checker.scrub(text)
         # 全部句子被剔除时退回原文，避免空回复
         assert scrubbed == text
+
+    def test_scrub_forbidden_removes_hit_sentence(self) -> None:
+        """禁用词命中做整句剔除（原先仅记日志等于没拦截，词仍会发到用户屏幕）。"""
+        text = "老铁你今天怎么样呀。我等你好久了呢。"
+        scrubbed = self.checker.scrub_forbidden(text, ["老铁", "卧槽"])
+        assert "老铁" not in scrubbed
+        assert "我等你好久了呢" in scrubbed
+
+    def test_scrub_forbidden_keeps_original_when_all_removed(self) -> None:
+        """全部句子都含禁用词时退回原文，避免空回复。"""
+        text = "老铁在吗？"
+        assert self.checker.scrub_forbidden(text, ["老铁"]) == text
+
+    def test_scrub_forbidden_noop_without_words(self) -> None:
+        """未配置禁用词或空文本时原样返回。"""
+        assert self.checker.scrub_forbidden("今天开心", []) == "今天开心"
+        assert self.checker.scrub_forbidden("", ["老铁"]) == ""

@@ -51,3 +51,19 @@ class ConsistencyChecker:
         kept = [s for s in sentences if not self._role_break_re.search(s)]
         result = "".join(kept).strip()
         return result or text
+
+    def scrub_forbidden(self, text: str, forbidden_words: list[str] | None) -> str:
+        """剔除命中禁用词的句子；若全部被剔除则退回原文避免空回复。
+
+        禁用词来自角色设定里「绝对不要使用以下词汇」，与人格直接冲突
+        （如软糯女友冒出"老铁""卧槽"）。仅记日志等于没拦截，
+        这类词仍会原样发到用户屏幕上，故与 role_break 做同等处理。
+        """
+        if not text or not forbidden_words:
+            return text
+        sentences = re.split(r"(?<=[。！？!?\n])", text)
+        kept = [
+            s for s in sentences if not any(word and word in s for word in forbidden_words)
+        ]
+        result = "".join(kept).strip()
+        return result or text

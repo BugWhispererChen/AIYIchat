@@ -360,8 +360,11 @@ class TestEngineStickerResolve:
 
             old_enabled = settings.sticker_enabled
             old_prob = settings.sticker_reply_probability
+            old_casual = settings.sticker_casual_probability
             settings.sticker_enabled = True
             settings.sticker_reply_probability = 1.0
+            # 关闭概率性穿插：否则"普通文本不触发"这一断言会以 15% 概率随机失败
+            settings.sticker_casual_probability = 0.0
             old_available = sticker_service.sticker_library_available
             old_random = sticker_service.pick_random_sticker
             old_search = sticker_service.search_sticker
@@ -382,6 +385,7 @@ class TestEngineStickerResolve:
             finally:
                 settings.sticker_enabled = old_enabled
                 settings.sticker_reply_probability = old_prob
+                settings.sticker_casual_probability = old_casual
                 sticker_service.sticker_library_available = old_available
                 sticker_service.pick_random_sticker = old_random
                 sticker_service.search_sticker = old_search

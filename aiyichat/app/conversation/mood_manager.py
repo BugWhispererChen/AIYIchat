@@ -32,7 +32,8 @@ _IMAGE_MOOD_THRESHOLD = 0.6
 # LLM 心情更新提示词
 _MOOD_UPDATE_SYSTEM_PROMPT = (
     "你是角色心情分析助手。根据角色上一刻的心情、距上次更新的时长、"
-    "本轮对话内容和角色性格，更新角色的当前心情。\n"
+    "对方本轮说了什么及其情绪、角色性格，更新角色的当前心情"
+    "（只看对方的输入，角色自己刚说了什么不影响心情）。\n"
     "valence 为愉悦度（-1.0 极度低落 ~ +1.0 极度愉悦），"
     "arousal 为激活度（0.0 平静 ~ 1.0 激动）。\n"
     "label 用一句简短中文描述当前心情（如'有点失落''为对方开心''心疼对方'），"
@@ -144,12 +145,16 @@ class MoodManager:
         prev_mood: CharacterMood | None,
         user_emotion: str | None,
         user_text: str,
-        ai_text: str,
         personality_traits: dict[str, float],
     ) -> None:
         """每轮对话后异步更新角色心情（fire-and-forget，内部吃掉异常）。
 
-        综合上一刻心情、时间衰减、本轮对话与角色性格，调用轻量 LLM 更新。
+        综合上一刻心情、时间衰减、**对方**本轮的表达与角色性格，调用轻量 LLM 更新。
+
+        刻意不把角色自己本轮的回复作为输入：那会形成"情绪回声"闭环——
+        系统把模型演出来的情绪当成真实心情写回，下一轮再注入回去，
+        模型照着更强地演，情绪被自我强化（低落半衰期仅 6 小时也压不住）。
+        心情应当由外部刺激（对方的话与情绪）驱动，而非由自己的输出驱动。
         """
         import json
 
@@ -186,8 +191,7 @@ class MoodManager:
                 f"{prev_desc}\n"
                 f"{personality_desc}\n"
                 f"本轮用户情绪：{user_emotion_desc}\n"
-                f"用户说：{user_text[:200]}\n"
-                f"角色回复：{ai_text[:200]}"
+                f"用户说：{user_text[:200]}"
             )
 
             provider = get_llm_provider("emotion")

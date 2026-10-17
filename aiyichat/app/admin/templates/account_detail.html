@@ -261,6 +261,7 @@
                             <select name="platform" required>
                                 <option value="qq">QQ</option>
                                 <option value="wechat">微信</option>
+                                <option value="web">网页</option>
                             </select>
                         </label>
                         <label>昵称
@@ -293,7 +294,7 @@
                             <span class="status-dot {% if bot.platform == 'wechat' and bot.status == 'online' %}online{% elif bot.platform == 'wechat' and bot.status == 'pending_qr' %}pending{% else %}offline{% endif %}"></span>
                             {{ bot.name }}
                             <span class="badge {% if bot.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}" style="margin-left:0.3rem;">
-                                {{ 'QQ' if bot.platform == 'qq' else '微信' }}
+                                {{ 'QQ' if bot.platform == 'qq' else ('网页' if bot.platform == 'web' else '微信') }}
                             </span>
                             {% if bot.platform == 'qq' %}
                             <span class="badge {% if bot.sandbox_mode %}badge-active{% else %}badge-warning{% endif %}" style="margin-left:0.3rem;">
@@ -415,6 +416,7 @@
                             <select name="platform" required onchange="toggleBotFields(this.value)">
                                 <option value="qq">QQ</option>
                                 <option value="wechat">微信</option>
+                                <option value="web">网页</option>
                             </select>
                         </label>
                     </div>

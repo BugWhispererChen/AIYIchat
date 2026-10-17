@@ -1,12 +1,19 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.auth_api import AuthError, WebUser, require_web_user
+from app.config import settings
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.service_repo import ServiceRepository
+from app.models.web_identity import normalize_username
+
+logger = logging.getLogger(__name__)
 
 conversations_router = APIRouter()
 _conv_repo = ConversationRepository()
@@ -15,21 +22,47 @@ _service_repo = ServiceRepository()
 
 
 class StreamChatRequest(BaseModel):
-    """流式对话请求体。"""
+    """流式对话请求体。
 
-    bot_id: str
+    开启 `web_auth_enabled` 后 `platform`/`platform_id`/`bot_id` 全部由会话令牌反查，
+    此处字段仅为开关关闭时的旧客户端保留；网页端传空串即可。
+    """
+
+    bot_id: str = ""
     platform: str = "web"
-    platform_id: str
+    platform_id: str = ""
     text: str
     nickname: str = ""
 
 
+async def _require_web_user_or_401(request: Request) -> WebUser:
+    """开启网页鉴权时解析会话身份，失败转 HTTPException。"""
+    try:
+        return await require_web_user(request)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @conversations_router.get("")
 async def list_conversations(
+    request: Request,
     user_id: Optional[str] = None,
     service_id: Optional[str] = None,
 ):
-    """获取对话列表，可按用户ID或服务ID过滤。"""
+    """获取对话列表，可按用户ID或服务ID过滤。
+
+    开启网页鉴权后只允许访问自己的数据：入参 user_id 与令牌身份不符即 403，
+    service_id 必须归属当前用户（历史越权读取面的封堵点）。
+    """
+    if settings.web_auth_enabled:
+        web_user = await _require_web_user_or_401(request)
+        if user_id is not None and user_id != web_user.user_id:
+            raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+        if service_id is not None:
+            svc = await _service_repo.find_by_id(service_id)
+            if svc is None or svc.user_id != web_user.user_id:
+                raise HTTPException(status_code=403, detail="无权访问该服务的数据")
+        user_id = web_user.user_id
     if service_id:
         # 服务设置共享组时，补充组 key 下的共享会话（含加入前的自身历史）
         convs = await _conv_repo.list_by_service(service_id)
@@ -57,11 +90,18 @@ async def list_conversations(
 
 
 @conversations_router.get("/{conversation_id}/messages")
-async def get_messages(conversation_id: str, limit: int = 50):
-    """获取对话的消息历史。"""
+async def get_messages(request: Request, conversation_id: str, limit: int = 50):
+    """获取对话的消息历史。
+
+    开启网页鉴权后仅允许读取本人对话（消息历史泄露即本次要封堵的越权面之一）。
+    """
     conv = await _conv_repo.find_by_id(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if settings.web_auth_enabled:
+        web_user = await _require_web_user_or_401(request)
+        if conv.user_id != web_user.user_id:
+            raise HTTPException(status_code=403, detail="无权读取该对话的消息")
 
     messages = await _msg_repo.get_recent(conversation_id, limit)
     return [
@@ -77,19 +117,48 @@ async def get_messages(conversation_id: str, limit: int = 50):
 
 
 @conversations_router.post("/chat/stream")
-async def chat_stream(req: StreamChatRequest):
-    """流式对话接口（SSE）。逐块返回 AI 回复文本，以 data: 帧传输，[DONE] 结束。"""
+async def chat_stream(req: StreamChatRequest, request: Request):
+    """流式对话接口（SSE）。逐块返回 AI 回复文本，以 data: 帧传输，[DONE] 结束。
+
+    开启 `web_auth_enabled` 后，`platform`/`platform_id`/`bot_id` 一律由 Bearer 会话
+    令牌反查，客户端入参不再被信任——这是原"任意人可冒充他人 openid"越权面的封堵点。
+    开关关闭时保持旧行为，确保既有部署升级无感知（QQ/微信 Bot 走引擎直连，不经本接口）。
+    """
     from app.conversation.engine import ConversationEngine
 
-    engine = ConversationEngine(bot_id=req.bot_id)
+    if settings.web_auth_enabled:
+        web_user = await _require_web_user_or_401(request)
+        # 显式传入却不匹配 → 视为冒充尝试：拒绝并留审计日志（比静默忽略更能暴露攻击）
+        if req.platform_id and normalize_username(req.platform_id) != web_user.username:
+            logger.warning(
+                "越权尝试：登录身份 %s 试图以 platform_id=%s 冒充他人会话",
+                web_user.username,
+                req.platform_id,
+            )
+            raise HTTPException(status_code=403, detail="platform_id 与登录身份不匹配")
+        if req.bot_id and req.bot_id != web_user.bot_id:
+            logger.warning(
+                "越权尝试：登录身份 %s 试图指定未授权的 bot_id=%s", web_user.username, req.bot_id
+            )
+            raise HTTPException(status_code=403, detail="无权使用该 Bot")
+        bot_id = web_user.bot_id
+        platform, platform_id = "web", web_user.username
+        nickname = req.nickname or web_user.username
+    else:
+        bot_id = req.bot_id
+        platform, platform_id, nickname = req.platform, req.platform_id, req.nickname
+    if not bot_id or not platform_id:
+        raise HTTPException(status_code=400, detail="缺少 bot_id 或 platform_id")
+
+    engine = ConversationEngine(bot_id=bot_id)
 
     async def event_gen():
         try:
             async for chunk in engine.handle_message_stream(
-                platform=req.platform,
-                platform_id=req.platform_id,
+                platform=platform,
+                platform_id=platform_id,
                 text=req.text,
-                nickname=req.nickname,
+                nickname=nickname,
             ):
                 # SSE 数据帧：对换行做转义避免破坏协议，客户端反转义
                 safe = chunk.replace("\r", "").replace("\n", "\\n")

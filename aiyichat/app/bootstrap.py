@@ -141,9 +141,12 @@ def create_app() -> FastAPI:
 
     from app.admin.router import admin_router
     from app.api.router import api_router
+    from app.web.router import web_router
 
     app.include_router(api_router, prefix="/api")
     app.include_router(admin_router)
+    # C 端网页页面：路由内部按 settings.web_auth_enabled 拦截，关闭时不暴露任何页面
+    app.include_router(web_router)
 
     @app.exception_handler(HTTPException)
     async def admin_auth_redirect(request: Request, exc: HTTPException):

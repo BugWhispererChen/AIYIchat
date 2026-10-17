@@ -249,6 +249,22 @@ class _RuntimeSettings:
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
     sticker_max_dimension: int = 500  # 表情包尺寸阈值（宽或高中较大者，像素）
 
+    # C 端网页用户（自助注册 / 登录 / 会话）
+    # 默认值必须与 AppSettingsDocument 中的同名字段一致，详见该类的说明注释
+    web_auth_enabled: bool = False  # 网页鉴权总开关（关闭时网页注册/登录/会话接口全部拒绝）
+    web_register_enabled: bool = False  # 自助注册开关
+    web_register_require_review: bool = True  # 注册需管理员审核后才可登录
+    web_captcha_enabled: bool = True  # 注册/登录图形验证码开关
+    web_bot_id: str = ""  # 承载网页会话的系统 Bot（platform="web"）id
+    web_default_profile_slug: str = ""  # 新建服务的默认角色 slug
+    web_free_quota_template_id: str = ""  # 注册赠送额度模板 id（空/不存在回落内置体验额度）
+    web_session_hours: int = 24  # 会话有效期（小时，滑动过期）
+    web_session_max_concurrent: int = 3  # 同一身份并发有效会话上限
+    web_login_max_fail: int = 5  # 连续登录失败上限
+    web_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
+    web_rate_limit_register: int = 5  # 单 IP 注册请求频率上限（10 分钟滑动窗口）
+    web_rate_limit_login: int = 20  # 单 IP 登录请求频率上限（10 分钟滑动窗口）
+
     def __init__(self) -> None:
         # 基础设施字段不可热重载，直接从 _bootstrap 同步
         self.app_env = _bootstrap.app_env
@@ -376,6 +392,12 @@ class _RuntimeSettings:
             "sticker_enabled", "sticker_seed_enabled", "sticker_max_per_turn",
             "sticker_similarity_threshold", "sticker_reply_probability",
             "sticker_casual_probability", "sticker_max_dimension",
+            "web_auth_enabled", "web_register_enabled",
+            "web_register_require_review", "web_captcha_enabled",
+            "web_bot_id", "web_default_profile_slug", "web_free_quota_template_id",
+            "web_session_hours", "web_session_max_concurrent",
+            "web_login_max_fail", "web_login_lockout_minutes",
+            "web_rate_limit_register", "web_rate_limit_login",
         }
 
 
@@ -507,6 +529,19 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         sticker_reply_probability: float = Field(default=0.5)
         sticker_casual_probability: float = Field(default=0.15)
         sticker_max_dimension: int = Field(default=500)
+        web_auth_enabled: bool = Field(default=False)
+        web_register_enabled: bool = Field(default=False)
+        web_register_require_review: bool = Field(default=True)
+        web_captcha_enabled: bool = Field(default=True)
+        web_bot_id: str = Field(default="")
+        web_default_profile_slug: str = Field(default="")
+        web_free_quota_template_id: str = Field(default="")
+        web_session_hours: int = Field(default=24)
+        web_session_max_concurrent: int = Field(default=3)
+        web_login_max_fail: int = Field(default=5)
+        web_login_lockout_minutes: int = Field(default=15)
+        web_rate_limit_register: int = Field(default=5)
+        web_rate_limit_login: int = Field(default=20)
         # 忽略 .env 中未声明的键（如 DEPLOY_* 部署凭据），与 _BootstrapSettings 保持一致
         model_config = {
             "env_file": ".env",

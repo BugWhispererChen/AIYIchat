@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话 - 爱易聊</title>
+    {# 空图标：避免浏览器默认去取 /favicon.ico 产生 404 控制台报错 #}
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    {% include "partials/_design_tokens.html" %}
+    <style>
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--pico-font-family);
+            overflow-x: hidden;   /* 375px 视口下任何元素都不得撑出横向滚动 */
+        }
+        .chat-topbar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            /* 375px 视口下品牌名+额度+两个按钮放不下，必须允许换行才不会横向溢出 */
+            flex-wrap: wrap;
+            gap: .4rem .6rem;
+            padding: .6rem .85rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        .chat-topbar .brand {
+            font-weight: 700;
+            font-size: .98rem;
+            color: var(--text);
+            white-space: nowrap;
+        }
+        .chat-topbar .quota {
+            font-size: .78rem;
+            color: var(--text-2);
+            margin-left: auto;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        .icon-btn {
+            border: 1px solid var(--border-strong);
+            background: var(--surface);
+            color: var(--text-2);
+            border-radius: var(--radius-sm);
+            padding: .3rem .6rem;
+            font-size: .78rem;
+            cursor: pointer;
+            margin: 0;
+            line-height: 1.4;
+            width: auto;
+        }
+        .icon-btn:hover { background: var(--danger-bg); color: var(--danger-text); }
+        .theme-btn { margin-left: 0; }
+        .theme-btn:hover { background: var(--surface-2); color: var(--text); }
+        .theme-btn svg { width: 16px; height: 16px; display: block; }
+        .theme-btn .icon-sun { display: none; }
+        [data-theme="dark"] .theme-btn .icon-sun { display: block; }
+        [data-theme="dark"] .theme-btn .icon-moon { display: none; }
+
+        #transcript {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 1rem .85rem;
+            display: flex;
+            flex-direction: column;
+            gap: .7rem;
+        }
+        .bubble {
+            max-width: 82%;
+            padding: .65rem .85rem;
+            border-radius: var(--radius);
+            font-size: .92rem;
+            line-height: 1.65;
+            /* 用户与模型输出的文本一律按纯文本呈现（含换行），不做 HTML/markdown 解析 */
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            box-shadow: var(--shadow);
+        }
+        .bubble-user {
+            align-self: flex-end;
+            background: var(--primary-soft);
+            color: var(--text);
+            border: 1px solid var(--border-strong);
+        }
+        .bubble-assistant {
+            align-self: flex-start;
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .bubble-error { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
+        .system-note {
+            align-self: center;
+            font-size: .78rem;
+            color: var(--text-3);
+            text-align: center;
+            padding: .3rem .6rem;
+        }
+        .typing { color: var(--text-3); font-size: .85rem; }
+        .chat-input-bar {
+            flex-shrink: 0;
+            display: flex;
+            gap: .55rem;
+            align-items: flex-end;
+            padding: .7rem .85rem calc(.7rem + env(safe-area-inset-bottom));
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+        }
+        .chat-input-bar textarea {
+            flex: 1;
+            min-width: 0;
+            margin: 0;
+            resize: none;
+            max-height: 7rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-strong);
+            font-size: .92rem;
+        }
+        .chat-input-bar button {
+            width: auto;
+            margin: 0;
+            padding: .55rem 1.05rem;
+            font-size: .9rem;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+        }
+        @media (max-width: 420px) {
+            .bubble { max-width: 90%; }
+            .chat-topbar .brand { font-size: .92rem; }
+        }
+    </style>
+    <script>
+      /* 主题首帧恢复：与后台同一机制（data-theme + localStorage 记忆），C 端用独立键 */
+      (function () {
+          try {
+              var t = localStorage.getItem('aiyichat_web_theme');
+              if (t !== 'dark' && t !== 'light') {
+                  t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+              }
+              document.documentElement.setAttribute('data-theme', t);
+          } catch (e) { /* 隐私模式下 localStorage 不可用，保持默认浅色 */ }
+      })();
+    </script>
+</head>
+<body>
+    <div class="chat-topbar">
+        <span class="brand">爱易聊 · 网页对话</span>
+        <span class="quota" id="quota-info">正在读取账号信息…</span>
+        <button class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <button class="icon-btn" id="logout-btn">退出登录</button>
+    </div>
+
+    <!-- 对话记录容器：最简形态，不做到场列表/历史分页 -->
+    <div id="transcript" aria-live="polite">
+        <div class="system-note" id="loading-note">正在建立会话…</div>
+    </div>
+
+    <div class="chat-input-bar">
+        <textarea id="chat-input" rows="1" maxlength="2000" placeholder="输入内容，回车发送" disabled></textarea>
+        <button type="button" id="send-btn" disabled>发送</button>
+    </div>
+
+    <script>
+    function toggleTheme() {
+        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('aiyichat_web_theme', next); } catch (e) {}
+    }
+
+    (function () {
+        'use strict';
+
+        // 与登录页约定的令牌键：改动需同步 login.html
+        const TOKEN_KEY = 'aiyichat_web_token';
+
+        const transcript = document.getElementById('transcript');
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const quotaInfo = document.getElementById('quota-info');
+        const loadingNote = document.getElementById('loading-note');
+        let streaming = false;
+
+        function toLogin() {
+            window.location.replace('/web/login');
+        }
+
+        function authHeader() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            return token ? { Authorization: 'Bearer ' + token } : {};
+        }
+
+        /* 气泡一律走 textContent：模型输出与用户输入都不能被当作 HTML 解析 */
+        function addBubble(role, text, extraClass) {
+            const div = document.createElement('div');
+            div.className = 'bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-assistant')
+                + (extraClass ? ' ' + extraClass : '');
+            div.textContent = text;
+            transcript.appendChild(div);
+            transcript.scrollTop = transcript.scrollHeight;
+            return div;
+        }
+
+        function addNote(text) {
+            const div = document.createElement('div');
+            div.className = 'system-note';
+            div.textContent = text;
+            transcript.appendChild(div);
+            transcript.scrollTop = transcript.scrollHeight;
+            return div;
+        }
+
+        async function loadMe() {
+            if (!localStorage.getItem(TOKEN_KEY)) { toLogin(); return null; }
+            const resp = await fetch('/api/auth/me', { headers: authHeader() });
+            // 令牌缺失/过期回登录页；403（账号停用、未绑定服务）留在页面提示，不来回跳转
+            if (resp.status === 401) { toLogin(); return null; }
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                quotaInfo.textContent = data.detail || '账号信息读取失败';
+                addNote(data.detail || '账号信息读取失败，请联系管理员。');
+                return null;
+            }
+            const q = data.quota && data.quota.text;
+            quotaInfo.textContent = q
+                ? data.username + ' · 剩余文本额度 ' + Math.max(q.limit - q.used, 0) + ' / ' + q.limit
+                : (data.username || '') + ' · 额度信息不可用';
+            return data;
+        }
+
+        /* SSE 手工解析：EventSource 无法携带 Authorization 头，只能用 fetch + reader。
+           服务端把 chunk 内的换行转义成字面量 \n，故需按帧拆分后反转义还原。 */
+        function consumeFrames(buffer) {
+            const frames = [];
+            let sep;
+            while ((sep = buffer.indexOf('\n\n')) >= 0) {
+                frames.push(buffer.slice(0, sep));
+                buffer = buffer.slice(sep + 2);
+            }
+            return { frames: frames, rest: buffer };
+        }
+
+        function payloadOf(frame) {
+            const lines = frame.split('\n');
+            const out = [];
+            for (const line of lines) {
+                if (line.indexOf('data:') !== 0) continue;   // 忽略注释/事件名等其他 SSE 字段
+                out.push(line.slice(5).replace(/^ /, '').replace(/\\n/g, '\n'));
+            }
+            return out;
+        }
+
+        async function send() {
+            const text = input.value.trim();
+            if (!text || streaming) return;
+            streaming = true;
+            sendBtn.disabled = true;
+            input.disabled = true;
+            addBubble('user', text);
+            input.value = '';
+            const bubble = addBubble('assistant', '…');
+            bubble.classList.add('typing');
+
+            let reply = '';
+            let buffer = '';
+            try {
+                const resp = await fetch('/api/conversations/chat/stream', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+                    body: JSON.stringify({ text: text })
+                });
+                if (resp.status === 401) { toLogin(); return; }
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    bubble.classList.remove('typing');
+                    bubble.classList.add('bubble-error');
+                    bubble.textContent = data.detail || '发送失败，请稍后重试。';
+                    return;
+                }
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    // 网络分片可能把一帧切断，残片留在 buffer 等下一批
+                    buffer += decoder.decode(chunk.value, { stream: true });
+                    const consumed = consumeFrames(buffer);
+                    buffer = consumed.rest;
+                    for (const frame of consumed.frames) {
+                        for (const payload of payloadOf(frame)) {
+                            if (payload === '[DONE]') continue;
+                            if (payload.indexOf('[ERROR]') === 0) {
+                                bubble.classList.add('bubble-error');
+                                bubble.textContent = payload.slice(7).trim() || '对话服务返回异常。';
+                                continue;
+                            }
+                            reply += payload;
+                            bubble.textContent = reply;
+                            transcript.scrollTop = transcript.scrollHeight;
+                        }
+                    }
+                }
+                bubble.classList.remove('typing');
+                if (!reply && !bubble.classList.contains('bubble-error')) {
+                    bubble.textContent = '（本次没有收到回复，可能是额度已用尽）';
+                }
+                await loadMe();   // 回复落库后再刷新余量，额度显示才跟手
+            } catch (err) {
+                bubble.classList.remove('typing');
+                bubble.classList.add('bubble-error');
+                bubble.textContent = '网络异常，回复可能不完整，请重试。';
+            } finally {
+                streaming = false;
+                sendBtn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function logout() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (token) {
+                try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeader() }); }
+                catch (e) { /* 注销失败也要清本地令牌，否则用户会被过期令牌反复打回 */ }
+            }
+            localStorage.removeItem(TOKEN_KEY);
+            toLogin();
+        }
+
+        sendBtn.addEventListener('click', send);
+        logoutBtn.addEventListener('click', logout);
+        input.addEventListener('keydown', function (event) {
+            // 回车发送、Shift+回车换行：与常见聊天输入框习惯一致
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+                event.preventDefault();
+                send();
+            }
+        });
+
+        loadMe().then(function (me) {
+            if (!me) {
+                // 403 一类"账号可用但进不了会话"的情况：留在本页说明原因，不反复跳转
+                loadingNote.textContent = '无法进入对话，请按页面提示处理或重新登录。';
+                return;
+            }
+            loadingNote.remove();
+            addNote('对话已就绪，直接输入即可开始。');
+            input.disabled = false;
+            sendBtn.disabled = false;
+            input.focus();
+        }).catch(function () {
+            quotaInfo.textContent = '账号信息读取失败';
+            loadingNote.textContent = '账号信息读取失败，请检查网络或重新登录。';
+        });
+    })();
+    </script>
+</body>
+</html>

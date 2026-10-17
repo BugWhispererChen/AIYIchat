@@ -177,6 +177,38 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         dependency="需先在「AI 模型配置」开启 TTS 语音合成",
         cost="free",
     ),
+    FeatureToggle(
+        key="web_auth_enabled",
+        label="C 端网页登录",
+        desc="开启后网页用户可用「用户名 + 密码」登录，并以会话令牌访问流式对话接口；"
+        "关闭时 /api/auth/* 与 /web/* 一律 403，QQ / 微信链路完全不受影响。",
+        dependency="需在「网页用户」页指定载体 Bot（platform=web）",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="web_register_enabled",
+        label="C 端自助注册",
+        desc="开放网页自助注册：注册时原子建齐账号、额度、用户与对话服务，任一步失败自动回滚，"
+        "不会留下占死用户名的半成品账号。",
+        dependency="需先开启「C 端网页登录」",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="web_register_require_review",
+        label="注册需人工审核",
+        desc="新用户注册后处于待审核状态，管理员在「网页用户」页通过后方可登录；"
+        "被拒绝的用户名 24 小时内不可重新注册。",
+        dependency="需先开启「C 端自助注册」",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="web_captcha_enabled",
+        label="注册/登录图形验证码",
+        desc="注册与登录前需完成算式验证码，答案一次性消费（答错即失效），"
+        "与 IP 滑动窗口限流共同构成防刷链。",
+        dependency="单实例内存实现，多实例部署需改为共享存储",
+        cost="free",
+    ),
 ]
 
 

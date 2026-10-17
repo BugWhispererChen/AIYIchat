@@ -4,11 +4,13 @@
 - _is_quiet_hours：配置驱动的免打扰时段判定（跨午夜/同日/未启用）
 - _can_send：发送通道预检（管理器缺失/客户端缺失/预检方法缺失或拒绝）
 - strategy.get_pending_stage：阶段触发判定（延迟/已发送/超期）
+- _process_service：非推送平台（web）用户的主动关怀跳过守卫
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.config import settings
 from app.proactive.scheduler import ProactiveScheduler
@@ -179,3 +181,60 @@ class TestResolvePlatformId:
         """群聊联合键（group_id::member_openid）原样保存与返回。"""
         user = self._user(bot_openids={"bot-a": "gid::mid"})
         assert self.scheduler._resolve_platform_id(user, "bot-a") == "gid::mid"
+
+
+class TestWebUserSkipped:
+    """非推送平台守卫测试集（_process_service 的平台白名单早退）。"""
+
+    def setup_method(self) -> None:
+        self.scheduler = ProactiveScheduler()
+
+    def test_web_user_never_receives_proactive_message(self, monkeypatch) -> None:
+        """网页用户由 C 端会话被动应答，主动关怀必须跳过（防止向无真实平台通道的用户发送）。
+
+        回归动机：注册用户以 User(platform="web", platform_id=<用户名>) 入库，
+        其 platform_id 是小写用户名（非 UUID、非 openid），不会被前置的
+        UUID 未绑定检查拦截——唯一防线是 _process_service 中的平台白名单守卫。
+        本用例将守卫之后的整条"合格服务"链路全部打桩为可发送，若守卫被重构
+        移除，发送与建档断言会立即失败，锁定该行为不被静默破坏。
+        """
+        # 事件驱动/分享型分支关闭，保证判定路径收敛到阶段策略主干
+        monkeypatch.setattr(settings, "proactive_event_enabled", False)
+        monkeypatch.setattr(settings, "proactive_share_enabled", False)
+
+        user = SimpleNamespace(
+            id="u-web-1",
+            platform="web",
+            platform_id="alice",  # 用户名而非 openid，刻意避开 UUID 兜底检查
+            is_blocked=False,
+            last_active_at=datetime.now(timezone.utc) - timedelta(hours=5),
+            timezone="",
+            bot_openids={},
+        )
+        service = SimpleNamespace(
+            id="svc-web-1", user_id="u-web-1", account_id="acc-1",
+            bot_id="b-1", profile_id="companion", share_group_id="",
+            last_message_at=None, timezone="",
+        )
+        service.context_key = service.share_group_id or service.id
+
+        # 守卫之后的链路全部打桩为"本可发送"，仅靠守卫本身拦截
+        self.scheduler._user_repo.find_by_id = AsyncMock(return_value=user)
+        self.scheduler._proactive_repo.get_latest_sent = AsyncMock(return_value=None)
+        self.scheduler._proactive_repo.get_attempted_stages = AsyncMock(return_value=[])
+        self.scheduler._proactive_repo.count_sent_this_month = AsyncMock(return_value=0)
+        self.scheduler._proactive_repo.create = AsyncMock()
+        self.scheduler._generate_content = AsyncMock(return_value=("你好呀", ""))
+        self.scheduler._send_message = AsyncMock(return_value=True)
+        self.scheduler._can_send = lambda *a, **k: True
+        self.scheduler._is_quiet_hours = lambda *a, **k: False
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        asyncio.run(self.scheduler._process_service(service, cutoff))
+
+        # 未产生主动消息记录、未生成内容、未尝试发送
+        self.scheduler._proactive_repo.create.assert_not_awaited()
+        self.scheduler._generate_content.assert_not_awaited()
+        self.scheduler._send_message.assert_not_awaited()
+        # 守卫早退：连发送前置的冷却查询都不应发生
+        self.scheduler._proactive_repo.get_latest_sent.assert_not_awaited()

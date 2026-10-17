@@ -1,0 +1,485 @@
+"""C 端网页用户的注册、登录与治理编排。
+
+设计要点（对应执行计划第二节与第五节 P2/P3）：
+- 注册必须原子建齐 Account→Quota→User→Service 四件套：流式链路没有自动绑定分支，
+  引擎要求 User 与 Service 均已存在，且 `_quota_precheck` 在额度记录缺失时直接拒发。
+- 用户名占位依赖 `web_identities.username` 唯一索引，四件套建齐后才回填 `user_id`，
+  中途失败必须回滚已写文档（含删除身份，避免用户名被永久占死）。
+- 凭据与业务用户分离：密码哈希只进 `web_identities`，不进会被 prompt 消费的 user 对象。
+"""
+
+import logging
+import re
+import secrets
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+
+from bson.errors import InvalidId
+
+from app.config import settings
+from app.db.repositories.account_repo import AccountRepository
+from app.db.repositories.bot_config_repo import BotConfigRepository
+from app.db.repositories.profile_repo import ProfileRepository
+from app.db.repositories.quota_repo import QuotaRepository
+from app.db.repositories.quota_template_repo import QuotaTemplateRepository
+from app.db.repositories.service_repo import ServiceRepository
+from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.web_session_repo import WebSessionRepository
+from app.models.account import AccountCreate
+from app.models.quota import AccountQuotaUpdate, QuotaEntry
+from app.models.service import ServiceCreate
+from app.models.user import UserCreate
+from app.models.web_identity import (
+    PRIVACY_VERSION,
+    TERMS_VERSION,
+    WebConsent,
+    WebIdentityCreate,
+    WebIdentityInDB,
+    normalize_username,
+)
+from app.models.web_session import WebSessionCreate
+from app.utils.password_hashing import hash_password, verify_password
+
+logger = logging.getLogger(__name__)
+
+# 审核拒绝后的重注冷却时长（小时）：防止被拒者立刻换 IP 反复注册刷额度
+REJECT_COOLDOWN_HOURS = 24
+
+# 内置体验额度（`web_free_quota_template_id` 为空或模板不存在时回落）。
+# 单位与 `quota_templates` / 管理后台「套餐计费」一致：文字额度按 **Token** 计（LLM 实际 usage 结算），
+# 语音/图片按 **次/张** 计。预检公式为 `剩余额度 >= 输入估算 token + chat_max_tokens`，
+# 故文字额度必须显著高于单轮上限（默认 chat_max_tokens=2048），否则新账号首条消息即被拒。
+FREE_TEXT_LIMIT = 200_000  # ≈ 100 轮体验对话
+FREE_VOICE_LIMIT = 30
+FREE_IMAGE_LIMIT = 20
+FREE_QUOTA_VALID_DAYS = 30
+
+# 用户名规则：规范化后 3-32 位，小写字母/数字/下划线，且必须以字母或数字开头
+USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,32}$")
+USERNAME_FIRST_MUST_ALNUM = re.compile(r"^[a-z0-9]")
+# 保留名：避免与管理员账号、系统角色混淆或被用于仿冒
+RESERVED_USERNAMES = frozenset({
+    "admin", "administrator", "root", "system", "operator", "support",
+    "service", "staff", "web", "bot", "test", "guest", "aiyichat",
+})
+
+# 弱密码黑名单（常见 top100 归一化集合）：命中即拒绝，防止撞库
+WEAK_PASSWORDS = frozenset({
+    "password", "password1", "password123", "passw0rd", "p@ssw0rd", "qwerty123",
+    "12345678", "123456789", "1234567890", "1234567", "11111111", "00000000",
+    "abc123456", "abcd1234", "abcdef123", "a12345678", "12345678a", "1a2b3c4d",
+    "iloveyou", "iloveyou123", "letmein123", "welcome123", "welcome1", "admin123",
+    "administrator1", "root1234", "pass1234", "test1234", "user1234", "guest123",
+    "monkey123", "dragon123", "sunshine123", "princess1", "football123", "baseball12",
+    "superman123", "batman123", "trustno1", "whatever1", "starwars1", "gateway123",
+    "harley123", "ranger123", "buster123", "soccer123", "hockey123", "killer123",
+    "jordan123", "banana123", "samsung123", "nikkie1234", "gateway321", "monkey2233",
+    "00000000a", "11111111a", "12121212", "123123123", "123321123", "12341234",
+    "12344321", "1234qwer", "qwer1234", "asdf1234", "asdfghjkl1", "zxcvbnm123",
+    "qwertyuiop1", "poiuytrewq1", "1q2w3e4r", "1qaz2wsx", "qazwsx123", "zaq12wsx",
+    "pass12345", "test12345", "abcd12345", "abc12345", "a1b2c3d4", "pw123456",
+    "secret123", "secret1234", "master123", "shadow123", "michael123", "jennifer1",
+    "computer123", "internet123", "samsung12", "iphone1234", "android123", "google123",
+    "facebook123", "instagram1", "hotmail123", "66666666", "88888888", "999999999",
+    "123456a", "654321a", "123abc456", "password0", "passw0rd1", "qwertyui1",
+})
+
+
+class AuthError(Exception):
+    """鉴权业务异常：携带 HTTP 状态码与对用户可读的中文提示。"""
+
+    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+
+
+@dataclass
+class LoginResult:
+    """登录成功产物：身份与会话。"""
+
+    identity: WebIdentityInDB
+    token: str
+
+
+@dataclass
+class _Draft:
+    """注册过程已写入的文档 ID，供失败回滚。"""
+
+    identity_id: str = ""
+    account_id: str = ""
+    user_id: str = ""
+    service_id: str = ""
+    extras: list[str] = field(default_factory=list)
+
+
+def _utcnow() -> datetime:
+    """当前 UTC aware 时间，统一模块内时间基准。"""
+    return datetime.now(timezone.utc)
+
+
+def ensure_web_enabled() -> None:
+    """网页鉴权总开关校验：关闭时所有 C 端接口一律拒绝，保证老实例无感知。"""
+    if not settings.web_auth_enabled:
+        raise AuthError("web_auth_disabled", "网页登录功能未开放", 403)
+
+
+def validate_username(raw: str) -> str:
+    """校验并返回规范化用户名。"""
+    username = normalize_username(raw)
+    if not username:
+        raise AuthError("invalid_username", "用户名不能为空")
+    if not USERNAME_PATTERN.match(username) or not USERNAME_FIRST_MUST_ALNUM.match(username):
+        raise AuthError("invalid_username", "用户名需为 3-32 位字母、数字或下划线，且以字母或数字开头")
+    if username in RESERVED_USERNAMES:
+        raise AuthError("invalid_username", "该用户名为保留名，请更换")
+    return username
+
+
+def validate_password(username: str, password: str) -> None:
+    """密码策略：长度 8-64、至少 1 字母 + 1 数字、不在弱密码黑名单、不含用户名。"""
+    if len(password) < 8 or len(password) > 64:
+        raise AuthError("weak_password", "密码长度需为 8-64 位")
+    if not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
+        raise AuthError("weak_password", "密码需同时包含字母和数字")
+    if password.lower() in WEAK_PASSWORDS:
+        raise AuthError("weak_password", "该密码过于常见，请更换")
+    if username and username in password.lower():
+        raise AuthError("weak_password", "密码不能包含用户名")
+
+
+def build_consent(terms_accepted: bool, privacy_accepted: bool, age_confirmed: bool) -> WebConsent:
+    """组装合规留痕；未满 14 周岁或未同意条款/隐私直接拒绝注册。"""
+    if not age_confirmed:
+        raise AuthError("age_not_confirmed", "年满 14 周岁方可注册，暂不支持未成年人注册", 400)
+    if not terms_accepted or not privacy_accepted:
+        raise AuthError("consent_required", "请先阅读并同意用户协议与隐私政策", 400)
+    now = _utcnow()
+    return WebConsent(
+        terms_version=TERMS_VERSION,
+        terms_accepted_at=now,
+        privacy_version=PRIVACY_VERSION,
+        privacy_accepted_at=now,
+        age_confirmed=True,
+        age_confirmed_at=now,
+    )
+
+
+async def resolve_default_profile_id() -> str:
+    """解析新服务默认角色：优先 `web_default_profile_slug`，回落任一在用公共角色。
+
+    引擎 `_resolve_profile` 同时接受角色 ObjectId 与 slug，故这里直接返回 slug；
+    预置角色全部为 public，跨账号可用，无需为每个用户各建 Bot。
+    """
+    repo = ProfileRepository()
+    slug = settings.web_default_profile_slug.strip()
+    if slug:
+        profile = await repo.find_by_slug(slug)
+        if profile is not None and profile.is_active:
+            return slug
+    public = await repo.list_public()
+    if not public:
+        raise AuthError("profile_not_configured", "未配置可用的默认角色，请联系管理员", 503)
+    return public[0].slug
+
+
+async def ensure_web_bot_configured() -> None:
+    """校验载体 Bot（platform="web" 的系统 Bot）存在且未停用。
+
+    该 Bot 的 `account_id` 挂在系统账号上，是预置公共角色可见性与额度归属的前提；
+    未配置或不存在时注册一律拒绝，避免建出一堆无法对话的僵尸账号。
+    """
+    bot_id = settings.web_bot_id.strip()
+    if not bot_id:
+        raise AuthError("web_bot_not_configured", "网页服务未配置（缺少系统 Bot），请联系管理员", 503)
+    bot = await BotConfigRepository().find_by_id(bot_id)
+    if bot is None:
+        raise AuthError("web_bot_not_found", "网页服务配置异常（系统 Bot 不存在），请联系管理员", 503)
+    if bot.is_blocked:
+        raise AuthError("web_bot_blocked", "网页服务已停用，请联系管理员", 503)
+    if bot.platform != "web":
+        raise AuthError("web_bot_platform", "系统 Bot 平台不是 web，请联系管理员", 503)
+
+
+async def build_free_quota(account_id: str) -> tuple[AccountQuotaUpdate, str]:
+    """按 `web_free_quota_template_id` 生成注册赠送额度，模板缺失则回落内置体验额度。"""
+    template_id = settings.web_free_quota_template_id.strip()
+    if template_id:
+        try:
+            template = await QuotaTemplateRepository().find_by_id(template_id)
+        except InvalidId:
+            template = None
+        if template is not None:
+            expires_at = (
+                _utcnow() + timedelta(days=template.validity_days)
+                if template.validity_days
+                else None
+            )
+            return (
+                AccountQuotaUpdate(
+                    text_quota=QuotaEntry(limit=template.text_limit, used=0, expires_at=expires_at),
+                    voice_quota=QuotaEntry(limit=template.voice_limit, used=0, expires_at=expires_at),
+                    image_quota=QuotaEntry(limit=template.image_limit, used=0, expires_at=expires_at),
+                ),
+                f"template:{template.name}",
+            )
+    expires_at = _utcnow() + timedelta(days=FREE_QUOTA_VALID_DAYS)
+    return (
+        AccountQuotaUpdate(
+            text_quota=QuotaEntry(limit=FREE_TEXT_LIMIT, used=0, expires_at=expires_at),
+            voice_quota=QuotaEntry(limit=FREE_VOICE_LIMIT, used=0, expires_at=expires_at),
+            image_quota=QuotaEntry(limit=FREE_IMAGE_LIMIT, used=0, expires_at=expires_at),
+        ),
+        "builtin",
+    )
+
+
+async def rollback(draft: _Draft) -> None:
+    """回滚注册途中已写入的文档。
+
+    账号级联删除覆盖 User/Service/Quota；身份单独删除，否则用户名会被永久占死、
+    用户再也无法注册。回滚自身失败只告警，不掩盖原始异常。
+    """
+    try:
+        if draft.account_id:
+            await AccountRepository().delete_cascade(draft.account_id)
+        if draft.identity_id:
+            await WebIdentityRepository().delete_by_id(draft.identity_id)
+    except Exception:  # noqa: BLE001 - 回滚失败不能覆盖原始异常
+        logger.exception(
+            "注册回滚失败，遗留脏数据需人工清理: account_id=%s identity_id=%s",
+            draft.account_id,
+            draft.identity_id,
+        )
+
+
+async def _purge_rejected(identity: WebIdentityInDB) -> None:
+    """清理被拒身份的遗留数据，释放用户名以便冷却期后重新注册。
+
+    唯一索引按字面值占位，被拒记录不删除就永远注册不了；被拒身份从未激活，
+    其业务四件套与会话可安全级联清除。
+    """
+    await WebSessionRepository().delete_by_identity(identity.id)
+    if identity.user_id:
+        user = await UserRepository().find_by_id(identity.user_id)
+        if user is not None:
+            await AccountRepository().delete_cascade(user.account_id)
+    await WebIdentityRepository().delete_by_id(identity.id)
+
+
+async def register(
+    *,
+    username: str,
+    password: str,
+    terms_accepted: bool,
+    privacy_accepted: bool,
+    age_confirmed: bool,
+    ip: str = "",
+) -> WebIdentityInDB:
+    """自助注册：校验 → 占用户名 → 建四件套 → 落 pending（或免审直达 active）。
+
+    Returns:
+        已落库的网页身份（status 由 `web_register_require_review` 决定）
+    Raises:
+        AuthError: 校验不通过、用户名冲突、处于拒绝冷却期、或依赖配置缺失
+    """
+    ensure_web_enabled()
+    if not settings.web_register_enabled:
+        raise AuthError("web_register_disabled", "暂未开放注册", 403)
+
+    name = validate_username(username)
+    validate_password(name, password)
+    consent = build_consent(terms_accepted, privacy_accepted, age_confirmed)
+
+    identities = WebIdentityRepository()
+    existing = await identities.find_by_username(name)
+    if existing is not None:
+        # 被拒用户名在冷却期后允许重新注册；其余状态（pending/active/disabled）一律占用
+        if existing.status != "rejected":
+            raise AuthError("username_taken", "该用户名已被占用", 409)
+        if (
+            await identities.find_recent_by_username(name, REJECT_COOLDOWN_HOURS, "rejected")
+            is not None
+        ):
+            raise AuthError("register_cooldown", "上次审核未通过，请稍后再试", 409)
+        await _purge_rejected(existing)
+
+    # 先占用户名（唯一索引原子判重），再建业务四件套
+    identity = await identities.insert(
+        WebIdentityCreate(
+            username=name,
+            password_hash=hash_password(password),
+            status="pending",
+            created_ip=ip,
+            consent=consent,
+        )
+    )
+    if identity is None:
+        raise AuthError("username_taken", "该用户名已被占用", 409)
+
+    draft = _Draft(identity_id=identity.id)
+    try:
+        await ensure_web_bot_configured()
+        profile_slug = await resolve_default_profile_id()
+
+        account = await AccountRepository().create(
+            AccountCreate(name=f"web:{name}", remark="C 端网页用户自助注册")
+        )
+        draft.account_id = account.id
+
+        quota_update, quota_source = await build_free_quota(account.id)
+        await QuotaRepository().create_or_update(account.id, quota_update)
+
+        user = await UserRepository().create(
+            UserCreate(
+                account_id=account.id,
+                name=name,
+                platform_id=name,  # 非 UUID：_is_uuid 判定会自动拒绝把 QQ openid 绑到该用户
+                platform="web",
+                nickname=name,
+            )
+        )
+        draft.user_id = user.id
+
+        service = await ServiceRepository().create(
+            ServiceCreate(
+                name=f"web:{name}",
+                account_id=account.id,
+                user_id=user.id,
+                bot_id=settings.web_bot_id.strip(),
+                profile_id=profile_slug,
+            )
+        )
+        draft.service_id = service.id
+
+        await identities.set_user_id(identity.id, user.id)
+        if not settings.web_register_require_review:
+            await identities.set_status(identity.id, "active", reviewed_by="system", review_note=f"免审注册（额度来源：{quota_source}）", review=True)
+    except AuthError:
+        await rollback(draft)
+        raise
+    except Exception as e:  # noqa: BLE001 - 任意一步失败都要回滚并转成可读错误
+        await rollback(draft)
+        raise AuthError("register_failed", f"注册失败，请稍后重试：{e}", 500) from e
+
+    saved = await identities.find_by_id(identity.id)
+    if saved is None:
+        raise AuthError("register_failed", "注册状态写入异常，请稍后重试", 500)
+    return saved
+
+
+async def login(*, username: str, password: str, ip: str = "", user_agent: str = "") -> LoginResult:
+    """登录：校验凭据与状态 → 签发会话 → 并发上限控制 → 滑动过期起点。
+
+    失败计数与锁定按身份维度进行；无论用户名是否存在都返回同一提示，避免枚举账号。
+    """
+    ensure_web_enabled()
+    name = normalize_username(username)
+    identities = WebIdentityRepository()
+    identity = await identities.find_by_username(name)
+    if identity is None:
+        raise AuthError("login_failed", "用户名或密码错误", 401)
+
+    if identity.is_locked:
+        raise AuthError("login_locked", "登录失败次数过多，请稍后再试", 429)
+    if not verify_password(password, identity.password_hash):
+        locked_until = await identities.register_login_failure(
+            identity.id, settings.web_login_max_fail, settings.web_login_lockout_minutes
+        )
+        if locked_until is not None:
+            raise AuthError("login_locked", "登录失败次数过多，账号已临时锁定", 429)
+        raise AuthError("login_failed", "用户名或密码错误", 401)
+
+    if identity.status == "pending":
+        raise AuthError("login_pending", "注册正在等待审核，通过后即可登录", 403)
+    if identity.status == "rejected":
+        raise AuthError("login_rejected", "注册审核未通过，如有疑问请联系管理员", 403)
+    if identity.status == "disabled":
+        raise AuthError("login_disabled", "账号已被停用", 403)
+
+    now = _utcnow()
+    token = secrets.token_urlsafe(32)
+    sessions = WebSessionRepository()
+    await sessions.create(
+        WebSessionCreate(
+            token=token,
+            identity_id=identity.id,
+            expires_at=now + timedelta(hours=settings.web_session_hours),
+            ip=ip,
+            user_agent=user_agent[:300],
+        )
+    )
+    # 新会话已入池，超出并发上限时按创建时间挤掉最旧设备
+    await sessions.enforce_max_concurrent(identity.id, settings.web_session_max_concurrent)
+    await identities.reset_login_failures(identity.id)
+    saved = await identities.find_by_id(identity.id)
+    return LoginResult(identity=saved or identity, token=token)
+
+
+async def resolve_token(token: str) -> tuple[WebIdentityInDB, str]:
+    """由会话令牌解析出身份与其关联用户 ID（供 `require_web_user` 使用）。
+
+    令牌缺失/过期/被 TTL 回收、身份非 active、身份已被删除或 user_id 未回填，
+    一律抛 AuthError(401)，由依赖层转成 401/403。
+    """
+    ensure_web_enabled()
+    session = await WebSessionRepository().find_by_token(token)
+    if session is None or session.expired:
+        raise AuthError("unauthorized", "登录状态已失效，请重新登录", 401)
+    identity = await WebIdentityRepository().find_by_id(session.identity_id)
+    if identity is None:
+        raise AuthError("unauthorized", "登录状态已失效，请重新登录", 401)
+    if identity.status != "active":
+        raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
+    if not identity.user_id:
+        raise AuthError("unauthorized", "账号数据不完整，请重新登录", 401)
+    # 滑动过期：每次成功访问顺延
+    await WebSessionRepository().touch(session.token, settings.web_session_hours)
+    return identity, identity.user_id
+
+
+async def logout(token: str) -> bool:
+    """注销：删除当前会话令牌。"""
+    return await WebSessionRepository().delete_by_token(token)
+
+
+async def approve(identity_id: str, reviewed_by: str, note: str = "") -> bool:
+    """审核通过：置 active 并留痕。"""
+    return await WebIdentityRepository().set_status(
+        identity_id, "active", reviewed_by=reviewed_by, review_note=note, review=True
+    )
+
+
+async def reject(identity_id: str, reviewed_by: str, note: str = "") -> bool:
+    """审核拒绝：置 rejected（触发 24h 重注冷却）并清空既有会话。"""
+    ok = await WebIdentityRepository().set_status(
+        identity_id, "rejected", reviewed_by=reviewed_by, review_note=note, review=True
+    )
+    if ok:
+        await WebSessionRepository().delete_by_identity(identity_id)
+    return ok
+
+
+async def set_disabled(identity_id: str, disabled: bool, operator: str, note: str = "") -> bool:
+    """禁用/启用账号：禁用同时清空全部会话，实现"发消息立即被拒"。"""
+    ok = await WebIdentityRepository().set_status(
+        identity_id, "disabled" if disabled else "active", reviewed_by=operator, review_note=note
+    )
+    if ok and disabled:
+        await WebSessionRepository().delete_by_identity(identity_id)
+    return ok
+
+
+async def reset_password(identity_id: str, new_password: str, operator: str) -> bool:
+    """管理员重置密码：写入新哈希并强制所有旧会话下线。"""
+    username = ""
+    identity = await WebIdentityRepository().find_by_id(identity_id)
+    if identity is not None:
+        username = identity.username
+    validate_password(username, new_password)
+    ok = await WebIdentityRepository().set_password(identity_id, hash_password(new_password))
+    if ok:
+        await WebSessionRepository().delete_by_identity(identity_id)
+    return ok

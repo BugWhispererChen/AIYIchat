@@ -1,5 +1,3 @@
-import base64
-import hashlib
 import hmac
 import logging
 import secrets
@@ -8,16 +6,26 @@ import time
 from fastapi import Cookie, HTTPException, Request, Response, status
 
 from app.config import settings
+from app.utils.password_hashing import (
+    hash_password,
+    is_hashed as _is_hashed,
+    verify_password as _verify_hash,
+)
 
 logger = logging.getLogger(__name__)
 
 # 内存 session 存储: {token: expiry_timestamp}
 _sessions: dict[str, float] = {}
 
-# PBKDF2 哈希参数：60 万迭代 + 16 字节随机盐（标准库实现，零新增依赖）
-_PBKDF2_PREFIX = "pbkdf2"
-_PBKDF2_ITERATIONS = 600_000
-_PBKDF2_SALT_BYTES = 16
+# 密码哈希实现已抽取到 app.utils.password_hashing（与 C 端网页凭据共用），
+# 此处以别名 re-export 保持 `from app.admin.auth import hash_password` 等既有引用不断链。
+__all__ = [
+    "create_session",
+    "destroy_session",
+    "hash_password",
+    "require_admin",
+    "verify_credentials",
+]
 
 
 def _cleanup_expired() -> None:
@@ -42,35 +50,6 @@ def create_session(response: Response) -> str:
         max_age=settings.admin_session_hours * 3600,
     )
     return token
-
-
-def hash_password(password: str) -> str:
-    """生成 PBKDF2-HMAC-SHA256 哈希，格式：pbkdf2$<iterations>$<salt_b64>$<hash_b64>。"""
-    salt = secrets.token_bytes(_PBKDF2_SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERATIONS)
-    return "{}${}${}${}".format(
-        _PBKDF2_PREFIX,
-        _PBKDF2_ITERATIONS,
-        base64.b64encode(salt).decode(),
-        base64.b64encode(digest).decode(),
-    )
-
-
-def _verify_hash(password: str, stored: str) -> bool:
-    """按 pbkdf2$ 格式验算密码，使用 compare_digest 防时序攻击。"""
-    try:
-        _prefix, iterations_s, salt_b64, hash_b64 = stored.split("$", 3)
-        iterations = int(iterations_s)
-        salt = base64.b64decode(salt_b64)
-        expected = base64.b64decode(hash_b64)
-    except (ValueError, TypeError):
-        return False
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    return hmac.compare_digest(digest, expected)
-
-
-def _is_hashed(value: str) -> bool:
-    return value.startswith(_PBKDF2_PREFIX + "$")
 
 
 async def _migrate_plaintext_to_hash(plaintext: str) -> None:

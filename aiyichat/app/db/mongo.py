@@ -190,3 +190,15 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("event_type", 1), ("created_at", -1)],
     )
     await _safe_create_index(db.safety_events, "created_at")
+    # C 端网页凭据：用户名唯一（注册原子占位），按 user_id 与 status+created_at 索引
+    await _safe_create_index(db.web_identities, "username", unique=True)
+    await _safe_create_index(db.web_identities, "user_id")
+    await _safe_create_index(
+        db.web_identities,
+        [("status", 1), ("created_at", -1)],
+    )
+    # C 端网页会话：token 唯一，identity_id 供并发上限查询，
+    # expires_at 建 TTL 索引由 MongoDB 异步回收过期文档（expireAfterSeconds=0 即按字段值到期）
+    await _safe_create_index(db.web_sessions, "token", unique=True)
+    await _safe_create_index(db.web_sessions, "identity_id")
+    await _safe_create_index(db.web_sessions, "expires_at", expireAfterSeconds=0)

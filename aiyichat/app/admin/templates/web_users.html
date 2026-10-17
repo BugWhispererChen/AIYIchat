@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% set active_page = "web_users" %}
+{% block title %}网页用户{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h3>网页用户管理</h3>
+    <p class="subtitle">C 端自助注册用户的审核、封禁、密码重置与额度治理</p>
+</div>
+
+{% if not web_auth_enabled %}
+<div class="card" style="margin-bottom:1rem;border-left:3px solid var(--warning-color,orange);">
+    <p style="margin:0;">网页用户功能当前<strong>未开启</strong>（<code>web_auth_enabled=false</code>）。
+        注册与登录接口一律返回 403，QQ / 微信链路不受影响。可在下方打开开关。</p>
+</div>
+{% elif not web_bot_configured %}
+<div class="card" style="margin-bottom:1rem;border-left:3px solid var(--danger-color,red);">
+    <p style="margin:0;">尚未指定网页服务载体 Bot（<code>web_bot_id</code> 为空）。
+        在配置区选择一个 <code>platform=web</code> 的系统 Bot，否则注册会因依赖缺失被拒绝并自动回滚。</p>
+</div>
+{% endif %}
+
+{% if msg %}
+<p style="color:var(--success-color,green);">✓ 操作成功：{{ msg }}</p>
+{% endif %}
+{% if error %}
+<p style="color:var(--danger-color,red);">✕ 操作失败：{{ error }}</p>
+{% endif %}
+
+<!-- 网页用户能力配置 -->
+<div class="card" style="margin-bottom:1rem;">
+    <h4 style="margin-bottom:.25rem;">能力配置</h4>
+    <p class="subtitle" style="margin-bottom:.75rem;">
+        保存后立即热重载生效。额度单位与「套餐计费」一致（文字按 Token、语音/图片按次/张）；
+        额度模板留空或不存在时，注册回落到内置体验额度
+        （文字 {{ builtin_text_limit }} Token ≈ {{ builtin_rounds }} 轮 / 语音 {{ builtin_voice_limit }} 次 / 图片 {{ builtin_image_limit }} 张，{{ builtin_quota_days }} 天）。
+    </p>
+    <form method="post" action="/admin/web-users/settings">
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;">
+            <label><input type="checkbox" name="web_auth_enabled" role="switch" {{ 'checked' if web_auth_enabled }}> 网页登录总开关</label>
+            <label><input type="checkbox" name="web_register_enabled" role="switch" {{ 'checked' if web_register_enabled }}> 开放自助注册</label>
+            <label><input type="checkbox" name="web_register_require_review" role="switch" {{ 'checked' if web_register_require_review }}> 注册需人工审核</label>
+            <label><input type="checkbox" name="web_captcha_enabled" role="switch" {{ 'checked' if web_captcha_enabled }}> 启用图形验证码</label>
+        </div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.75rem;margin-top:.75rem;">
+            <label>载体 Bot（platform=web）
+                <select name="web_bot_id">
+                    <option value="">未配置</option>
+                    {% for b in web_bots %}
+                    <option value="{{ b.id }}" {{ 'selected' if b.id == cfg.web_bot_id }}>{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>默认角色
+                <select name="web_default_profile_slug">
+                    <option value="">自动取任一公共角色</option>
+                    {% for p in public_profiles %}
+                    <option value="{{ p.slug }}" {{ 'selected' if p.slug == cfg.web_default_profile_slug }}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>注册额度模板
+                <select name="web_free_quota_template_id">
+                    <option value="">内置体验额度</option>
+                    {% for t in quota_templates %}
+                    <option value="{{ t.id }}" {{ 'selected' if t.id == cfg.web_free_quota_template_id }}>{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-top:.75rem;">
+            <label>会话有效期（小时）<input type="number" name="web_session_hours" min="1" max="720" value="{{ cfg.web_session_hours }}"></label>
+            <label>并发会话上限<input type="number" name="web_session_max_concurrent" min="1" max="10" value="{{ cfg.web_session_max_concurrent }}"></label>
+            <label>登录失败上限<input type="number" name="web_login_max_fail" min="1" max="20" value="{{ cfg.web_login_max_fail }}"></label>
+            <label>锁定时长（分钟）<input type="number" name="web_login_lockout_minutes" min="1" max="1440" value="{{ cfg.web_login_lockout_minutes }}"></label>
+            <label>注册限流（10 分钟/IP）<input type="number" name="web_rate_limit_register" min="0" max="1000" value="{{ cfg.web_rate_limit_register }}"></label>
+            <label>登录限流（10 分钟/IP）<input type="number" name="web_rate_limit_login" min="0" max="1000" value="{{ cfg.web_rate_limit_login }}"></label>
+        </div>
+        <button type="submit" style="margin-top:.75rem;">保存配置</button>
+    </form>
+</div>
+
+<!-- 状态筛选与搜索 -->
+<div class="card" style="margin-bottom:1rem;">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
+        {% for key, label in [('pending', '待审核'), ('active', '已通过'), ('rejected', '已拒绝'), ('disabled', '已禁用'), ('all', '全部')] %}
+        <a href="/admin/web-users?status_filter={{ key }}" class="badge {% if status_filter == key %}badge-role-user{% else %}badge-neutral{% endif %}" style="text-decoration:none;">
+            {{ label }}{% if key != 'all' %}（{{ counts[key] }}）{% endif %}
+        </a>
+        {% endfor %}
+        <form method="get" action="/admin/web-users" style="margin-left:auto;display:flex;gap:.4rem;">
+            <input type="hidden" name="status_filter" value="{{ status_filter }}">
+            <input type="search" name="q" value="{{ q }}" placeholder="用户名前缀搜索">
+            <button type="submit">搜索</button>
+        </form>
+    </div>
+</div>
+
+<!-- 用户列表 -->
+<div class="card">
+    {% if not rows %}
+    <p class="subtitle">当前筛选条件下没有记录。</p>
+    {% else %}
+    <table>
+        <thead>
+            <tr>
+                <th>用户名</th>
+                <th>状态</th>
+                <th>注册时间</th>
+                <th>注册 IP</th>
+                <th>合规留痕</th>
+                <th>文字额度</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            {% set ident = row.identity %}
+            <tr>
+                <td><strong>{{ ident.username }}</strong></td>
+                <td>
+                    <span class="badge {% if ident.status == 'active' %}badge-role-assistant{% elif ident.status == 'pending' %}badge-role-user{% else %}badge-neutral{% endif %}">
+                        {{ {'pending': '待审核', 'active': '已通过', 'rejected': '已拒绝', 'disabled': '已禁用'}[ident.status] }}
+                    </span>
+                    {% if ident.is_locked %}<span class="badge badge-neutral">登录锁定中</span>{% endif %}
+                </td>
+                <td>{{ ident.created_at | to_beijing | string }}</td>
+                <td><code style="font-size:.78rem;">{{ ident.created_ip or '-' }}</code></td>
+                <td style="font-size:.8rem;">
+                    年龄确认：{{ '✓' if ident.consent.age_confirmed else '✕' }}<br>
+                    条款：{{ ident.consent.terms_version or '-' }}<br>
+                    {% if ident.reviewed_by %}审核人：{{ ident.reviewed_by }}{% endif %}
+                    {% if ident.review_note %}<br>备注：{{ ident.review_note }}{% endif %}
+                </td>
+                <td style="font-size:.8rem;">
+                    {% if row.quota %}
+                    {{ row.quota.text_quota.used }} / {{ row.quota.text_quota.limit | format_quota }}
+                    {% else %}
+                    <span class="subtitle">额度记录缺失</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="post" action="/admin/web-users/{{ ident.id }}/review" style="display:flex;gap:.3rem;flex-wrap:wrap;">
+                        <input type="hidden" name="status_filter" value="{{ status_filter }}">
+                        <input type="text" name="note" placeholder="审核备注/理由" style="width:8rem;font-size:.78rem;">
+                        {% if ident.status != 'active' %}
+                        <button type="submit" name="action" value="approve" class="btn-sm">通过</button>
+                        {% endif %}
+                        {% if ident.status == 'pending' %}
+                        <button type="submit" name="action" value="reject" class="btn-sm">拒绝</button>
+                        {% endif %}
+                        {% if ident.status == 'active' %}
+                        <button type="submit" name="action" value="disable" class="btn-sm">禁用</button>
+                        {% endif %}
+                        {% if ident.status in ('disabled', 'rejected') %}
+                        <button type="submit" name="action" value="enable" class="btn-sm">启用</button>
+                        {% endif %}
+                    </form>
+                    <details style="margin-top:.35rem;">
+                        <summary style="font-size:.78rem;cursor:pointer;">重置密码 / 调配额</summary>
+                        <form method="post" action="/admin/web-users/{{ ident.id }}/reset-password" style="display:flex;gap:.3rem;margin-top:.35rem;">
+                            <input type="text" name="new_password" placeholder="新密码" required style="width:8rem;font-size:.78rem;">
+                            <button type="submit" class="btn-sm">重置</button>
+                        </form>
+                        <form method="post" action="/admin/web-users/{{ ident.id }}/quota" style="display:flex;gap:.3rem;margin-top:.35rem;">
+                            <input type="number" name="text_limit" min="0" value="0" title="文字上限，0=不变" style="width:4.5rem;font-size:.78rem;">
+                            <input type="number" name="voice_limit" min="0" value="0" title="语音上限，0=不变" style="width:4.5rem;font-size:.78rem;">
+                            <input type="number" name="image_limit" min="0" value="0" title="图片上限，0=不变" style="width:4.5rem;font-size:.78rem;">
+                            <button type="submit" class="btn-sm">调整</button>
+                        </form>
+                    </details>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

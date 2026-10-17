@@ -25,6 +25,7 @@ from app.admin.routes.chat_import import chat_import_router
 from app.admin.routes.safety import safety_router
 from app.admin.routes.stickers import stickers_router
 from app.admin.routes.qq_bots import qq_bots_router
+from app.admin.routes.web_users import web_users_router
 from app.admin.routes.wechat_bots import wechat_bots_router
 from app.admin.stats import get_dashboard_charts, get_dashboard_stats
 from app.admin.system_metrics import get_all_metrics
@@ -309,4 +310,5 @@ admin_router.include_router(safety_router)
 admin_router.include_router(proactive_router)
 admin_router.include_router(memories_router)
 admin_router.include_router(billing_router)
+admin_router.include_router(web_users_router)
 admin_router.include_router(password_router)

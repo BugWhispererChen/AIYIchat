@@ -142,7 +142,9 @@
                 <td>
                     <form method="post" action="/admin/web-users/{{ ident.id }}/review" style="display:flex;gap:.3rem;flex-wrap:wrap;">
                         <input type="hidden" name="status_filter" value="{{ status_filter }}">
-                        <input type="text" name="note" placeholder="审核备注/理由" style="width:8rem;font-size:.78rem;">
+                        <!-- 备注框屏蔽回车：隐式提交以首颗 submit 按钮为 submitter（即「通过」），填备注时按回车会误批准 -->
+                        <input type="text" name="note" placeholder="审核备注/理由" style="width:8rem;font-size:.78rem;"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();}">
                         {% if ident.status != 'active' %}
                         <button type="submit" name="action" value="approve" class="btn-sm">通过</button>
                         {% endif %}

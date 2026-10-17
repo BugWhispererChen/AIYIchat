@@ -405,6 +405,8 @@
             padding: 0 .8rem;
             font-size: 13px;
         }
+        /* 提交中视觉态：刻意不使用 disabled——禁用会把提交按钮的 name/value 剔除出表单数据 */
+        button.is-submitting, [type="submit"].is-submitting { opacity: .55; cursor: wait; pointer-events: none; }
         /* 幽灵按钮 */
         button.ghost, .btn.ghost, a[role="button"].ghost {
             background: transparent;
@@ -970,7 +972,9 @@
         });
     }, true);
 
-    /* ══ 防重复提交（跳过 HTMX 表单 / 已被 modal 拦截的表单） ══ */
+    /* ══ 防重复提交（跳过 HTMX 表单 / 已被 modal 拦截的表单）══
+       表单条目列表在 submit 事件派发之后才构造，被禁用的元素不进入提交数据；
+       因此这里绝不禁用提交按钮，否则唯一携带 name/value 的那颗按钮会丢字段。 */
     document.addEventListener('DOMContentLoaded', function() {
         initTabs();
         initAnchorSpy();
@@ -979,14 +983,24 @@
                 || form.hasAttribute('hx-put') || form.hasAttribute('hx-delete')
                 || form.hasAttribute('hx-patch')) return;
             form.addEventListener('submit', function(e) {
-                if (e.defaultPrevented) return;
-                var btn = form.querySelector('button[type="submit"], input[type="submit"]');
-                if (btn && !btn.disabled) {
+                if (e.defaultPrevented) return;                                      // 已被确认弹窗拦下，不加锁
+                if (form.dataset.submitting === '1') { e.preventDefault(); return; } // 拦截重复提交
+                // 只标记视觉态：优先取真正被点击的按钮（兼容 form="..." 外置按钮），取不到才退回首个
+                var btn = e.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+                form.dataset.submitting = '1';
+                var restore = function() {
+                    form.dataset.submitting = '';
+                    if (!btn) return;
+                    btn.classList.remove('is-submitting');
+                    btn.textContent = btn.dataset.originalText || btn.textContent;
+                };
+                if (btn) {
                     btn.dataset.originalText = btn.textContent;
-                    btn.disabled = true;
+                    btn.classList.add('is-submitting');
                     btn.textContent = '提交中...';
-                    setTimeout(function() { btn.disabled = false; btn.textContent = btn.dataset.originalText || '提交'; }, 5000);
                 }
+                // 兜底：请求失败停在错误页或回退时不永久锁死表单
+                setTimeout(restore, 5000);
             });
         });
     });

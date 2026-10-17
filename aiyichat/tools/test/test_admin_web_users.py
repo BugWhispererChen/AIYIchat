@@ -186,6 +186,27 @@ class TestReviewActions:
 
         asyncio.run(flow())
 
+    def test_review_requires_action(self) -> None:
+        """缺 action 字段必须 422：锁住路由契约，防止反过来给 Form(...) 加默认值掩盖前端丢字段。"""
+
+        async def flow() -> None:
+            app = await _seed_env()
+            try:
+                ident_id = await _register_user("noaction")
+                async with _client(app) as client:
+                    resp = await client.post(
+                        f"/admin/web-users/{ident_id}/review",
+                        data={"note": "缺 action", "status_filter": "pending"},
+                        follow_redirects=False,
+                    )
+                    assert resp.status_code == 422
+                    ident = await WebIdentityRepository().find_by_id(ident_id)
+                    assert ident.status == "pending"  # 校验失败不得产生任何状态变更
+            finally:
+                await _cleanup(app)
+
+        asyncio.run(flow())
+
     def test_reject_sets_cooldown(self) -> None:
         async def flow() -> None:
             app = await _seed_env()

@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from typing import Literal, Optional, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.utils.text_integrity import reject_replacement_char
 
 
 class BotConfigCreate(BaseModel):
@@ -25,6 +27,12 @@ class BotConfigCreate(BaseModel):
     token_expire_at: Optional[datetime] = None
     is_blocked: bool = False  # 是否被禁用
     block_reason: str = ""  # 禁用原因
+
+    @field_validator("name")
+    @classmethod
+    def _reject_corrupted_text(cls, value: str) -> str:
+        """拒绝提交端编码错误产生的乱码名称。"""
+        return reject_replacement_char(value)  # type: ignore[return-value]
 
 
 class BotConfigInDB(BotConfigCreate):
@@ -65,3 +73,9 @@ class BotConfigUpdate(BaseModel):
     token_expire_at: Optional[datetime] = None
     is_blocked: Optional[bool] = None
     block_reason: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def _reject_corrupted_text(cls, value: Optional[str]) -> Optional[str]:
+        """拒绝提交端编码错误产生的乱码名称。"""
+        return reject_replacement_char(value)

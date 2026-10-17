@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from typing import Self
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.quota import QuotaEntry
+from app.utils.text_integrity import reject_replacement_char
 
 
 class AccountCreate(BaseModel):
@@ -15,6 +16,12 @@ class AccountCreate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     remark: str = ""
+
+    @field_validator("name", "remark")
+    @classmethod
+    def _reject_corrupted_text(cls, value: str) -> str:
+        """拒绝提交端编码错误产生的乱码文本。"""
+        return reject_replacement_char(value)  # type: ignore[return-value]
 
 
 class AccountInDB(AccountCreate):
@@ -42,3 +49,10 @@ class AccountUpdate(BaseModel):
 
     name: str | None = None
     remark: str | None = None
+
+    @field_validator("name", "remark")
+    @classmethod
+    def _reject_corrupted_text(cls, value: str | None) -> str | None:
+        """拒绝提交端编码错误产生的乱码文本。"""
+        return reject_replacement_char(value)
+

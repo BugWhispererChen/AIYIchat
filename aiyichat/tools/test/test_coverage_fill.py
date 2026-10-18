@@ -176,7 +176,7 @@ class TestPromptAssemblerImageGen:
     def _profile(self, ref_url="", appearance=""):
         from app.models.profile import (
             ProfileDialogueStrategy,
-            ProfileIdentity,
+            ProfilePersona,
             ProfileLanguageStyle,
             ProfilePersonality,
             PromptProfileInDB,
@@ -187,7 +187,7 @@ class TestPromptAssemblerImageGen:
             slug="img", name="小画",
             source="测试",
             reference_image_url=ref_url,
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background="生活在现代都市", era="现代",
                 appearance=appearance, core_values=["真诚"],
             ),
@@ -212,7 +212,7 @@ class TestPromptAssemblerImageGen:
             msgs = asm.assemble(
                 profile=self._profile(ref_url="/api/media/1"),
                 history=[],
-                user_input="给我拍张照",
+                identity_input="给我拍张照",
                 emotion_hint="开心",
                 current_topic="摄影",
                 memory_facts=["喜欢旅行", "养猫"],
@@ -240,7 +240,7 @@ class TestPromptAssemblerImageGen:
             msgs = asm.assemble(
                 profile=self._profile(appearance="a young woman with long hair"),
                 history=[],
-                user_input="自拍一张",
+                identity_input="自拍一张",
             )
             joined = "\n".join(m["content"] for m in msgs)
             assert "外貌特征" in joined  # appearance fallback 分支

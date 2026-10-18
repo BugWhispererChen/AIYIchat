@@ -25,7 +25,7 @@ from tools.test.test_engine_handle_message import _build_engine, _make_profile a
 def _make_profile(ref_url: str = "", appearance: str = ""):
     return SimpleNamespace(
         reference_image_url=ref_url,
-        identity=SimpleNamespace(appearance=appearance),
+        persona=SimpleNamespace(appearance=appearance),
     )
 
 
@@ -84,7 +84,7 @@ class TestEngineImageFlow:
     def _profile(self, ref_url: str = ""):
         return _make_engine_profile(
             reference_image_url=ref_url,
-            identity=SimpleNamespace(appearance="a young woman"),
+            persona=SimpleNamespace(appearance="a young woman"),
         )
 
     def test_self_tag_deducts_quota_and_builds_task(self) -> None:

@@ -268,29 +268,29 @@ class TestTurnRecorder:
             kwargs = {"created_at": received_at} if explicit_time else {}
             with patch("app.db.repositories.message_repo.datetime", wraps=datetime) as clock:
                 clock.now.return_value = written_at
-                user_msg = await recorder.record_user_message(
+                identity_msg = await recorder.record_identity_message(
                     conversation.id, "今天很开心", "happy",
                     media_url="/api/media/test-image", content_type="image", **kwargs,
                 )
                 assistant_msg = await recorder.record_assistant_message(
                     conversation.id, "替你开心", "test-model", 120,
                 )
-            assert isinstance(user_msg, MessageInDB)
+            assert isinstance(identity_msg, MessageInDB)
             assert isinstance(assistant_msg, MessageInDB)
-            assert user_msg.id != assistant_msg.id
-            assert user_msg.role == "user" and user_msg.content == "今天很开心"
-            assert user_msg.emotion_tag == "happy"
-            assert user_msg.media_url == "/api/media/test-image"
-            assert user_msg.content_type == "image"
-            assert user_msg.created_at == (received_at if explicit_time else written_at)
-            assert user_msg.updated_at == written_at
+            assert identity_msg.id != assistant_msg.id
+            assert identity_msg.role == "user" and identity_msg.content == "今天很开心"
+            assert identity_msg.emotion_tag == "happy"
+            assert identity_msg.media_url == "/api/media/test-image"
+            assert identity_msg.content_type == "image"
+            assert identity_msg.created_at == (received_at if explicit_time else written_at)
+            assert identity_msg.updated_at == written_at
             assert assistant_msg.role == "assistant"
             assert assistant_msg.content == "替你开心"
             assert assistant_msg.llm_model == "test-model"
             assert assistant_msg.latency_ms == 120
             assert assistant_msg.created_at == assistant_msg.updated_at == written_at
             stored = await messages.get_recent(conversation.id)
-            assert [m.id for m in stored] == [user_msg.id, assistant_msg.id]
+            assert [m.id for m in stored] == [identity_msg.id, assistant_msg.id]
             await recorder.update_conversation_meta(conversation.id)
             updated = await conversations.find_by_id(conversation.id)
             assert updated is not None and updated.message_count == 2

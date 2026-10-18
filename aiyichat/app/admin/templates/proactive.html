@@ -153,7 +153,7 @@
                 <td><span class="badge badge-neutral">{{ info.stage_label }}</span></td>
                 <td><span class="badge {% if info.type_label == '关怀' %}badge-neutral{% else %}badge-active{% endif %}">{{ info.type_label }}</span></td>
                 <td><span class="badge {% if rec.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ rec.platform }}</span></td>
-                <td>{{ info.user_display or '-' }}</td>
+                <td>{{ info.identity_display or '-' }}</td>
                 <td><span class="text-ellipsis" title="{{ rec.content }}" style="max-width:280px;display:inline-block;">{{ rec.content or '-' }}</span></td>
                 <td>
                     {% if rec.status == 'sent' %}

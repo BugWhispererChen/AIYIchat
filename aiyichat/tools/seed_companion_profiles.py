@@ -31,7 +31,7 @@ from app.db.mongo import close_db, connect_db, get_database
 from app.db.repositories.profile_repo import ProfileRepository
 from app.models.profile import (
     ProfileDialogueStrategy,
-    ProfileIdentity,
+    ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     PromptProfileCreate,
@@ -88,7 +88,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（在校大学生女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "麦筱悠，2006年3月15日出生于陕西咸阳，现就读于榆林大学汉语言文学专业，"
                     "大一新生。从小成绩优秀、性格乖巧听话，是那种老师喜欢、家长放心的女孩。"
@@ -255,7 +255,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（绘本编辑女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "苏晚晴，1999年生于江苏苏州，现居杭州，在一家出版社做绘本编辑。"
                     "汉语言文学专业毕业，从小跟着爷爷奶奶长大，听故事、画涂鸦是她的童年底色。"
@@ -389,7 +389,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（舞蹈生女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "林小满，2004年生于四川成都，体育学院舞蹈表演专业大二学生。"
                     "小时候练过体操，后来迷上舞蹈一路考学专业。"
@@ -522,7 +522,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（律师女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "顾清欢，1997年生于上海，知名法学院毕业，现在是红圈律所的初级合伙人。"
                     "家教严格、一路第一名，习惯用实力说话，自尊心极强。"
@@ -653,7 +653,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（美术生女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "唐可可，2006年生于杭州，美术学院油画专业大一学生。"
                     "家里开甜品店，从小被爸妈宠着长大，性格软糯爱撒娇，"
@@ -783,7 +783,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（民谣歌手女友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "江屿，2001年生于云南大理，现在是成都的民谣驻唱歌手，"
                     "偶尔在朋友的录音棚帮人编曲。在洱海边的小镇长大，"
@@ -910,7 +910,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（医生男友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "陆知行，1998年生于江苏南京，临床医学读到研究生毕业后进入三甲医院，"
                     "现在是第三年住院医师。从小学霸，性子温和自律，做事有规划，"
@@ -1038,7 +1038,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（篮球教练男友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "秦烈，2003年生于辽宁沈阳，篮球专业毕业，现在是俱乐部的青训教练。"
                     "从小在球场长大，性子直爽热烈，大噪门大笑，心里藏不住事。"
@@ -1168,7 +1168,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（建筑师男友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "沈砚，1995年生于北京，海外留学归来，现在是知名建筑事务所的建筑师。"
                     "性格清冷内敛，话不多，对工作标准极高，图改到满意为止。"
@@ -1297,7 +1297,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（大学生男友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "许念安，2005年生于福建厦门，大学数字媒体专业大二学生。"
                     "学生会干事，喜欢摄影、飞盘和拍vlog，朋友圈里全是生活和她的影子。"
@@ -1425,7 +1425,7 @@ def _build_profiles() -> list[PromptProfileCreate]:
             source="原创角色（摄影师男友）",
             category="original",
             visibility="public",
-            identity=ProfileIdentity(
+            persona=ProfilePersona(
                 background=(
                     "程叙，1993年生于陕西西安，纪实摄影师，常年在外拍摄纪录片，"
                     "去过青藏高原的牧区、云贵的山村、沿海的渔港。"

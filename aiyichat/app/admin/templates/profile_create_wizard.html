@@ -61,7 +61,7 @@
             <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required style="max-width:240px;">
             <button type="submit" form="wiz-ref-upload-form" class="btn-sm" id="wiz-ref-upload-btn">上传照片</button>
             <button type="submit" form="wiz-ref-generate-form" class="ghost btn-sm" id="wiz-ref-generate-btn"
-                    {% if not (profile.identity.appearance or profile.identity.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
+                    {% if not (profile.persona.appearance or profile.persona.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
                 AI 生成候选
             </button>
         </div>
@@ -72,8 +72,8 @@
 
     <div class="card">
         <h4>已生成的角色信息</h4>
-        <p style="margin:0.3rem 0;"><strong>{{ profile.name }}</strong> <span class="muted">（{{ profile.identity.age_appearance or '未描述年龄' }}）</span></p>
-        <p style="font-size:0.9rem;margin:0.3rem 0;">{{ profile.identity.background }}</p>
+        <p style="margin:0.3rem 0;"><strong>{{ profile.name }}</strong> <span class="muted">（{{ profile.persona.age_appearance or '未描述年龄' }}）</span></p>
+        <p style="font-size:0.9rem;margin:0.3rem 0;">{{ profile.persona.background }}</p>
         <details>
             <summary style="cursor:pointer;font-size:0.85rem;">查看完整设定</summary>
             {% include "partials/profile_summary.html" %}

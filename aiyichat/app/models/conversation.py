@@ -8,7 +8,7 @@ class ConversationInDB(BaseModel):
     """数据库中的对话记录。"""
 
     id: str = Field(alias="_id")
-    user_id: str
+    identity_id: str
     profile_id: str
     service_id: str  # 关联的对话服务ID
     title: str = ""
@@ -32,7 +32,7 @@ class ConversationInDB(BaseModel):
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
-        doc["user_id"] = str(doc["user_id"])
+        doc["identity_id"] = str(doc["identity_id"])
         doc["profile_id"] = str(doc["profile_id"])
         # 兼容存量数据：无 service_id 时设为空字符串
         doc["service_id"] = str(doc.get("service_id", ""))

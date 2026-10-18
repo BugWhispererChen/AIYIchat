@@ -98,7 +98,7 @@ class TestPerformanceBaseline:
         # 模拟完整上下文（使用真实 Profile 模型避免属性缺失）
         from app.models.profile import (
             ProfileDialogueStrategy,
-            ProfileIdentity,
+            ProfilePersona,
             ProfileLanguageStyle,
             ProfilePersonality,
             PromptProfileCreate,
@@ -108,7 +108,7 @@ class TestPerformanceBaseline:
             name="测试角色",
             slug="test-role",
             source="测试",
-            identity=ProfileIdentity(appearance="测试外貌"),
+            persona=ProfilePersona(appearance="测试外貌"),
             personality=ProfilePersonality(traits={}),
             language_style=ProfileLanguageStyle(forbidden_words=[]),
             dialogue_strategy=ProfileDialogueStrategy(greeting="你好"),
@@ -128,10 +128,10 @@ class TestPerformanceBaseline:
         assembler.assemble(
             profile=profile,
             history=history,
-            user_input="测试输入",
+            identity_input="测试输入",
             summary="测试摘要",
             emotion_hint="",
-            user=None,
+            identity=None,
             current_topic="",
             memory_facts=memory_facts,
             length_instruction="",

@@ -148,27 +148,27 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     """
     # 用户：按 platform + platform_id 唯一，按 account_id 索引
     await _safe_create_index(
-        db.users,
+        db.identities,
         [("platform", 1), ("platform_id", 1)],
         unique=True,
     )
-    await _safe_create_index(db.users, "account_id")
+    await _safe_create_index(db.identities, "account_id")
     # Bot：按 account_id 索引
     await _safe_create_index(db.bot_configs, "account_id")
     # 账号：按 id 唯一
     await _safe_create_index(db.accounts, "id", unique=True)
-    # 对话服务：按 account_id、user_id + bot_id 索引
+    # 对话服务：按 account_id、identity_id + bot_id 索引
     await _safe_create_index(db.services, "account_id")
-    await _safe_create_index(db.services, [("user_id", 1), ("bot_id", 1)])
+    await _safe_create_index(db.services, [("identity_id", 1), ("bot_id", 1)])
     # 账号额度：按 account_id 唯一
     await _safe_create_index(db.account_quotas, "account_id", unique=True)
     # 角色：按 slug 唯一，按 visibility + account_id 索引
     await _safe_create_index(db.profiles, "slug", unique=True)
     await _safe_create_index(db.profiles, [("visibility", 1), ("account_id", 1)])
-    # 对话：按 user_id + profile_id + service_id + status 索引，按 service_id 索引，按 created_at 索引
+    # 对话：按 identity_id + profile_id + service_id + status 索引，按 service_id 索引，按 created_at 索引
     await _safe_create_index(
         db.conversations,
-        [("user_id", 1), ("profile_id", 1), ("service_id", 1), ("status", 1)],
+        [("identity_id", 1), ("profile_id", 1), ("service_id", 1), ("status", 1)],
     )
     await _safe_create_index(db.conversations, "service_id")
     await _safe_create_index(db.conversations, "created_at")
@@ -190,15 +190,15 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("event_type", 1), ("created_at", -1)],
     )
     await _safe_create_index(db.safety_events, "created_at")
-    # C 端网页凭据：用户名唯一（注册原子占位），按 user_id 与 status+created_at 索引
-    await _safe_create_index(db.web_identities, "username", unique=True)
-    await _safe_create_index(db.web_identities, "user_id")
+    # C 端网页凭据：用户名唯一（注册原子占位），按 identity_id 与 status+created_at 索引
+    await _safe_create_index(db.web_credentials, "username", unique=True)
+    await _safe_create_index(db.web_credentials, "identity_id")
     await _safe_create_index(
-        db.web_identities,
+        db.web_credentials,
         [("status", 1), ("created_at", -1)],
     )
-    # C 端网页会话：token 唯一，identity_id 供并发上限查询，
+    # C 端网页会话：token 唯一，credential_id 供并发上限查询，
     # expires_at 建 TTL 索引由 MongoDB 异步回收过期文档（expireAfterSeconds=0 即按字段值到期）
     await _safe_create_index(db.web_sessions, "token", unique=True)
-    await _safe_create_index(db.web_sessions, "identity_id")
+    await _safe_create_index(db.web_sessions, "credential_id")
     await _safe_create_index(db.web_sessions, "expires_at", expireAfterSeconds=0)

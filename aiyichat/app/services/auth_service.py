@@ -23,19 +23,19 @@ from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
-from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.service import ServiceCreate
-from app.models.user import UserCreate
-from app.models.web_identity import (
+from app.models.identity import IdentityCreate
+from app.models.web_credential import (
     PRIVACY_VERSION,
     TERMS_VERSION,
     WebConsent,
-    WebIdentityCreate,
-    WebIdentityInDB,
+    WebCredentialCreate,
+    WebCredentialInDB,
     normalize_username,
 )
 from app.models.web_session import WebSessionCreate
@@ -100,7 +100,7 @@ class AuthError(Exception):
 class LoginResult:
     """登录成功产物：身份与会话。"""
 
-    identity: WebIdentityInDB
+    credential: WebCredentialInDB
     token: str
 
 
@@ -108,9 +108,9 @@ class LoginResult:
 class _Draft:
     """注册过程已写入的文档 ID，供失败回滚。"""
 
-    identity_id: str = ""
+    credential_id: str = ""
     account_id: str = ""
-    user_id: str = ""
+    identity_id: str = ""
     service_id: str = ""
     extras: list[str] = field(default_factory=list)
 
@@ -248,28 +248,28 @@ async def rollback(draft: _Draft) -> None:
     try:
         if draft.account_id:
             await AccountRepository().delete_cascade(draft.account_id)
-        if draft.identity_id:
-            await WebIdentityRepository().delete_by_id(draft.identity_id)
+        if draft.credential_id:
+            await WebCredentialRepository().delete_by_id(draft.credential_id)
     except Exception:  # noqa: BLE001 - 回滚失败不能覆盖原始异常
         logger.exception(
             "注册回滚失败，遗留脏数据需人工清理: account_id=%s identity_id=%s",
             draft.account_id,
-            draft.identity_id,
+            draft.credential_id,
         )
 
 
-async def _purge_rejected(identity: WebIdentityInDB) -> None:
+async def _purge_rejected(credential: WebCredentialInDB) -> None:
     """清理被拒身份的遗留数据，释放用户名以便冷却期后重新注册。
 
     唯一索引按字面值占位，被拒记录不删除就永远注册不了；被拒身份从未激活，
     其业务四件套与会话可安全级联清除。
     """
-    await WebSessionRepository().delete_by_identity(identity.id)
-    if identity.user_id:
-        user = await UserRepository().find_by_id(identity.user_id)
-        if user is not None:
-            await AccountRepository().delete_cascade(user.account_id)
-    await WebIdentityRepository().delete_by_id(identity.id)
+    await WebSessionRepository().delete_by_credential(credential.id)
+    if credential.identity_id:
+        identity = await IdentityRepository().find_by_id(credential.identity_id)
+        if identity is not None:
+            await AccountRepository().delete_cascade(identity.account_id)
+    await WebCredentialRepository().delete_by_id(credential.id)
 
 
 async def register(
@@ -280,7 +280,7 @@ async def register(
     privacy_accepted: bool,
     age_confirmed: bool,
     ip: str = "",
-) -> WebIdentityInDB:
+) -> WebCredentialInDB:
     """自助注册：校验 → 占用户名 → 建四件套 → 落 pending（或免审直达 active）。
 
     Returns:
@@ -296,22 +296,22 @@ async def register(
     validate_password(name, password)
     consent = build_consent(terms_accepted, privacy_accepted, age_confirmed)
 
-    identities = WebIdentityRepository()
-    existing = await identities.find_by_username(name)
+    credentials = WebCredentialRepository()
+    existing = await credentials.find_by_username(name)
     if existing is not None:
         # 被拒用户名在冷却期后允许重新注册；其余状态（pending/active/disabled）一律占用
         if existing.status != "rejected":
             raise AuthError("username_taken", "该用户名已被占用", 409)
         if (
-            await identities.find_recent_by_username(name, REJECT_COOLDOWN_HOURS, "rejected")
+            await credentials.find_recent_by_username(name, REJECT_COOLDOWN_HOURS, "rejected")
             is not None
         ):
             raise AuthError("register_cooldown", "上次审核未通过，请稍后再试", 409)
         await _purge_rejected(existing)
 
     # 先占用户名（唯一索引原子判重），再建业务四件套
-    identity = await identities.insert(
-        WebIdentityCreate(
+    credential = await credentials.insert(
+        WebCredentialCreate(
             username=name,
             password_hash=hash_password(password),
             status="pending",
@@ -319,10 +319,10 @@ async def register(
             consent=consent,
         )
     )
-    if identity is None:
+    if credential is None:
         raise AuthError("username_taken", "该用户名已被占用", 409)
 
-    draft = _Draft(identity_id=identity.id)
+    draft = _Draft(credential_id=credential.id)
     try:
         await ensure_web_bot_configured()
         profile_slug = await resolve_default_profile_id()
@@ -335,8 +335,8 @@ async def register(
         quota_update, quota_source = await build_free_quota(account.id)
         await QuotaRepository().create_or_update(account.id, quota_update)
 
-        user = await UserRepository().create(
-            UserCreate(
+        identity = await IdentityRepository().create(
+            IdentityCreate(
                 account_id=account.id,
                 name=name,
                 platform_id=name,  # 非 UUID：_is_uuid 判定会自动拒绝把 QQ openid 绑到该用户
@@ -344,22 +344,22 @@ async def register(
                 nickname=name,
             )
         )
-        draft.user_id = user.id
+        draft.identity_id = identity.id
 
         service = await ServiceRepository().create(
             ServiceCreate(
                 name=f"web:{name}",
                 account_id=account.id,
-                user_id=user.id,
+                identity_id=identity.id,
                 bot_id=settings.web_bot_id.strip(),
                 profile_id=profile_slug,
             )
         )
         draft.service_id = service.id
 
-        await identities.set_user_id(identity.id, user.id)
+        await credentials.set_identity_id(credential.id, identity.id)
         if not settings.web_register_require_review:
-            await identities.set_status(identity.id, "active", reviewed_by="system", review_note=f"免审注册（额度来源：{quota_source}）", review=True)
+            await credentials.set_status(credential.id, "active", reviewed_by="system", review_note=f"免审注册（额度来源：{quota_source}）", review=True)
     except AuthError:
         await rollback(draft)
         raise
@@ -367,7 +367,7 @@ async def register(
         await rollback(draft)
         raise AuthError("register_failed", f"注册失败，请稍后重试：{e}", 500) from e
 
-    saved = await identities.find_by_id(identity.id)
+    saved = await credentials.find_by_id(credential.id)
     if saved is None:
         raise AuthError("register_failed", "注册状态写入异常，请稍后重试", 500)
     return saved
@@ -380,26 +380,26 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
     """
     ensure_web_enabled()
     name = normalize_username(username)
-    identities = WebIdentityRepository()
-    identity = await identities.find_by_username(name)
-    if identity is None:
+    credentials = WebCredentialRepository()
+    credential = await credentials.find_by_username(name)
+    if credential is None:
         raise AuthError("login_failed", "用户名或密码错误", 401)
 
-    if identity.is_locked:
+    if credential.is_locked:
         raise AuthError("login_locked", "登录失败次数过多，请稍后再试", 429)
-    if not verify_password(password, identity.password_hash):
-        locked_until = await identities.register_login_failure(
-            identity.id, settings.web_login_max_fail, settings.web_login_lockout_minutes
+    if not verify_password(password, credential.password_hash):
+        locked_until = await credentials.register_login_failure(
+            credential.id, settings.web_login_max_fail, settings.web_login_lockout_minutes
         )
         if locked_until is not None:
             raise AuthError("login_locked", "登录失败次数过多，账号已临时锁定", 429)
         raise AuthError("login_failed", "用户名或密码错误", 401)
 
-    if identity.status == "pending":
+    if credential.status == "pending":
         raise AuthError("login_pending", "注册正在等待审核，通过后即可登录", 403)
-    if identity.status == "rejected":
+    if credential.status == "rejected":
         raise AuthError("login_rejected", "注册审核未通过，如有疑问请联系管理员", 403)
-    if identity.status == "disabled":
+    if credential.status == "disabled":
         raise AuthError("login_disabled", "账号已被停用", 403)
 
     now = _utcnow()
@@ -408,20 +408,20 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
     await sessions.create(
         WebSessionCreate(
             token=token,
-            identity_id=identity.id,
+            credential_id=credential.id,
             expires_at=now + timedelta(hours=settings.web_session_hours),
             ip=ip,
             user_agent=user_agent[:300],
         )
     )
     # 新会话已入池，超出并发上限时按创建时间挤掉最旧设备
-    await sessions.enforce_max_concurrent(identity.id, settings.web_session_max_concurrent)
-    await identities.reset_login_failures(identity.id)
-    saved = await identities.find_by_id(identity.id)
-    return LoginResult(identity=saved or identity, token=token)
+    await sessions.enforce_max_concurrent(credential.id, settings.web_session_max_concurrent)
+    await credentials.reset_login_failures(credential.id)
+    saved = await credentials.find_by_id(credential.id)
+    return LoginResult(credential=saved or credential, token=token)
 
 
-async def resolve_token(token: str) -> tuple[WebIdentityInDB, str]:
+async def resolve_token(token: str) -> tuple[WebCredentialInDB, str]:
     """由会话令牌解析出身份与其关联用户 ID（供 `require_web_user` 使用）。
 
     令牌缺失/过期/被 TTL 回收、身份非 active、身份已被删除或 user_id 未回填，
@@ -431,16 +431,16 @@ async def resolve_token(token: str) -> tuple[WebIdentityInDB, str]:
     session = await WebSessionRepository().find_by_token(token)
     if session is None or session.expired:
         raise AuthError("unauthorized", "登录状态已失效，请重新登录", 401)
-    identity = await WebIdentityRepository().find_by_id(session.identity_id)
-    if identity is None:
+    credential = await WebCredentialRepository().find_by_id(session.credential_id)
+    if credential is None:
         raise AuthError("unauthorized", "登录状态已失效，请重新登录", 401)
-    if identity.status != "active":
+    if credential.status != "active":
         raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
-    if not identity.user_id:
+    if not credential.identity_id:
         raise AuthError("unauthorized", "账号数据不完整，请重新登录", 401)
     # 滑动过期：每次成功访问顺延
     await WebSessionRepository().touch(session.token, settings.web_session_hours)
-    return identity, identity.user_id
+    return credential, credential.identity_id
 
 
 async def logout(token: str) -> bool:
@@ -448,41 +448,41 @@ async def logout(token: str) -> bool:
     return await WebSessionRepository().delete_by_token(token)
 
 
-async def approve(identity_id: str, reviewed_by: str, note: str = "") -> bool:
+async def approve(credential_id: str, reviewed_by: str, note: str = "") -> bool:
     """审核通过：置 active 并留痕。"""
-    return await WebIdentityRepository().set_status(
-        identity_id, "active", reviewed_by=reviewed_by, review_note=note, review=True
+    return await WebCredentialRepository().set_status(
+        credential_id, "active", reviewed_by=reviewed_by, review_note=note, review=True
     )
 
 
-async def reject(identity_id: str, reviewed_by: str, note: str = "") -> bool:
+async def reject(credential_id: str, reviewed_by: str, note: str = "") -> bool:
     """审核拒绝：置 rejected（触发 24h 重注冷却）并清空既有会话。"""
-    ok = await WebIdentityRepository().set_status(
-        identity_id, "rejected", reviewed_by=reviewed_by, review_note=note, review=True
+    ok = await WebCredentialRepository().set_status(
+        credential_id, "rejected", reviewed_by=reviewed_by, review_note=note, review=True
     )
     if ok:
-        await WebSessionRepository().delete_by_identity(identity_id)
+        await WebSessionRepository().delete_by_credential(credential_id)
     return ok
 
 
-async def set_disabled(identity_id: str, disabled: bool, operator: str, note: str = "") -> bool:
+async def set_disabled(credential_id: str, disabled: bool, operator: str, note: str = "") -> bool:
     """禁用/启用账号：禁用同时清空全部会话，实现"发消息立即被拒"。"""
-    ok = await WebIdentityRepository().set_status(
-        identity_id, "disabled" if disabled else "active", reviewed_by=operator, review_note=note
+    ok = await WebCredentialRepository().set_status(
+        credential_id, "disabled" if disabled else "active", reviewed_by=operator, review_note=note
     )
     if ok and disabled:
-        await WebSessionRepository().delete_by_identity(identity_id)
+        await WebSessionRepository().delete_by_credential(credential_id)
     return ok
 
 
-async def reset_password(identity_id: str, new_password: str, operator: str) -> bool:
+async def reset_password(credential_id: str, new_password: str, operator: str) -> bool:
     """管理员重置密码：写入新哈希并强制所有旧会话下线。"""
     username = ""
-    identity = await WebIdentityRepository().find_by_id(identity_id)
-    if identity is not None:
-        username = identity.username
+    credential = await WebCredentialRepository().find_by_id(credential_id)
+    if credential is not None:
+        username = credential.username
     validate_password(username, new_password)
-    ok = await WebIdentityRepository().set_password(identity_id, hash_password(new_password))
+    ok = await WebCredentialRepository().set_password(credential_id, hash_password(new_password))
     if ok:
-        await WebSessionRepository().delete_by_identity(identity_id)
+        await WebSessionRepository().delete_by_credential(credential_id)
     return ok

@@ -40,13 +40,13 @@ class ProactiveRecordRepository:
             {"$set": {"status": "failed", "error_msg": error_msg}},
         )
 
-    async def find_latest_by_user(
-        self, user_id: str, bot_id: str, limit: int = 10
+    async def find_latest_by_identity(
+        self, identity_id: str, bot_id: str, limit: int = 10
     ) -> list[ProactiveRecordInDB]:
         """查询某用户最近的主动消息记录。"""
         cursor = (
             self._collection()
-            .find({"user_id": user_id, "bot_id": bot_id})
+            .find({"identity_id": identity_id, "bot_id": bot_id})
             .sort("created_at", -1)
             .limit(limit)
         )
@@ -56,7 +56,7 @@ class ProactiveRecordRepository:
         return results
 
     async def get_sent_stages(
-        self, user_id: str, bot_id: str, since: datetime
+        self, identity_id: str, bot_id: str, since: datetime
     ) -> list[int]:
         """
         获取指定时间之后已成功发送的阶段列表。
@@ -65,7 +65,7 @@ class ProactiveRecordRepository:
         """
         cursor = self._collection().find(
             {
-                "user_id": user_id,
+                "identity_id": identity_id,
                 "bot_id": bot_id,
                 "status": "sent",
                 "sent_at": {"$gte": since},
@@ -79,7 +79,7 @@ class ProactiveRecordRepository:
 
     async def get_attempted_stages(
         self,
-        user_id: str,
+        identity_id: str,
         bot_id: str,
         since: datetime,
         max_retries: int = 2,
@@ -96,7 +96,7 @@ class ProactiveRecordRepository:
         pipeline = [
             {
                 "$match": {
-                    "user_id": user_id,
+                    "identity_id": identity_id,
                     "bot_id": bot_id,
                     "status": {"$in": ["sent", "failed"]},
                     "created_at": {"$gte": since},
@@ -126,7 +126,7 @@ class ProactiveRecordRepository:
         return stages
 
     async def count_sent_this_month(
-        self, user_id: str, bot_id: str, platform: str
+        self, identity_id: str, bot_id: str, platform: str
     ) -> int:
         """
         统计当月已发送的主动消息数（用于QQ每月4条配额追踪）。
@@ -135,7 +135,7 @@ class ProactiveRecordRepository:
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         count = await self._collection().count_documents(
             {
-                "user_id": user_id,
+                "identity_id": identity_id,
                 "bot_id": bot_id,
                 "platform": platform,
                 "status": "sent",
@@ -145,11 +145,11 @@ class ProactiveRecordRepository:
         return count
 
     async def get_latest_sent(
-        self, user_id: str, bot_id: str
+        self, identity_id: str, bot_id: str
     ) -> Optional[ProactiveRecordInDB]:
         """获取最近一条已发送的主动消息记录（用于去重）。"""
         doc = await self._collection().find_one(
-            {"user_id": user_id, "bot_id": bot_id, "status": "sent"},
+            {"identity_id": identity_id, "bot_id": bot_id, "status": "sent"},
             sort=[("created_at", -1)],
         )
         if doc:

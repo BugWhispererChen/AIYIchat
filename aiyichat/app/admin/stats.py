@@ -4,14 +4,14 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 
 
 @dataclass
 class DashboardStats:
     profile_count: int = 0
     active_profile_count: int = 0
-    user_count: int = 0
+    identity_count: int = 0
     conversation_count: int = 0
     message_total: int = 0
     message_today: int = 0
@@ -20,7 +20,7 @@ class DashboardStats:
 
 async def get_dashboard_stats() -> DashboardStats:
     profile_repo = ProfileRepository()
-    user_repo = UserRepository()
+    identity_repo = IdentityRepository()
     conv_repo = ConversationRepository()
     msg_repo = MessageRepository()
     bot_repo = BotConfigRepository()
@@ -31,7 +31,7 @@ async def get_dashboard_stats() -> DashboardStats:
     stats = DashboardStats(
         profile_count=len(all_profiles),
         active_profile_count=len(active_profiles),
-        user_count=await user_repo.count(),
+        identity_count=await identity_repo.count(),
         conversation_count=await conv_repo.count(),
         message_total=await msg_repo.count_total(),
         message_today=await msg_repo.count_today(),

@@ -65,7 +65,7 @@
             </form>
             <div>
                 <span class="badge {% if msg.role == 'user' %}badge-role-user{% else %}badge-role-assistant{% endif %}">
-                    {{ '用户' if msg.role == 'user' else 'AI' }}
+                    {{ '身份' if msg.role == 'user' else 'AI' }}
                 </span>
                 {% if msg.emotion_tag %}
                 <span class="badge badge-warning">{{ msg.emotion_tag }}</span>

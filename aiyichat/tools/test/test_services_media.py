@@ -573,7 +573,7 @@ class TestTTSExpression:
 
         return CharacterMood(valence=valence, arousal=arousal)
 
-    def test_instruction_by_user_emotion(self) -> None:
+    def test_instruction_by_identity_emotion(self) -> None:
         from app.services.tts_expression import build_tts_instruction
 
         # 用户情绪优先，且语速描述内嵌文案（替代数值语速参数）

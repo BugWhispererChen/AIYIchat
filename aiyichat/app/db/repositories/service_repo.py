@@ -21,12 +21,12 @@ class ServiceRepository:
             return None
         return ServiceInDB.from_mongo(doc)
 
-    async def find_by_user_and_bot(
-        self, user_id: str, bot_id: str
+    async def find_by_identity_and_bot(
+        self, identity_id: str, bot_id: str
     ) -> Optional[ServiceInDB]:
         """根据用户 ID 和 Bot ID 查询激活的对话服务。"""
         doc = await self._collection().find_one(
-            {"user_id": user_id, "bot_id": bot_id, "is_active": True}
+            {"identity_id": identity_id, "bot_id": bot_id, "is_active": True}
         )
         if doc is None:
             return None
@@ -43,11 +43,11 @@ class ServiceRepository:
         )
         return [ServiceInDB.from_mongo(doc) async for doc in cursor]
 
-    async def list_by_user(self, user_id: str) -> list[ServiceInDB]:
+    async def list_by_identity(self, identity_id: str) -> list[ServiceInDB]:
         """查询用户参与的所有对话服务。"""
         cursor = (
             self._collection()
-            .find({"user_id": user_id})
+            .find({"identity_id": identity_id})
             .sort("created_at", -1)
         )
         return [ServiceInDB.from_mongo(doc) async for doc in cursor]
@@ -94,9 +94,9 @@ class ServiceRepository:
         )
         return result.deleted_count
 
-    async def count_by_user(self, user_id: str) -> int:
+    async def count_by_identity(self, identity_id: str) -> int:
         """统计引用该用户的服务数量（用于删除/禁用前的引用检查）。"""
-        return await self._collection().count_documents({"user_id": user_id})
+        return await self._collection().count_documents({"identity_id": identity_id})
 
     async def count(self) -> int:
         """统计全局对话服务总数。"""
@@ -127,12 +127,12 @@ class ServiceRepository:
         )
         return {doc["bot_id"] async for doc in cursor}
 
-    async def find_disabled_by_user_and_bot(
-        self, user_id: str, bot_id: str
+    async def find_disabled_by_identity_and_bot(
+        self, identity_id: str, bot_id: str
     ) -> Optional[ServiceInDB]:
         """查找被禁用的服务（按用户+Bot），用于引擎返回禁用提示。"""
         doc = await self._collection().find_one(
-            {"user_id": user_id, "bot_id": bot_id, "is_active": False}
+            {"identity_id": identity_id, "bot_id": bot_id, "is_active": False}
         )
         if doc is None:
             return None

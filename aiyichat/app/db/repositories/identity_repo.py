@@ -4,21 +4,21 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from app.db.mongo import get_database
-from app.models.user import UserCreate, UserInDB, UserUpdate
+from app.models.identity import IdentityCreate, IdentityInDB, IdentityUpdate
 
 
-class UserRepository:
+class IdentityRepository:
     """管理用户的增删改查。"""
 
     def _collection(self):
         """获取 MongoDB 集合。"""
-        return get_database().users
+        return get_database().identities
 
     async def find_by_platform(
         self,
         platform: str,
         platform_id: str,
-    ) -> Optional[UserInDB]:
+    ) -> Optional[IdentityInDB]:
         """根据平台和平台 ID 查询用户。"""
         doc = await self._collection().find_one({
             "platform": platform,
@@ -26,24 +26,24 @@ class UserRepository:
         })
         if doc is None:
             return None
-        return UserInDB.from_mongo(doc)
+        return IdentityInDB.from_mongo(doc)
 
-    async def find_by_id(self, user_id: str) -> Optional[UserInDB]:
+    async def find_by_id(self, identity_id: str) -> Optional[IdentityInDB]:
         """根据 ID 查询用户。"""
-        doc = await self._collection().find_one({"id": user_id})
+        doc = await self._collection().find_one({"id": identity_id})
         if doc is None:
             return None
-        return UserInDB.from_mongo(doc)
+        return IdentityInDB.from_mongo(doc)
 
-    async def create(self, user: UserCreate) -> UserInDB:
+    async def create(self, identity: IdentityCreate) -> IdentityInDB:
         """创建新用户。"""
         now = datetime.now(timezone.utc)
-        doc = user.model_dump()
+        doc = identity.model_dump()
         doc["created_at"] = now
         doc["last_active_at"] = now
         result = await self._collection().insert_one(doc)
         doc["_id"] = result.inserted_id
-        return UserInDB.from_mongo(doc)
+        return IdentityInDB.from_mongo(doc)
 
     async def find_or_create(
         self,
@@ -51,19 +51,19 @@ class UserRepository:
         platform_id: str,
         account_id: str,
         nickname: str = "",
-    ) -> UserInDB:
+    ) -> IdentityInDB:
         """查找或创建用户。"""
-        user = await self.find_by_platform(platform, platform_id)
-        if user is not None:
+        identity = await self.find_by_platform(platform, platform_id)
+        if identity is not None:
             await self._collection().update_one(
-                {"id": user.id},
+                {"id": identity.id},
                 {"$set": {
                     "last_active_at": datetime.now(timezone.utc),
                 }},
             )
-            return user
+            return identity
         return await self.create(
-            UserCreate(
+            IdentityCreate(
                 account_id=account_id,
                 platform_id=platform_id,
                 platform=platform,
@@ -72,20 +72,20 @@ class UserRepository:
         )
 
     async def update(
-        self, user_id: str, update: UserUpdate
-    ) -> Optional[UserInDB]:
+        self, identity_id: str, update: IdentityUpdate
+    ) -> Optional[IdentityInDB]:
         """更新用户信息。"""
         update_data = update.model_dump(exclude_none=True)
         if not update_data:
-            return await self.find_by_id(user_id)
+            return await self.find_by_id(identity_id)
         await self._collection().update_one(
-            {"id": user_id}, {"$set": update_data}
+            {"id": identity_id}, {"$set": update_data}
         )
-        return await self.find_by_id(user_id)
+        return await self.find_by_id(identity_id)
 
-    async def delete(self, user_id: str) -> bool:
+    async def delete(self, identity_id: str) -> bool:
         """删除用户。"""
-        result = await self._collection().delete_one({"id": user_id})
+        result = await self._collection().delete_one({"id": identity_id})
         return result.deleted_count > 0
 
     async def delete_by_account(self, account_id: str) -> int:
@@ -95,7 +95,7 @@ class UserRepository:
 
     async def list_by_account(
         self, account_id: str, skip: int = 0, limit: int = 50
-    ) -> list[UserInDB]:
+    ) -> list[IdentityInDB]:
         """查询账号下的用户列表。"""
         cursor = (
             self._collection()
@@ -104,11 +104,11 @@ class UserRepository:
             .skip(skip)
             .limit(limit)
         )
-        return [UserInDB.from_mongo(doc) async for doc in cursor]
+        return [IdentityInDB.from_mongo(doc) async for doc in cursor]
 
     async def list_all(
         self, skip: int = 0, limit: int = 50
-    ) -> list[UserInDB]:
+    ) -> list[IdentityInDB]:
         """分页查询用户列表。"""
         cursor = (
             self._collection()
@@ -117,13 +117,13 @@ class UserRepository:
             .skip(skip)
             .limit(limit)
         )
-        return [UserInDB.from_mongo(doc) async for doc in cursor]
+        return [IdentityInDB.from_mongo(doc) async for doc in cursor]
 
     async def count(self) -> int:
         """统计用户总数。"""
         return await self._collection().count_documents({})
 
-    async def search(self, q: str, limit: int = 50) -> list[UserInDB]:
+    async def search(self, q: str, limit: int = 50) -> list[IdentityInDB]:
         """按名称、昵称、平台ID或平台搜索用户。"""
         regex = {"$regex": q, "$options": "i"}
         cursor = (
@@ -132,18 +132,18 @@ class UserRepository:
             .sort("last_active_at", -1)
             .limit(limit)
         )
-        return [UserInDB.from_mongo(doc) async for doc in cursor]
+        return [IdentityInDB.from_mongo(doc) async for doc in cursor]
 
     async def count_by_account(self, account_id: str) -> int:
         """统计账号下用户数量。"""
         return await self._collection().count_documents({"account_id": account_id})
 
     async def set_blocked(
-        self, user_id: str, blocked: bool, reason: str = ""
+        self, identity_id: str, blocked: bool, reason: str = ""
     ) -> bool:
         """设置用户禁用/启用状态。"""
         result = await self._collection().update_one(
-            {"id": user_id},
+            {"id": identity_id},
             {"$set": {
                 "is_blocked": blocked,
                 "block_reason": reason if blocked else "",
@@ -151,21 +151,21 @@ class UserRepository:
         )
         return result.modified_count > 0
 
-    async def update_last_active(self, user_id: str) -> bool:
+    async def update_last_active(self, identity_id: str) -> bool:
         """更新用户最后活跃时间为当前 UTC 时间。
 
         专用于在每轮对话处理完成后刷新 `last_active_at`，
         因 `UserUpdate` 模型不包含该字段，故走独立通道。
         """
         result = await self._collection().update_one(
-            {"id": user_id},
+            {"id": identity_id},
             {"$set": {"last_active_at": datetime.now(timezone.utc)}},
         )
         return result.modified_count > 0
 
     async def bind_platform_id(
         self,
-        user_id: str,
+        identity_id: str,
         platform_id: str,
         nickname: str = "",
     ) -> None:
@@ -180,12 +180,12 @@ class UserRepository:
         if nickname:
             update_fields["nickname"] = nickname
         await self._collection().update_one(
-            {"id": user_id},
+            {"id": identity_id},
             {"$set": update_fields},
         )
 
     async def bind_bot_openid(
-        self, user_id: str, bot_id: str, platform_id: str
+        self, identity_id: str, bot_id: str, platform_id: str
     ) -> bool:
         """记录用户在指定 Bot（appid）下的 openid 映射。
 
@@ -196,10 +196,10 @@ class UserRepository:
         Returns:
             是否实际发生了写入
         """
-        if not user_id or not bot_id or not platform_id:
+        if not identity_id or not bot_id or not platform_id:
             return False
         result = await self._collection().update_one(
-            {"id": user_id, f"bot_openids.{bot_id}": {"$ne": platform_id}},
+            {"id": identity_id, f"bot_openids.{bot_id}": {"$ne": platform_id}},
             {"$set": {f"bot_openids.{bot_id}": platform_id}},
         )
         return result.modified_count > 0

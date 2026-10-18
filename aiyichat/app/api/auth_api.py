@@ -17,10 +17,10 @@ from pydantic import BaseModel
 from app.config import settings
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.service import ServiceInDB
-from app.models.user import UserInDB
-from app.models.web_identity import WebIdentityInDB
+from app.models.identity import IdentityInDB
+from app.models.web_credential import WebCredentialInDB
 from app.services import auth_service
 from app.services.auth_service import AuthError
 from app.services.captcha_service import captcha_service
@@ -33,11 +33,11 @@ _XFF_HEADER = "x-forwarded-for"
 
 
 @dataclass
-class WebUser:
+class WebPrincipal:
     """由会话令牌解析出的当前网页用户（后续接口只认这个对象）。"""
 
-    identity: WebIdentityInDB
-    user_id: str
+    credential: WebCredentialInDB
+    identity_id: str
     account_id: str
     username: str
     bot_id: str
@@ -60,7 +60,7 @@ def bearer_token(request: Request) -> str:
     return request.headers.get("x-auth-token", "").strip()
 
 
-async def require_web_user(request: Request) -> WebUser:
+async def require_current_identity(request: Request) -> WebPrincipal:
     """网页会话依赖：令牌有效则返回当前用户，否则 401/403。
 
     Raises:
@@ -69,30 +69,30 @@ async def require_web_user(request: Request) -> WebUser:
     token = bearer_token(request)
     if not token:
         raise AuthError("unauthorized", "请先登录", 401)
-    identity, user_id = await auth_service.resolve_token(token)
-    user = await UserRepository().find_by_id(user_id)
-    if user is None or user.is_blocked:
+    credential, identity_id = await auth_service.resolve_token(token)
+    identity = await IdentityRepository().find_by_id(identity_id)
+    if identity is None or identity.is_blocked:
         raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
-    service = await _resolve_service(user)
-    return WebUser(
-        identity=identity,
-        user_id=user.id,
-        account_id=user.account_id,
-        username=identity.username,
+    service = await _resolve_service(identity)
+    return WebPrincipal(
+        credential=credential,
+        identity_id=identity.id,
+        account_id=identity.account_id,
+        username=credential.username,
         bot_id=service.bot_id,
         service_id=service.id,
     )
 
 
-async def _resolve_service(user: UserInDB) -> ServiceInDB:
+async def _resolve_service(identity: IdentityInDB) -> ServiceInDB:
     """反查该网页用户的对话服务：优先配置的系统 Bot，回落其名下任一活跃服务。"""
     repo = ServiceRepository()
     bot_id = settings.web_bot_id.strip()
     if bot_id:
-        service = await repo.find_by_user_and_bot(user.id, bot_id)
+        service = await repo.find_by_identity_and_bot(identity.id, bot_id)
         if service is not None:
             return service
-    for svc in await repo.list_by_user(user.id):
+    for svc in await repo.list_by_identity(identity.id):
         if svc.is_active:
             return svc
     raise AuthError("no_service", "账号尚未绑定对话服务，请联系管理员", 403)
@@ -160,7 +160,7 @@ async def register(req: RegisterRequest, request: Request) -> JSONResponse:
     try:
         check_rate_limit("register", client_ip(request), settings.web_rate_limit_register)
         _guard_captcha(req)
-        identity = await auth_service.register(
+        credential = await auth_service.register(
             username=req.username,
             password=req.password,
             terms_accepted=req.terms_accepted,
@@ -170,12 +170,12 @@ async def register(req: RegisterRequest, request: Request) -> JSONResponse:
         )
     except (AuthError, RateLimited) as exc:
         return _error(exc)
-    need_review = identity.status == "pending"
+    need_review = credential.status == "pending"
     return JSONResponse(
         status_code=201,
         content={
-            "username": identity.username,
-            "status": identity.status,
+            "username": credential.username,
+            "status": credential.status,
             "detail": "注册成功，等待管理员审核" if need_review else "注册成功，请登录",
         },
     )
@@ -199,7 +199,7 @@ async def login(req: LoginRequest, request: Request) -> JSONResponse:
         status_code=200,
         content={
             "token": result.token,
-            "username": result.identity.username,
+            "username": result.credential.username,
             "expires_in_hours": settings.web_session_hours,
         },
     )
@@ -209,28 +209,28 @@ async def login(req: LoginRequest, request: Request) -> JSONResponse:
 async def logout(request: Request) -> JSONResponse:
     """注销当前令牌（幂等：无有效令牌也返回成功）。"""
     try:
-        identity, _ = await auth_service.resolve_token(bearer_token(request))
+        credential, _ = await auth_service.resolve_token(bearer_token(request))
     except AuthError as exc:
         return _error(exc)
     await auth_service.logout(bearer_token(request))
-    return JSONResponse(status_code=200, content={"ok": True, "username": identity.username})
+    return JSONResponse(status_code=200, content={"ok": True, "username": credential.username})
 
 
 @auth_router.get("/me")
 async def me(request: Request) -> JSONResponse:
     """当前登录用户信息：网页聊天页据此渲染身份与额度余量。"""
     try:
-        user = await require_web_user(request)
+        identity = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
-    quota = await QuotaRepository().find_by_account(user.account_id)
+    quota = await QuotaRepository().find_by_account(identity.account_id)
     return JSONResponse(
         status_code=200,
         content={
-            "username": user.username,
-            "user_id": user.user_id,
-            "bot_id": user.bot_id,
-            "service_id": user.service_id,
+            "username": identity.username,
+            "identity_id": identity.identity_id,
+            "bot_id": identity.bot_id,
+            "service_id": identity.service_id,
             "quota": None
             if quota is None
             else {

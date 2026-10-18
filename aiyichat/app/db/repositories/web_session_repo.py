@@ -49,27 +49,27 @@ class WebSessionRepository:
         result = await self._collection().delete_one({"token": token})
         return result.deleted_count > 0
 
-    async def delete_by_identity(self, identity_id: str) -> int:
+    async def delete_by_credential(self, credential_id: str) -> int:
         """清空某身份的全部会话（封禁、改密、管理员强制下线时调用）。"""
-        result = await self._collection().delete_many({"identity_id": identity_id})
+        result = await self._collection().delete_many({"credential_id": credential_id})
         return result.deleted_count
 
-    async def list_by_identity(self, identity_id: str) -> list[WebSessionInDB]:
+    async def list_by_credential(self, credential_id: str) -> list[WebSessionInDB]:
         """列出某身份的有效会话，按创建时间升序（最旧在前）。"""
         cursor = (
             self._collection()
-            .find({"identity_id": identity_id})
+            .find({"credential_id": credential_id})
             .sort("created_at", 1)
         )
         return [WebSessionInDB.from_mongo(doc) async for doc in cursor]
 
-    async def enforce_max_concurrent(self, identity_id: str, max_concurrent: int) -> int:
+    async def enforce_max_concurrent(self, credential_id: str, max_concurrent: int) -> int:
         """并发上限控制：超出上限时按创建时间踢出最旧会话，返回被踢数量。
 
         在新会话签发之后调用，故"登录即挤掉自己最旧的一个设备"，
         同时天然实现"旧 token 立即失效"的会话固定防护。
         """
-        sessions = await self.list_by_identity(identity_id)
+        sessions = await self.list_by_credential(credential_id)
         if max_concurrent < 1:
             max_concurrent = 1
         excess = sessions[: max(0, len(sessions) - max_concurrent)]

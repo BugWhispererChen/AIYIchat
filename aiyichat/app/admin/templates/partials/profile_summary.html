@@ -1,13 +1,13 @@
 {# 角色信息只读摘要（自定义创建向导 Step 2/4 复用，依赖上下文 profile #}
 <div class="summary-grid">
     <div class="summary-item">
-        <h5>身份信息</h5>
-        <p><strong>背景：</strong>{{ profile.identity.background or '-' }}</p>
-        <p><strong>时代：</strong>{{ profile.identity.era or '-' }}</p>
-        <p><strong>年龄外观：</strong>{{ profile.identity.age_appearance or '-' }}</p>
-        <p><strong>外貌（英文）：</strong>{{ profile.identity.appearance or '-' }}</p>
-        {% if profile.identity.core_values %}
-        <p><strong>价值观：</strong>{{ profile.identity.core_values | join('、') }}</p>
+        <h5>人设背景</h5>
+        <p><strong>背景：</strong>{{ profile.persona.background or '-' }}</p>
+        <p><strong>时代：</strong>{{ profile.persona.era or '-' }}</p>
+        <p><strong>年龄外观：</strong>{{ profile.persona.age_appearance or '-' }}</p>
+        <p><strong>外貌（英文）：</strong>{{ profile.persona.appearance or '-' }}</p>
+        {% if profile.persona.core_values %}
+        <p><strong>价值观：</strong>{{ profile.persona.core_values | join('、') }}</p>
         {% endif %}
     </div>
     <div class="summary-item">

@@ -15,7 +15,7 @@ class WebSessionCreate(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     token: str  # secrets.token_urlsafe(32)
-    identity_id: str  # 关联 web_identities.id
+    credential_id: str  # 关联 web_identities.id
     expires_at: datetime
     ip: str = ""
     user_agent: str = ""
@@ -47,13 +47,13 @@ class WebSessionInDB(WebSessionCreate):
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         return expires_at <= datetime.now(timezone.utc)
 
-    def is_valid_for(self, identity_status: str) -> bool:
+    def is_valid_for(self, credential_status: str) -> bool:
         """会话有效性判定：未过期且身份仍处于指定状态。
 
         管理员禁用/删除身份后，即使 token 未过期也必须立即失效，故状态由调用方传入
         而非在会话内缓存。
         """
-        return not self.expired and identity_status == "active"
+        return not self.expired and credential_status == "active"
 
     @property
     def remaining_seconds(self) -> Optional[int]:

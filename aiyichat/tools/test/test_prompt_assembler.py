@@ -15,7 +15,7 @@ import pytest
 from app.config import settings
 from app.models.profile import (
     PromptProfileInDB,
-    ProfileIdentity,
+    ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     ProfileDialogueStrategy,
@@ -64,7 +64,7 @@ def _make_test_profile() -> PromptProfileInDB:
         source="测试来源",
         category="literary",
         is_active=True,
-        identity=ProfileIdentity(
+        persona=ProfilePersona(
             background="一个用于测试的虚构角色",
             era="现代",
             age_appearance="中年",
@@ -132,7 +132,7 @@ class TestPromptAssembler:
         messages = self.assembler.assemble(
             profile=self.profile,
             history=[],
-            user_input="你好",
+            identity_input="你好",
         )
         # 至少包含 system prompt + user input
         assert len(messages) >= 2
@@ -144,7 +144,7 @@ class TestPromptAssembler:
         messages = self.assembler.assemble(
             profile=self.profile,
             history=[],
-            user_input="你好",
+            identity_input="你好",
         )
         system_prompt = messages[0]["content"]
         assert "测试角色" in system_prompt
@@ -157,7 +157,7 @@ class TestPromptAssembler:
         messages = self.assembler.assemble(
             profile=self.profile,
             history=history,
-            user_input="最近怎么样",
+            identity_input="最近怎么样",
         )
         # system + 2 history + 时间感知context_hint + user = 5
         assert len(messages) == 5
@@ -168,7 +168,7 @@ class TestPromptAssembler:
         messages = self.assembler.assemble(
             profile=self.profile,
             history=[],
-            user_input="你好",
+            identity_input="你好",
             summary="之前聊了一些关于生活的话题",
         )
         # system + summary + 时间感知context_hint + user = 4
@@ -179,7 +179,7 @@ class TestPromptAssembler:
         messages = self.assembler.assemble(
             profile=self.profile,
             history=[],
-            user_input="我好难过",
+            identity_input="我好难过",
             emotion_hint="悲伤低落",
         )
         # 情绪提示作为独立的 system 上下文消息注入（紧贴用户输入前）
@@ -246,13 +246,13 @@ class TestMessageTimeAwareness:
             content=content, created_at=at,
         )
 
-    def _assemble(self, history: list[MessageInDB], user_input: str = "早啊", **kwargs) -> list:
+    def _assemble(self, history: list[MessageInDB], identity_input: str = "早啊", **kwargs) -> list:
         """在冻结时间下组装 Prompt（默认 now = NOW_UTC）。"""
         now = kwargs.pop("now_utc", self.NOW_UTC)
         with _frozen_now(now):
             return self.assembler.assemble(
                 profile=self.profile, history=history,
-                user_input=user_input, **kwargs,
+                identity_input=identity_input, **kwargs,
             )
 
     # ── 基础行为（存量用例，改为冻结时间后断言）────────────
@@ -276,7 +276,7 @@ class TestMessageTimeAwareness:
 
     def test_current_moment_injected(self):
         """context_hint 含当前时刻、时段与时间标签阅读指令。"""
-        messages = self._assemble([], user_input="你好")
+        messages = self._assemble([], identity_input="你好")
         hint_msgs = [
             m["content"] for m in messages
             if m["role"] == "system" and "【当前时刻】" in m["content"]
@@ -321,7 +321,7 @@ class TestMessageTimeAwareness:
             self._msg("m1", "user", "你好", base),
             self._msg("m2", "assistant", "你好啊", base),
         ]
-        contents = [m["content"] for m in self._assemble(history, user_input="在吗")]
+        contents = [m["content"] for m in self._assemble(history, identity_input="在吗")]
         assert "[08-12 23:45] 你好" in contents
         assert "你好啊" in contents
         assert "[08-12 23:45] 你好啊" not in contents
@@ -442,7 +442,7 @@ class TestMessageTimeAwareness:
             created_at=self.NOW_UTC - timedelta(days=7),
         )
         messages = self._assemble(
-            [], user_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
+            [], identity_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
         )
         first = messages[0]["content"]
         assert messages[0]["role"] == "system"
@@ -453,7 +453,7 @@ class TestMessageTimeAwareness:
 
     # ── 清单 7：idle 只认用户消息（主动关怀不重置空闲计时）──────
 
-    def test_idle_only_counts_user_messages(self):
+    def test_idle_only_counts_identity_messages(self):
         """历史末尾是 AI 主动关怀消息 → idle 仍按更早的用户消息计算。"""
         history = [
             self._msg("m1", "user", "在吗", self.NOW_UTC - timedelta(hours=2)),
@@ -481,7 +481,7 @@ class TestMessageTimeAwareness:
         self, now_utc: datetime, expected_iso: str, expected_weekday: str
     ) -> None:
         """月末/年末/闰年边界下锚点日期与星期均正确（均为北京时间中午，不跳日）。"""
-        messages = self._assemble([], user_input="你好", now_utc=now_utc)
+        messages = self._assemble([], identity_input="你好", now_utc=now_utc)
         anchor = messages[0]["content"].split("\n")[0]
         assert anchor == f"【时间基准】今天是 {expected_iso}（{expected_weekday}）。"
 
@@ -493,7 +493,7 @@ class TestMessageTimeAwareness:
     ])
     def test_midnight_rollover(self, now_utc: datetime, expected_iso: str) -> None:
         """23:58 与 00:02 两次请求各自锚点日期正确（每轮重新取 now，无 TTL 缓存遗留）。"""
-        messages = self._assemble([], user_input="你好", now_utc=now_utc)
+        messages = self._assemble([], identity_input="你好", now_utc=now_utc)
         assert f"【时间基准】今天是 {expected_iso}" in messages[0]["content"]
 
     # ── 清单 17：全部新开关逐个关闭均优雅降级 ─────────────
@@ -536,7 +536,7 @@ class TestMessageTimeAwareness:
             created_at=self.NOW_UTC - timedelta(days=7),
         )
         joined = "\n".join(m["content"] for m in self._assemble(
-            [], user_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
+            [], identity_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
         ))
         assert "- 用户8月26日有面试\n" in joined
         assert "记录于" not in joined
@@ -560,7 +560,7 @@ class TestMessageTimeAwareness:
             ),
         ]
         joined = "\n".join(m["content"] for m in self._assemble(
-            [], user_input="你好",
+            [], identity_input="你好",
             memory_facts=[f.content for f in facts], memory_fact_objs=facts,
         ))
         assert "- 用户8月26日有面试（记录于 7 天前）" in joined
@@ -574,14 +574,14 @@ class TestMessageTimeAwareness:
             created_at=self.NOW_UTC - timedelta(hours=1),
         )
         joined = "\n".join(m["content"] for m in self._assemble(
-            [], user_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
+            [], identity_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
         ))
         assert "（今天记录）" in joined
 
     def test_memory_suffix_graceful_without_fact_objs(self):
         """未传 memory_fact_objs（如主动关怀链路）时不报错、不输出后缀。"""
         joined = "\n".join(m["content"] for m in self._assemble(
-            [], user_input="你好", memory_facts=["用户喜欢喝咖啡"],
+            [], identity_input="你好", memory_facts=["用户喜欢喝咖啡"],
         ))
         assert "- 用户喜欢喝咖啡" in joined
         assert "记录于" not in joined and "长期信息" not in joined
@@ -599,7 +599,7 @@ class TestMessageTimeAwareness:
                       "嗯嗯", base + timedelta(minutes=10 + i))
             for i in range(5)
         ]
-        messages = self._assemble(history, user_input="在吗")
+        messages = self._assemble(history, identity_input="在吗")
         joined = "\n".join(m["content"] for m in messages)
         assert "（更早的 3 条消息已归档，如需回溯可检索长期记忆）" in joined
 
@@ -608,7 +608,7 @@ class TestMessageTimeAwareness:
     def test_summary_header_with_range(self):
         """传入摘要时间范围 → 渲染为【之前的对话摘要（覆盖 X ~ Y）】。"""
         messages = self._assemble(
-            [], user_input="你好", summary="聊了工作与面试",
+            [], identity_input="你好", summary="聊了工作与面试",
             summary_start_at=datetime(2026, 8, 1, 2, 0, tzinfo=timezone.utc),
             summary_end_at=datetime(2026, 8, 28, 10, 0, tzinfo=timezone.utc),
         )
@@ -617,7 +617,7 @@ class TestMessageTimeAwareness:
 
     def test_summary_header_without_range_falls_back(self):
         """存量会话无 summary_start_at → 退回无范围标题。"""
-        messages = self._assemble([], user_input="你好", summary="聊了工作与面试")
+        messages = self._assemble([], identity_input="你好", summary="聊了工作与面试")
         summary_msg = next(m for m in messages if "对话摘要" in m["content"])
         assert summary_msg["content"].startswith("【之前的对话摘要】\n")
 
@@ -625,7 +625,7 @@ class TestMessageTimeAwareness:
         """起止为同一天时不重复渲染两个相同日期。"""
         same = datetime(2026, 8, 1, 2, 0, tzinfo=timezone.utc)
         messages = self._assemble(
-            [], user_input="你好", summary="聊了工作",
+            [], identity_input="你好", summary="聊了工作",
             summary_start_at=same, summary_end_at=same,
         )
         summary_msg = next(m for m in messages if "对话摘要" in m["content"])
@@ -652,7 +652,7 @@ class TestMessageTimeAwareness:
         """总开关关闭时审计字段为空，便于从日志直接识别“未注入”。"""
         settings.message_time_enabled = False
         audit = TimeAudit()
-        self._assemble([], user_input="你好", time_audit=audit)
+        self._assemble([], identity_input="你好", time_audit=audit)
         assert (audit.anchor, audit.now, audit.tz, audit.idle) == ("", "", "", "")
         assert audit.tagged == 0 and audit.separators == 0
 
@@ -807,7 +807,7 @@ class TestDynamicMemoryInjection:
 
     def _assemble(self, **kwargs) -> list:
         return self.assembler.assemble(
-            profile=self.profile, history=[], user_input="你好", **kwargs,
+            profile=self.profile, history=[], identity_input="你好", **kwargs,
         )
 
     def test_dynamic_facts_land_in_volatile_section(self) -> None:
@@ -853,7 +853,7 @@ class TestDynamicMemoryInjection:
         )
         with _frozen_now(datetime(2026, 9, 2, tzinfo=timezone.utc)):
             msgs = self.assembler.assemble(
-                profile=self.profile, history=[], user_input="你好",
+                profile=self.profile, history=[], identity_input="你好",
                 dynamic_memory_facts=[fact.content],
                 dynamic_memory_objs=[fact],
             )

@@ -18,14 +18,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.api.auth_api import AuthError, WebUser, _error, require_web_user
+from app.api.auth_api import AuthError, WebPrincipal, _error, require_current_identity
 from app.config import settings
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.profile import (
     ProfileDialogueStrategy,
-    ProfileIdentity,
+    ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     PromptProfileCreate,
@@ -64,7 +64,7 @@ class WebProfilePayload(BaseModel):
 
     name: str
     category: Literal["original", "custom"] = "original"
-    identity: ProfileIdentity = Field(default_factory=ProfileIdentity)
+    persona: ProfilePersona = Field(default_factory=ProfilePersona)
     language_style: ProfileLanguageStyle = Field(default_factory=ProfileLanguageStyle)
     personality: ProfilePersonality = Field(default_factory=ProfilePersonality)
     dialogue_strategy: ProfileDialogueStrategy = Field(default_factory=ProfileDialogueStrategy)
@@ -117,10 +117,10 @@ def _invalid_reason(payload: WebProfilePayload) -> str:
     if len(payload.meta_instructions) > _MAX_META_LEN:
         return f"补充指令最多 {_MAX_META_LEN} 个字符"
     long_fields = [
-        payload.identity.background,
-        payload.identity.appearance,
-        payload.identity.era,
-        payload.identity.age_appearance,
+        payload.persona.background,
+        payload.persona.appearance,
+        payload.persona.era,
+        payload.persona.age_appearance,
         payload.language_style.tone,
         payload.personality.care_style,
         payload.dialogue_strategy.greeting,
@@ -129,7 +129,7 @@ def _invalid_reason(payload: WebProfilePayload) -> str:
     if any(len(v) > _MAX_TEXT_LEN for v in long_fields):
         return f"单项描述最多 {_MAX_TEXT_LEN} 个字符"
     lists = [
-        payload.identity.core_values,
+        payload.persona.core_values,
         payload.language_style.vocabulary,
         payload.language_style.forbidden_words,
         payload.language_style.example_utterances,
@@ -149,7 +149,7 @@ def _build_create(payload: WebProfilePayload, account_id: str, slug: str) -> Pro
         is_active=True,
         visibility="private",
         account_id=account_id,
-        identity=payload.identity,
+        persona=payload.persona,
         language_style=payload.language_style,
         personality=payload.personality,
         dialogue_strategy=payload.dialogue_strategy,
@@ -184,16 +184,16 @@ async def _resolve_profile(profile_id: str) -> Optional[PromptProfileInDB]:
 
 
 async def _require_owned_profile(
-    web_user: WebUser, profile_id: str
+    principal: WebPrincipal, profile_id: str
 ) -> tuple[Optional[PromptProfileInDB], Optional[JSONResponse]]:
     """取回归本人的私有角色；不存在或不属于本人时返回对应错误响应。"""
     profile = await _resolve_profile(profile_id)
     if profile is None:
         return None, _bad("not_found", "角色不存在", 404)
-    if profile.visibility != "private" or profile.account_id != web_user.account_id:
+    if profile.visibility != "private" or profile.account_id != principal.account_id:
         logger.warning(
             "越权尝试：登录身份 %s 试图操作非本人角色 profile=%s",
-            web_user.username,
+            principal.username,
             profile_id,
         )
         # 他人的私有角色与"不存在"同响应，避免枚举探测
@@ -205,16 +205,16 @@ async def _require_owned_profile(
 async def list_web_profiles(request: Request) -> JSONResponse:
     """列出可用角色：公共角色（只读）+ 本人自建私有角色（含已停用的）。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    visible = await _profile_repo.list_active(account_id=web_user.account_id)
-    mine = await _profile_repo.list_by_account(web_user.account_id)
+    visible = await _profile_repo.list_active(account_id=principal.account_id)
+    mine = await _profile_repo.list_by_account(principal.account_id)
     seen = {p.id for p in visible}
-    items = [_profile_item(p, web_user.account_id) for p in visible]
+    items = [_profile_item(p, principal.account_id) for p in visible]
     # 补上本人已停用的私有角色（不在"活跃可见"集合里），便于在管理页重新启用
-    items += [_profile_item(p, web_user.account_id) for p in mine if p.id not in seen]
+    items += [_profile_item(p, principal.account_id) for p in mine if p.id not in seen]
     return JSONResponse(
         status_code=200,
         content={
@@ -229,14 +229,14 @@ async def list_web_profiles(request: Request) -> JSONResponse:
 async def get_web_profile(request: Request, profile_id: str) -> JSONResponse:
     """角色详情：公共角色返回脱敏后的可读字段，私有角色仅本人可见完整描述。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
     profile = await _resolve_profile(profile_id)
     if profile is None:
         return _bad("not_found", "角色不存在", 404)
-    owned = profile.visibility == "private" and profile.account_id == web_user.account_id
+    owned = profile.visibility == "private" and profile.account_id == principal.account_id
     if profile.visibility == "private" and not owned:
         return _bad("not_found", "角色不存在", 404)
 
@@ -252,7 +252,7 @@ async def get_web_profile(request: Request, profile_id: str) -> JSONResponse:
 async def create_web_profile(request: Request, payload: WebProfilePayload) -> JSONResponse:
     """创建私有角色：长度与内容校验 → 配额校验 → 服务端写入归属字段。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -267,7 +267,7 @@ async def create_web_profile(request: Request, payload: WebProfilePayload) -> JS
     if violation:
         return _bad("safety_blocked", violation)
 
-    mine = await _profile_repo.list_by_account(web_user.account_id)
+    mine = await _profile_repo.list_by_account(principal.account_id)
     if len(mine) >= settings.web_max_profiles:
         return _bad(
             "profile_quota_exceeded",
@@ -275,17 +275,17 @@ async def create_web_profile(request: Request, payload: WebProfilePayload) -> JS
             409,
         )
 
-    slug = await _find_unique_slug(web_user.username)
-    profile = await _profile_repo.create(_build_create(payload, web_user.account_id, slug))
+    slug = await _find_unique_slug(principal.username)
+    profile = await _profile_repo.create(_build_create(payload, principal.account_id, slug))
     logger.info(
         "网页用户 %s 创建私有角色 %s（slug=%s，当前 %d/%d）",
-        web_user.username,
+        principal.username,
         profile.name,
         profile.slug,
         len(mine) + 1,
         settings.web_max_profiles,
     )
-    return JSONResponse(status_code=201, content=_profile_item(profile, web_user.account_id))
+    return JSONResponse(status_code=201, content=_profile_item(profile, principal.account_id))
 
 
 @web_profiles_router.put("/{profile_id}")
@@ -294,11 +294,11 @@ async def update_web_profile(
 ) -> JSONResponse:
     """整体替换本人私有角色的可编辑字段。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    profile, err = await _require_owned_profile(web_user, profile_id)
+    profile, err = await _require_owned_profile(principal, profile_id)
     if err is not None or profile is None:
         return err or _bad("not_found", "角色不存在", 404)
 
@@ -314,7 +314,7 @@ async def update_web_profile(
         PromptProfileUpdate(
             name=payload.name.strip(),
             category=payload.category,
-            identity=payload.identity,
+            persona=payload.persona,
             language_style=payload.language_style,
             personality=payload.personality,
             dialogue_strategy=payload.dialogue_strategy,
@@ -324,7 +324,7 @@ async def update_web_profile(
     )
     if saved is None:
         return _bad("update_failed", "角色保存异常，请重试", 500)
-    return JSONResponse(status_code=200, content=_profile_item(saved, web_user.account_id))
+    return JSONResponse(status_code=200, content=_profile_item(saved, principal.account_id))
 
 
 @web_profiles_router.post("/{profile_id}/toggle")
@@ -335,11 +335,11 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
     但用户可随时启用回来；因此这里不做服务引用拦截，拦截放在删除路径。
     """
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    profile, err = await _require_owned_profile(web_user, profile_id)
+    profile, err = await _require_owned_profile(principal, profile_id)
     if err is not None or profile is None:
         return err or _bad("not_found", "角色不存在", 404)
 
@@ -353,23 +353,23 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
     )
     if saved is None:
         return _bad("not_found", "角色不存在", 404)
-    return JSONResponse(status_code=200, content=_profile_item(saved, web_user.account_id))
+    return JSONResponse(status_code=200, content=_profile_item(saved, principal.account_id))
 
 
 @web_profiles_router.delete("/{profile_id}")
 async def delete_web_profile(request: Request, profile_id: str) -> JSONResponse:
     """物理删除本人私有角色（释放配额）；仍被服务引用时要求先处理服务。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    profile, err = await _require_owned_profile(web_user, profile_id)
+    profile, err = await _require_owned_profile(principal, profile_id)
     if err is not None or profile is None:
         return err or _bad("not_found", "角色不存在", 404)
 
     # 本账号下的服务引用检查：删除会让这些服务失去角色，必须先改绑或删除服务
-    services = await _service_repo.list_by_account(web_user.account_id)
+    services = await _service_repo.list_by_account(principal.account_id)
     if any(s.profile_id in (profile.id, profile.slug) for s in services):
         return _bad(
             "profile_in_use",
@@ -380,6 +380,6 @@ async def delete_web_profile(request: Request, profile_id: str) -> JSONResponse:
     if not await _profile_repo.hard_delete(profile.slug):
         return _bad("not_found", "角色不存在", 404)
     logger.info(
-        "网页用户 %s 删除私有角色 %s（slug=%s）", web_user.username, profile.name, profile.slug
+        "网页用户 %s 删除私有角色 %s（slug=%s）", principal.username, profile.name, profile.slug
     )
     return JSONResponse(status_code=200, content={"id": profile.id, "deleted": True})

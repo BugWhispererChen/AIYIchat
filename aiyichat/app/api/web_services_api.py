@@ -20,7 +20,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.auth_api import AuthError, WebUser, _error, require_web_user
+from app.api.auth_api import AuthError, WebPrincipal, _error, require_current_identity
 from app.config import settings
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
@@ -81,17 +81,17 @@ async def _resolve_profile(profile_id: str) -> Optional[PromptProfileInDB]:
 
 
 async def _visible_profile_or_error(
-    web_user: WebUser, profile_ref: str
+    principal: WebPrincipal, profile_ref: str
 ) -> tuple[Optional[PromptProfileInDB], Optional[JSONResponse]]:
     """取回该账号可用（可见且启用）的角色，否则给出可读错误。"""
     profile = await _resolve_profile(profile_ref)
     if profile is None:
         return None, _bad("profile_not_found", "所选角色不存在", 404)
-    if profile.visibility == "private" and profile.account_id != web_user.account_id:
+    if profile.visibility == "private" and profile.account_id != principal.account_id:
         # 与"不存在"同响应：他人的私有角色不可枚举
         logger.warning(
             "越权尝试：登录身份 %s 试图绑定非本人角色 profile=%s",
-            web_user.username,
+            principal.username,
             profile_ref,
         )
         return None, _bad("profile_not_found", "所选角色不存在", 404)
@@ -121,9 +121,9 @@ def _service_item(
     }
 
 
-async def _items_for(web_user: WebUser) -> list[dict]:
+async def _items_for(principal: WebPrincipal) -> list[dict]:
     """把账号下所有服务渲染为前端条目（角色名按需解析，失败给占位）。"""
-    services = await _service_repo.list_by_account(web_user.account_id)
+    services = await _service_repo.list_by_account(principal.account_id)
     out: list[dict] = []
     for svc in services:
         profile = await _resolve_profile(svc.profile_id)
@@ -131,7 +131,7 @@ async def _items_for(web_user: WebUser) -> list[dict]:
             _service_item(
                 svc,
                 profile.name if profile else "（角色已失效）",
-                web_user.service_id,
+                principal.service_id,
                 profile.id if profile else "",
             )
         )
@@ -149,15 +149,15 @@ def _web_bot_or_error() -> tuple[str, Optional[JSONResponse]]:
 
 
 async def _require_owned_service(
-    web_user: WebUser, service_id: str
+    principal: WebPrincipal, service_id: str
 ) -> tuple[Optional[ServiceInDB], Optional[JSONResponse]]:
     """取回归本人的服务；不存在或属于他人时返回错误响应。"""
     svc = await _service_repo.find_by_id(service_id)
-    if svc is None or svc.account_id != web_user.account_id or svc.user_id != web_user.user_id:
+    if svc is None or svc.account_id != principal.account_id or svc.identity_id != principal.identity_id:
         if svc is not None:
             logger.warning(
                 "越权尝试：登录身份 %s 试图操作他人服务 service=%s",
-                web_user.username,
+                principal.username,
                 service_id,
             )
         return None, _bad("not_found", "服务不存在", 404)
@@ -168,16 +168,16 @@ async def _require_owned_service(
 async def list_web_services(request: Request) -> JSONResponse:
     """列出本人所有对话服务（聊天页的角色切换器数据源）。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    items = await _items_for(web_user)
+    items = await _items_for(principal)
     return JSONResponse(
         status_code=200,
         content={
             "items": items,
-            "current_service_id": web_user.service_id,
+            "current_service_id": principal.service_id,
             "can_create": settings.web_max_services > 0,
             "quota": {"limit": settings.web_max_services, "used": len(items)},
         },
@@ -190,7 +190,7 @@ async def create_web_service(
 ) -> JSONResponse:
     """新建服务：绑定系统 web Bot + 该账号可见的角色，归属字段由服务端写入。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -201,11 +201,11 @@ async def create_web_service(
     if err is not None:
         return err
 
-    profile, err = await _visible_profile_or_error(web_user, payload.profile_id)
+    profile, err = await _visible_profile_or_error(principal, payload.profile_id)
     if err is not None or profile is None:
         return err or _bad("profile_not_found", "所选角色不存在", 404)
 
-    existing = await _service_repo.list_by_account(web_user.account_id)
+    existing = await _service_repo.list_by_account(principal.account_id)
     if len(existing) >= settings.web_max_services:
         return _bad(
             "service_quota_exceeded",
@@ -213,7 +213,7 @@ async def create_web_service(
             409,
         )
 
-    name = payload.name.strip()[:_MAX_NAME_LEN] or f"web:{web_user.username}-{profile.name}"
+    name = payload.name.strip()[:_MAX_NAME_LEN] or f"web:{principal.username}-{profile.name}"
     tz_err = _timezone_error(payload.timezone.strip())
     if tz_err:
         return _bad("invalid_timezone", tz_err)
@@ -223,8 +223,8 @@ async def create_web_service(
     svc = await _service_repo.create(
         ServiceCreate(
             name=name,
-            account_id=web_user.account_id,
-            user_id=web_user.user_id,
+            account_id=principal.account_id,
+            identity_id=principal.identity_id,
             bot_id=bot_id,
             profile_id=profile.id,
             timezone=payload.timezone.strip(),
@@ -232,14 +232,14 @@ async def create_web_service(
     )
     logger.info(
         "网页用户 %s 创建服务 %s（角色=%s，当前 %d/%d）",
-        web_user.username,
+        principal.username,
         svc.name,
         profile.name,
         len(existing) + 1,
         settings.web_max_services,
     )
     return JSONResponse(
-        status_code=201, content=_service_item(svc, profile.name, web_user.service_id)
+        status_code=201, content=_service_item(svc, profile.name, principal.service_id)
     )
 
 
@@ -249,11 +249,11 @@ async def update_web_service(
 ) -> JSONResponse:
     """编辑本人服务：改角色 / 名称 / 时区 / 启停。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    svc, err = await _require_owned_service(web_user, service_id)
+    svc, err = await _require_owned_service(principal, service_id)
     if err is not None or svc is None:
         return err or _bad("not_found", "服务不存在", 404)
 
@@ -262,7 +262,7 @@ async def update_web_service(
 
     if payload.profile_id is not None and payload.profile_id.strip():
         profile, err = await _visible_profile_or_error(
-            web_user, payload.profile_id.strip()
+            principal, payload.profile_id.strip()
         )
         if err is not None or profile is None:
             return err or _bad("profile_not_found", "所选角色不存在", 404)
@@ -283,7 +283,7 @@ async def update_web_service(
     if payload.is_active is not None and payload.is_active != svc.is_active:
         # 停用前确认不是最后一个启用中的服务：否则账号直接失去聊天能力
         if not payload.is_active:
-            siblings = await _service_repo.list_by_account(web_user.account_id)
+            siblings = await _service_repo.list_by_account(principal.account_id)
             active_others = [s for s in siblings if s.id != svc.id and s.is_active]
             if not active_others:
                 return _bad(
@@ -297,7 +297,7 @@ async def update_web_service(
     if saved is None:
         return _bad("not_found", "服务不存在", 404)
     return JSONResponse(
-        status_code=200, content=_service_item(saved, profile_name, web_user.service_id)
+        status_code=200, content=_service_item(saved, profile_name, principal.service_id)
     )
 
 
@@ -305,15 +305,15 @@ async def update_web_service(
 async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
     """删除本人服务；删除后必须仍有至少一个服务，避免账号失去聊天入口。"""
     try:
-        web_user = await require_web_user(request)
+        principal = await require_current_identity(request)
     except AuthError as exc:
         return _error(exc)
 
-    svc, err = await _require_owned_service(web_user, service_id)
+    svc, err = await _require_owned_service(principal, service_id)
     if err is not None or svc is None:
         return err or _bad("not_found", "服务不存在", 404)
 
-    siblings = await _service_repo.list_by_account(web_user.account_id)
+    siblings = await _service_repo.list_by_account(principal.account_id)
     if len(siblings) <= 1:
         return _bad(
             "last_service",
@@ -323,5 +323,5 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
 
     if not await _service_repo.delete(svc.id):
         return _bad("not_found", "服务不存在", 404)
-    logger.info("网页用户 %s 删除服务 %s", web_user.username, svc.name)
+    logger.info("网页用户 %s 删除服务 %s", principal.username, svc.name)
     return JSONResponse(status_code=200, content={"id": svc.id, "deleted": True})

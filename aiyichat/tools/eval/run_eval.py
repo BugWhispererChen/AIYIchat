@@ -91,7 +91,7 @@ async def _judge(case: dict, response: str) -> dict:
         f"【角色设定】{case['persona']}\n"
         f"【已知记忆】{'; '.join(case.get('memory', [])) or '无'}\n"
         f"【对话历史】{json.dumps(case.get('history', []), ensure_ascii=False)}\n"
-        f"【用户输入】{case['user_input']}\n"
+        f"【用户输入】{case['identity_input']}\n"
         f"【AI回复】{response}"
     )
     provider = get_llm_provider("summary")

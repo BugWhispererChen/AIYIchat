@@ -9,7 +9,9 @@ class MessageInDB(BaseModel):
 
     id: str = Field(alias="_id")
     conversation_id: str
-    role: Literal["user", "assistant", "system"]  # 消息发送者角色
+    # "user" 是 OpenAI 兼容协议的 role 取值，且已作为存量值写入 messages 集合并建索引
+    # （db/mongo.py 的 messages.role 索引）。本项目把"用户"改称"身份"后，此字面量仍禁止改名。
+    role: Literal["user", "assistant", "system"]
     content: str
     content_type: Literal["text", "voice", "image", "emoji"] = "text"  # 消息内容类型
     media_url: Optional[str] = None

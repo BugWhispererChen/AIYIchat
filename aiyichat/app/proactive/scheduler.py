@@ -18,7 +18,7 @@ from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.proactive_repo import ProactiveRecordRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.proactive_record import ProactiveRecord
 from app.proactive.strategy import (
     ProactiveStage,
@@ -56,7 +56,7 @@ class ProactiveScheduler:
         self._task: Optional[asyncio.Task] = None
         self._proactive_repo = ProactiveRecordRepository()
         self._service_repo = ServiceRepository()
-        self._user_repo = UserRepository()
+        self._identity_repo = IdentityRepository()
         self._msg_repo = MessageRepository()
         self._memory_repo = ServiceMemoryRepository()
         # 平台管理器引用（启动时注入）
@@ -103,7 +103,7 @@ class ProactiveScheduler:
                 await track_error(e, context={"component": "proactive_scheduler"})
             await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
-    def _is_quiet_hours(self, service: object = None, user: object = None) -> bool:
+    def _is_quiet_hours(self, service: object = None, identity: object = None) -> bool:
         """判断当前是否处于免打扰时段（**对方本地时区**，配置驱动，默认 22:00-08:00）。
 
         时区走解析链 service.timezone → user.timezone → 全局默认偏移：
@@ -119,7 +119,7 @@ class ProactiveScheduler:
             return False
         tz, _label = resolve_tz(
             getattr(service, "timezone", "") or "",
-            getattr(user, "timezone", "") or "",
+            getattr(identity, "timezone", "") or "",
         )
         hour = datetime.now(tz).hour
         if start > end:
@@ -163,35 +163,35 @@ class ProactiveScheduler:
     async def _process_service(self, service, cutoff: datetime) -> None:
         """处理单个服务的主动消息逻辑。"""
         # 获取用户信息
-        user = await self._user_repo.find_by_id(service.user_id)
-        if user is None:
-            logger.debug("跳过：用户不存在 service_id=%s, user_id=%s", service.id, service.user_id)
+        identity = await self._identity_repo.find_by_id(service.identity_id)
+        if identity is None:
+            logger.debug("跳过：用户不存在 service_id=%s, user_id=%s", service.id, service.identity_id)
             return
         # 跳过被禁用的用户
-        if user.is_blocked:
-            logger.debug("跳过被禁用用户: user_id=%s", user.id)
+        if identity.is_blocked:
+            logger.debug("跳过被禁用用户: user_id=%s", identity.id)
             return
         # 跳过没有绑定真实平台ID的用户（UUID格式 = 未绑定）
-        if self._is_uuid(user.platform_id):
-            logger.debug("跳过未绑定用户: user_id=%s", user.id)
+        if self._is_uuid(identity.platform_id):
+            logger.debug("跳过未绑定用户: user_id=%s", identity.id)
             return
 
         # 主动消息仅支持 QQ/微信平台（web 等无主动推送通道，ProactiveRecord 亦不接受）
-        if user.platform not in ("qq", "wechat"):
+        if identity.platform not in ("qq", "wechat"):
             logger.debug(
                 "跳过非推送平台用户: user_id=%s, platform=%s",
-                user.id, user.platform,
+                identity.id, identity.platform,
             )
             return
 
         # 发送目标按 Bot 路由：QQ openid 按 appid 生成，同一用户在不同 Bot 下不同，
         # 直接用 user.platform_id（随最近互动的 Bot 被覆盖）会导致其他 Bot 发送被平台拒绝
-        target_id = self._resolve_platform_id(user, service.bot_id)
+        target_id = self._resolve_platform_id(identity, service.bot_id)
 
         # 同 Bot 服务级冷却：一小时内该 (用户, Bot) 已发过主动消息则本轮跳过，
         # 防止同 Bot 下多个服务秒级连发；不同 Bot 的服务互不影响，均可独立触达
         last_sent = await self._proactive_repo.get_latest_sent(
-            user_id=user.id, bot_id=service.bot_id
+            identity_id=identity.id, bot_id=service.bot_id
         )
         if last_sent is not None and last_sent.sent_at is not None:
             since_sent = (
@@ -201,13 +201,13 @@ class ProactiveScheduler:
             if since_sent < SEND_COOLDOWN_SECONDS:
                 logger.debug(
                     "跳过：同 Bot 冷却期内 user_id=%s, bot_id=%s, elapsed=%.0fs",
-                    user.id, service.bot_id, since_sent,
+                    identity.id, service.bot_id, since_sent,
                 )
                 return
 
         # 事件驱动跟进（优先于阶段策略），由开关控制
         if settings.proactive_event_enabled:
-            if await self._process_pending_events(service, user):
+            if await self._process_pending_events(service, identity):
                 return
 
         # 统一时区工具：MongoDB 中的时间可能是 naive（无时区），需转为 aware
@@ -220,15 +220,15 @@ class ProactiveScheduler:
 
         # 计时基准：取用户维度和服务维度的最后活跃时间的较大值
         # 防止「用户在另一个服务里刚刚活跃，本服务却被误判为长时间未活跃」的情况
-        user_last_active = _to_aware(user.last_active_at)
+        identity_last_active = _to_aware(identity.last_active_at)
         service_last_message = _to_aware(getattr(service, "last_message_at", None))
-        last_active = max(user_last_active, service_last_message)
+        last_active = max(identity_last_active, service_last_message)
 
         # 跳过超过30天未活跃的用户
         if last_active < cutoff:
             logger.debug(
                 "跳过超期用户: user_id=%s, last_active=%s, cutoff=%s",
-                user.id, last_active.isoformat(), cutoff.isoformat(),
+                identity.id, last_active.isoformat(), cutoff.isoformat(),
             )
             return
         # 跳过最近刚活跃的用户（至少1小时后才发第一条，匹配QQ召回消息当天周期）
@@ -236,7 +236,7 @@ class ProactiveScheduler:
         if (now - last_active).total_seconds() < 1 * 3600:
             logger.debug(
                 "跳过刚活跃用户: user_id=%s, last_active=%s, elapsed=%.2fh",
-                user.id, last_active.isoformat(),
+                identity.id, last_active.isoformat(),
                 (now - last_active).total_seconds() / 3600,
             )
             return
@@ -244,7 +244,7 @@ class ProactiveScheduler:
         # 查询该用户已尝试的阶段（成功发送 或 失败次数达上限）
         # 失败达上限即抑制后续重试，避免每轮扫描都重新调用 LLM 生成内容而耗尽额度
         attempted_stages = await self._proactive_repo.get_attempted_stages(
-            user_id=user.id,
+            identity_id=identity.id,
             bot_id=service.bot_id,
             since=last_active,
             max_retries=settings.proactive_max_retries,
@@ -252,40 +252,40 @@ class ProactiveScheduler:
 
         # 免打扰时段控制：提前到阶段判定之前，避免无谓的阶段计算
         # 处于深夜时段则跳过本轮，等待下一轮扫描（白天后自动触发）
-        if self._is_quiet_hours(service, user):
-            logger.info("免打扰时段，跳过本轮: user=%s", user.id)
+        if self._is_quiet_hours(service, identity):
+            logger.info("免打扰时段，跳过本轮: user=%s", identity.id)
             return
 
         # 判断当前应发送的阶段
         stage = get_pending_stage(
             last_active_at=last_active,
             sent_stages=attempted_stages,
-            platform=user.platform,
+            platform=identity.platform,
         )
         if stage is None:
             logger.debug(
                 "跳过：无待发送阶段 user_id=%s, attempted_stages=%s",
-                user.id, attempted_stages,
+                identity.id, attempted_stages,
             )
             return
 
         # 月配额硬上限校验：防止异常情况下超发（QQ 官方约束每月四条）
         monthly_sent = await self._proactive_repo.count_sent_this_month(
-            user_id=user.id, bot_id=service.bot_id, platform=user.platform
+            identity_id=identity.id, bot_id=service.bot_id, platform=identity.platform
         )
         if monthly_sent >= settings.proactive_monthly_limit:
             logger.info(
                 "跳过：已达每月主动消息上限 user_id=%s, sent=%d, limit=%d",
-                user.id, monthly_sent, settings.proactive_monthly_limit,
+                identity.id, monthly_sent, settings.proactive_monthly_limit,
             )
             return
 
         # 发送通道预检：在调用 LLM 生成内容之前判断能否发送，
         # 通道不可用（QQ限流退避 / 微信无context_token）时直接跳过，不消耗额度
-        if not self._can_send(user.platform, service.bot_id, target_id):
+        if not self._can_send(identity.platform, service.bot_id, target_id):
             logger.info(
                 "跳过：发送通道不可用（预检未通过）user_id=%s, platform=%s, stage=%d",
-                user.id, user.platform, stage.stage,
+                identity.id, identity.platform, stage.stage,
             )
             return
 
@@ -304,9 +304,9 @@ class ProactiveScheduler:
 
         # 先创建 pending 记录（生成或发送失败也留痕，用于统计与重试熔断）
         record = ProactiveRecord(
-            user_id=user.id,
-            platform_user_id=target_id,
-            platform=user.platform,
+            identity_id=identity.id,
+            platform_openid=target_id,
+            platform=identity.platform,
             bot_id=service.bot_id,
             stage=stage.stage,
             content_type=content_type,
@@ -317,29 +317,29 @@ class ProactiveScheduler:
         referenced_event = ""
         if content_type == "care":
             content, referenced_event = await self._generate_content(
-                user=user,
+                identity=identity,
                 service=service,
                 stage=stage,
             )
         else:
             content = await self._generate_share_content(
-                user=user,
+                identity=identity,
                 service=service,
                 share_kind=content_type,
             )
         if not content:
             logger.debug(
                 "跳过：消息内容生成为空 user_id=%s, stage=%d",
-                user.id, stage.stage,
+                identity.id, stage.stage,
             )
             await self._proactive_repo.mark_failed(record.id, "内容生成为空")
             return
 
         # 执行发送
         success = await self._send_message(
-            platform=user.platform,
+            platform=identity.platform,
             bot_id=service.bot_id,
-            user_platform_id=target_id,
+            platform_id=target_id,
             content=content,
         )
 
@@ -353,7 +353,7 @@ class ProactiveScheduler:
                 )
             logger.info(
                 "主动消息发送成功: user=%s, stage=%d, platform=%s, type=%s",
-                user.id, stage.stage, user.platform, content_type,
+                identity.id, stage.stage, identity.platform, content_type,
             )
         else:
             await self._proactive_repo.mark_failed(
@@ -361,7 +361,7 @@ class ProactiveScheduler:
             )
 
     async def _generate_content(
-        self, user, service, stage: ProactiveStage
+        self, identity, service, stage: ProactiveStage
     ) -> tuple[str, str]:
         """
         通过 LLM 生成主动消息内容。
@@ -446,17 +446,17 @@ class ProactiveScheduler:
 
             # 获取最近一次主动消息内容用于去重
             last_record = await self._proactive_repo.get_latest_sent(
-                user_id=user.id, bot_id=service.bot_id
+                identity_id=identity.id, bot_id=service.bot_id
             )
             last_content = last_record.content if last_record else ""
 
             # 获取用户本地时间与时间感知提示（用于生成与时间匹配的内容）
-            user_now, time_context, time_hint = self._time_hint(service, user)
+            identity_now, time_context, time_hint = self._time_hint(service, identity)
 
             # 组装提示词：指示 LLM 生成主动关怀消息（注入时间感知）
             proactive_instruction = (
                 f"现在你需要主动给对方发一条消息。"
-                f"当前时间是{time_context}（{user_now.strftime('%H:%M')}），"
+                f"当前时间是{time_context}（{identity_now.strftime('%H:%M')}），"
                 f"{time_hint}。"
                 f"要求：{content_hint}。"
                 f"注意：消息要自然、简短（不超过50字），符合你的角色人设，"
@@ -476,9 +476,9 @@ class ProactiveScheduler:
             messages = assembler.assemble(
                 profile=profile,
                 history=history[-6:],  # 只取最近几轮作为上下文
-                user_input=proactive_instruction,
+                identity_input=proactive_instruction,
                 emotion_hint="",
-                user=user,
+                identity=identity,
                 memory_facts=memory_facts[:5],
                 current_topic="",
                 gap_mode="proactive",
@@ -504,13 +504,13 @@ class ProactiveScheduler:
 
             await track_error(e, context={
                 "component": "proactive_content",
-                "user_id": user.id,
+                "identity_id": identity.id,
                 "service_id": service.id,
             })
             return "", ""
 
     def _time_hint(
-        self, service: object = None, user: object = None
+        self, service: object = None, identity: object = None
     ) -> tuple[datetime, str, str]:
         """获取对方本地时间与时间感知提示（关怀型/分享型共用）。
 
@@ -523,27 +523,27 @@ class ProactiveScheduler:
         """
         tz, _label = resolve_tz(
             getattr(service, "timezone", "") or "",
-            getattr(user, "timezone", "") or "",
+            getattr(identity, "timezone", "") or "",
         )
-        user_now = datetime.now(tz)
-        current_hour = user_now.hour
+        identity_now = datetime.now(tz)
+        current_hour = identity_now.hour
         if 0 <= current_hour < 5:
-            return user_now, "凌晨", "可以温柔提醒对方早点休息"
+            return identity_now, "凌晨", "可以温柔提醒对方早点休息"
         if 5 <= current_hour < 9:
-            return user_now, "清晨", "可以问候早安、关心对方是否睡得好、今天有什么计划"
+            return identity_now, "清晨", "可以问候早安、关心对方是否睡得好、今天有什么计划"
         if 9 <= current_hour < 12:
-            return user_now, "上午", "可以关心对方上午的工作/学习状态"
+            return identity_now, "上午", "可以关心对方上午的工作/学习状态"
         if 12 <= current_hour < 14:
-            return user_now, "中午", "可以关心对方吃午饭了吗、午休情况"
+            return identity_now, "中午", "可以关心对方吃午饭了吗、午休情况"
         if 14 <= current_hour < 18:
-            return user_now, "下午", "可以关心对方下午的工作进展、是否累了需要休息"
+            return identity_now, "下午", "可以关心对方下午的工作进展、是否累了需要休息"
         if 18 <= current_hour < 22:
-            return user_now, "晚上", "可以关心对方晚饭、今天的收获、放松休息"
+            return identity_now, "晚上", "可以关心对方晚饭、今天的收获、放松休息"
         # 22-24 深夜（兜底，正常不会触发）
-        return user_now, "深夜", "可以温柔提醒对方早点休息"
+        return identity_now, "深夜", "可以温柔提醒对方早点休息"
 
     async def _generate_share_content(
-        self, user, service, share_kind: str
+        self, identity, service, share_kind: str
     ) -> str:
         """生成"分享型"主动消息内容（联网时事 / 创作趣事）。
 
@@ -611,11 +611,11 @@ class ProactiveScheduler:
 
             # 最近一次主动消息内容用于去重
             last_record = await self._proactive_repo.get_latest_sent(
-                user_id=user.id, bot_id=service.bot_id
+                identity_id=identity.id, bot_id=service.bot_id
             )
             last_content = last_record.content if last_record else ""
 
-            user_now, time_context, _ = self._time_hint(service, user)
+            identity_now, time_context, _ = self._time_hint(service, identity)
 
             # 按类型构造内容指令：news=联网热点改写，trivia=创作普适趣事（禁写时事新闻）
             if share_kind == "news":
@@ -637,7 +637,7 @@ class ProactiveScheduler:
 
             proactive_instruction = (
                 f"{share_instruction}"
-                f"现在是{time_context}（{user_now.strftime('%H:%M')}），语气要贴合时间段。"
+                f"现在是{time_context}（{identity_now.strftime('%H:%M')}），语气要贴合时间段。"
                 f"消息要自然、简短（不超过50字），符合你的角色人设，"
                 f"不要提及'主动消息''定时发送''搜索'等概念。"
             )
@@ -650,9 +650,9 @@ class ProactiveScheduler:
             messages = assembler.assemble(
                 profile=profile,
                 history=history[-6:],  # 只取最近几轮作为上下文
-                user_input=proactive_instruction,
+                identity_input=proactive_instruction,
                 emotion_hint="",
-                user=user,
+                identity=identity,
                 memory_facts=memory_facts[:5],
                 current_topic="",
                 gap_mode="proactive",
@@ -671,16 +671,16 @@ class ProactiveScheduler:
                     # 联网搜索失败降级为趣事，保证触达率（避免编造时事）
                     logger.warning("分享型联网搜索调用失败，降级为趣事: %s", e)
                     return await self._generate_share_content(
-                        user, service, "trivia"
+                        identity, service, "trivia"
                     )
                 raise
             response = ResponseProcessor.strip_time_tags(response).strip()
             if not response and share_kind == "news":
                 logger.warning(
-                    "分享型时事内容为空，降级为趣事: user=%s", user.id
+                    "分享型时事内容为空，降级为趣事: user=%s", identity.id
                 )
                 return await self._generate_share_content(
-                    user, service, "trivia"
+                    identity, service, "trivia"
                 )
             # 截断过长的回复
             if len(response) > 100:
@@ -694,12 +694,12 @@ class ProactiveScheduler:
 
             await track_error(e, context={
                 "component": "proactive_share",
-                "user_id": user.id,
+                "identity_id": identity.id,
                 "service_id": service.id,
             })
             return ""
 
-    async def _process_pending_events(self, service, user) -> bool:
+    async def _process_pending_events(self, service, identity) -> bool:
         """检查并处理到期的待跟进事件，返回是否已发送事件消息。"""
         now = datetime.now(timezone.utc)
         memory = await self._memory_repo.find_by_service(service.context_key)
@@ -718,28 +718,28 @@ class ProactiveScheduler:
             return False
 
         # 免打扰时段：等待下一轮
-        if self._is_quiet_hours(service, user):
-            logger.info("免打扰时段，延迟事件跟进: user=%s", user.id)
+        if self._is_quiet_hours(service, identity):
+            logger.info("免打扰时段，延迟事件跟进: user=%s", identity.id)
             return False
 
         event = due_events[0]
 
         # 发送目标按 Bot 路由（同阶段策略路径）
-        target_id = self._resolve_platform_id(user, service.bot_id)
+        target_id = self._resolve_platform_id(identity, service.bot_id)
 
         # 发送通道预检：通道不可用时跳过本轮（返回 True 不再叠加阶段策略），不消耗额度
-        if not self._can_send(user.platform, service.bot_id, target_id):
+        if not self._can_send(identity.platform, service.bot_id, target_id):
             logger.info(
                 "跳过事件跟进：发送通道不可用（预检未通过）user=%s",
-                user.id,
+                identity.id,
             )
             return True
 
         # 先创建 pending 记录（生成或发送失败也留痕）
         record = ProactiveRecord(
-            user_id=user.id,
-            platform_user_id=target_id,
-            platform=user.platform,
+            identity_id=identity.id,
+            platform_openid=target_id,
+            platform=identity.platform,
             bot_id=service.bot_id,
             stage=0,  # 0 表示事件驱动（非阶段策略）
         )
@@ -747,16 +747,16 @@ class ProactiveScheduler:
 
         # 生成事件跟进内容（此步消耗 LLM 额度，故置于预检之后）
         content = await self._generate_event_content(
-            user, service, event.content
+            identity, service, event.content
         )
         if not content:
             await self._proactive_repo.mark_failed(record.id, "内容生成为空")
             return True
 
         success = await self._send_message(
-            platform=user.platform,
+            platform=identity.platform,
             bot_id=service.bot_id,
-            user_platform_id=target_id,
+            platform_id=target_id,
             content=content,
         )
         if success:
@@ -766,7 +766,7 @@ class ProactiveScheduler:
             )
             logger.info(
                 "事件跟进发送成功: user=%s, event='%s'",
-                user.id, event.content[:20],
+                identity.id, event.content[:20],
             )
         else:
             await self._proactive_repo.mark_failed(
@@ -782,7 +782,7 @@ class ProactiveScheduler:
         return dt
 
     async def _generate_event_content(
-        self, user, service, event_content: str
+        self, identity, service, event_content: str
     ) -> str:
         """为到期事件生成主动跟进消息内容。"""
         try:
@@ -831,9 +831,9 @@ class ProactiveScheduler:
             messages = assembler.assemble(
                 profile=profile,
                 history=history[-6:],
-                user_input=instruction,
+                identity_input=instruction,
                 emotion_hint="",
-                user=user,
+                identity=identity,
                 current_topic="",
                 gap_mode="proactive",
             )
@@ -855,7 +855,7 @@ class ProactiveScheduler:
         self,
         platform: str,
         bot_id: str,
-        user_platform_id: str,
+        platform_id: str,
         content: str,
     ) -> bool:
         """通过对应平台的 adapter 发送消息。
@@ -865,27 +865,27 @@ class ProactiveScheduler:
         """
         self._last_send_detail = ""
         if platform == "qq":
-            return await self._send_qq(bot_id, user_platform_id, content)
+            return await self._send_qq(bot_id, platform_id, content)
         elif platform == "wechat":
-            return await self._send_wechat(bot_id, user_platform_id, content)
+            return await self._send_wechat(bot_id, platform_id, content)
         else:
             logger.warning("不支持的平台主动消息: %s", platform)
             self._last_send_detail = f"不支持的推送平台: {platform}"
             return False
 
     @staticmethod
-    def _resolve_platform_id(user, bot_id: str) -> str:
+    def _resolve_platform_id(identity, bot_id: str) -> str:
         """解析用户在指定 Bot 下的发送目标 openid。
 
         QQ 的 openid 按 appid 生成，同一用户在不同 Bot 下并不相同；
         优先取 bot_openids 中该 Bot 的映射，缺失时回退 user.platform_id
         （存量数据与单 Bot 场景兜底）。
         """
-        mapping = getattr(user, "bot_openids", None) or {}
-        return mapping.get(bot_id) or user.platform_id
+        mapping = getattr(identity, "bot_openids", None) or {}
+        return mapping.get(bot_id) or identity.platform_id
 
     def _can_send(
-        self, platform: str, bot_id: str, user_platform_id: str
+        self, platform: str, bot_id: str, platform_id: str
     ) -> bool:
         """发送前的轻量通道预检（不消耗 LLM 额度）。
 
@@ -912,9 +912,9 @@ class ProactiveScheduler:
                 return True
             # 群聊用户：platform_id 格式为 group_id::member_openid，
             # 限流预检使用 member_openid 部分
-            check_id = user_platform_id
-            if "::" in user_platform_id:
-                check_id = user_platform_id.split("::", 1)[1]
+            check_id = platform_id
+            if "::" in platform_id:
+                check_id = platform_id.split("::", 1)[1]
             return bool(checker(check_id))
         except Exception as e:
             logger.warning("发送通道预检异常（默认放行）: %s", e)
@@ -930,8 +930,8 @@ class ProactiveScheduler:
             最近出现频率最高的情绪标签，或None
         """
         messages = await self._msg_repo.get_recent(conversation_id, 10)
-        user_messages = [m for m in messages if m.role == "user"]
-        emotions = [m.emotion_tag for m in user_messages if m.emotion_tag]
+        identity_messages = [m for m in messages if m.role == "user"]
+        emotions = [m.emotion_tag for m in identity_messages if m.emotion_tag]
         if not emotions:
             return None
         # 取最近出现频率最高的情绪
@@ -959,14 +959,14 @@ class ProactiveScheduler:
         if "::" in user_openid:
             group_id, member_openid = user_openid.split("::", 1)
             ok = await client.send_proactive(
-                user_id=member_openid,
+                identity_id=member_openid,
                 content=content,
                 is_group=True,
                 group_id=group_id,
             )
         else:
             ok = await client.send_proactive(
-                user_id=user_openid, content=content
+                identity_id=user_openid, content=content
             )
         if not ok:
             # 透传适配器记录的 QQ 真实错误码/消息（无则留空，由调用方兜底文案）
@@ -974,7 +974,7 @@ class ProactiveScheduler:
         return ok
 
     async def _send_wechat(
-        self, bot_id: str, user_id: str, content: str
+        self, bot_id: str, identity_id: str, content: str
     ) -> bool:
         """通过微信Bot发送主动消息（依赖缓存的 context_token）。"""
         if self._wechat_manager is None:
@@ -988,7 +988,7 @@ class ProactiveScheduler:
                 f"WeChat Bot 客户端未找到（未连接或已下线）: {bot_id}"
             )
             return False
-        ok = await client.send_proactive(user_id=user_id, content=content)
+        ok = await client.send_proactive(identity_id=identity_id, content=content)
         if not ok:
             self._last_send_detail = getattr(client, "last_send_error", "") or ""
         return ok

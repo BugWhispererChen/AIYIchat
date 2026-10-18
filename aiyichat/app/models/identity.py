@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
-class UserCreate(BaseModel):
+class IdentityCreate(BaseModel):
     """创建用户。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -16,14 +16,14 @@ class UserCreate(BaseModel):
     platform_id: str = Field(default_factory=lambda: str(uuid4()))
     platform: Literal["qq", "wechat", "web"] = "qq"
     nickname: str = ""
-    identity_description: str = ""  # 用户身份描述，供 LLM 参考
+    self_description: str = ""  # 用户身份描述，供 LLM 参考
     timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空串回落全局默认偏移
     is_minor: bool = False  # 是否为未成年人（启用防沉迷与内容限制）
     is_blocked: bool = False  # 是否被禁用
     block_reason: str = ""  # 禁用原因
 
 
-class UserInDB(UserCreate):
+class IdentityInDB(IdentityCreate):
     """数据库中的用户记录。"""
 
     account_id: str = ""  # 兼容旧数据：允许空值作为默认值
@@ -42,8 +42,8 @@ class UserInDB(UserCreate):
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
-        # 兼容旧数据：identity_description / is_blocked / block_reason / is_minor 可能不存在
-        doc.setdefault("identity_description", "")
+        # 兼容旧数据：self_description / is_blocked / block_reason / is_minor 可能不存在
+        doc.setdefault("self_description", "")
         doc.setdefault("timezone", "")
         doc.setdefault("is_minor", False)
         doc.setdefault("is_blocked", False)
@@ -52,7 +52,7 @@ class UserInDB(UserCreate):
         return cls(**doc)
 
 
-class UserUpdate(BaseModel):
+class IdentityUpdate(BaseModel):
     """更新用户信息。"""
 
     account_id: str | None = None
@@ -60,7 +60,7 @@ class UserUpdate(BaseModel):
     platform_id: str | None = None
     platform: Literal["qq", "wechat", "web"] | None = None
     nickname: str | None = None
-    identity_description: str | None = None
+    self_description: str | None = None
     timezone: str | None = None  # IANA 时区名，空串回落全局默认偏移
     is_minor: bool | None = None
     is_blocked: bool | None = None

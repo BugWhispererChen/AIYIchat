@@ -6,12 +6,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.auth_api import AuthError, WebUser, require_web_user
+from app.api.auth_api import AuthError, WebPrincipal, require_current_identity
 from app.config import settings
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.models.web_identity import normalize_username
+from app.models.web_credential import normalize_username
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ class StreamChatRequest(BaseModel):
     service_id: str = ""
 
 
-async def _require_web_user_or_401(request: Request) -> WebUser:
+async def _require_current_identity_or_401(request: Request) -> WebPrincipal:
     """开启网页鉴权时解析会话身份，失败转 HTTPException。"""
     try:
-        return await require_web_user(request)
+        return await require_current_identity(request)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -48,23 +48,23 @@ async def _require_web_user_or_401(request: Request) -> WebUser:
 @conversations_router.get("")
 async def list_conversations(
     request: Request,
-    user_id: Optional[str] = None,
+    identity_id: Optional[str] = None,
     service_id: Optional[str] = None,
 ):
-    """获取对话列表，可按用户ID或服务ID过滤。
+    """获取对话列表，可按身份ID或服务ID过滤。
 
-    开启网页鉴权后只允许访问自己的数据：入参 user_id 与令牌身份不符即 403，
-    service_id 必须归属当前用户（历史越权读取面的封堵点）。
+    开启网页鉴权后只允许访问自己的数据：入参 identity_id 与令牌身份不符即 403，
+    service_id 必须归属当前身份（历史越权读取面的封堵点）。
     """
     if settings.web_auth_enabled:
-        web_user = await _require_web_user_or_401(request)
-        if user_id is not None and user_id != web_user.user_id:
-            raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+        principal = await _require_current_identity_or_401(request)
+        if identity_id is not None and identity_id != principal.identity_id:
+            raise HTTPException(status_code=403, detail="无权访问其他身份的数据")
         if service_id is not None:
             svc = await _service_repo.find_by_id(service_id)
-            if svc is None or svc.user_id != web_user.user_id:
+            if svc is None or svc.identity_id != principal.identity_id:
                 raise HTTPException(status_code=403, detail="无权访问该服务的数据")
-        user_id = web_user.user_id
+        identity_id = principal.identity_id
     if service_id:
         # 服务设置共享组时，补充组 key 下的共享会话（含加入前的自身历史）
         convs = await _conv_repo.list_by_service(service_id)
@@ -72,15 +72,15 @@ async def list_conversations(
         if service and service.share_group_id:
             convs += await _conv_repo.list_by_service(service.share_group_id)
             convs.sort(key=lambda c: c.last_message_at, reverse=True)
-    elif user_id:
-        convs = await _conv_repo.list_by_user(user_id)
+    elif identity_id:
+        convs = await _conv_repo.list_by_identity(identity_id)
     else:
         # 简单实现：不带过滤条件时返回空列表（生产环境应分页）
         return []
     return [
         {
             "id": c.id,
-            "user_id": c.user_id,
+            "identity_id": c.identity_id,
             "profile_id": c.profile_id,
             "service_id": c.service_id,
             "message_count": c.message_count,
@@ -101,8 +101,8 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if settings.web_auth_enabled:
-        web_user = await _require_web_user_or_401(request)
-        if conv.user_id != web_user.user_id:
+        principal = await _require_current_identity_or_401(request)
+        if conv.identity_id != principal.identity_id:
             raise HTTPException(status_code=403, detail="无权读取该对话的消息")
 
     messages = await _msg_repo.get_recent(conversation_id, limit)
@@ -129,31 +129,31 @@ async def chat_stream(req: StreamChatRequest, request: Request):
     from app.conversation.engine import ConversationEngine
 
     if settings.web_auth_enabled:
-        web_user = await _require_web_user_or_401(request)
+        principal = await _require_current_identity_or_401(request)
         # 显式传入却不匹配 → 视为冒充尝试：拒绝并留审计日志（比静默忽略更能暴露攻击）
-        if req.platform_id and normalize_username(req.platform_id) != web_user.username:
+        if req.platform_id and normalize_username(req.platform_id) != principal.username:
             logger.warning(
                 "越权尝试：登录身份 %s 试图以 platform_id=%s 冒充他人会话",
-                web_user.username,
+                principal.username,
                 req.platform_id,
             )
             raise HTTPException(status_code=403, detail="platform_id 与登录身份不匹配")
-        if req.bot_id and req.bot_id != web_user.bot_id:
+        if req.bot_id and req.bot_id != principal.bot_id:
             logger.warning(
-                "越权尝试：登录身份 %s 试图指定未授权的 bot_id=%s", web_user.username, req.bot_id
+                "越权尝试：登录身份 %s 试图指定未授权的 bot_id=%s", principal.username, req.bot_id
             )
             raise HTTPException(status_code=403, detail="无权使用该 Bot")
-        bot_id = web_user.bot_id
-        platform, platform_id = "web", web_user.username
-        nickname = req.nickname or web_user.username
+        bot_id = principal.bot_id
+        platform, platform_id = "web", principal.username
+        nickname = req.nickname or principal.username
         # 指定服务时校验归属：只能对话自己名下的服务（多角色切换的越权面）
         service_id = req.service_id.strip()
         if service_id:
             svc = await _service_repo.find_by_id(service_id)
-            if svc is None or svc.user_id != web_user.user_id:
+            if svc is None or svc.identity_id != principal.identity_id:
                 logger.warning(
                     "越权尝试：登录身份 %s 试图使用他人服务 service_id=%s",
-                    web_user.username,
+                    principal.username,
                     service_id,
                 )
                 raise HTTPException(status_code=403, detail="无权使用该服务")

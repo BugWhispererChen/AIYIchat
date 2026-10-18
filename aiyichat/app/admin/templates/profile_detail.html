@@ -25,7 +25,7 @@
     <!-- 左侧锚点导航 -->
     <aside class="anchor-nav">
         <a href="#sec-basic">基本信息</a>
-        <a href="#sec-identity">身份信息</a>
+        <a href="#sec-persona">人设背景</a>
         <a href="#sec-refimg">定妆照</a>
         <a href="#sec-language">语言风格</a>
         <a href="#sec-personality">性格特征</a>
@@ -80,31 +80,31 @@
             </div>
         </div>
 
-        <!-- 身份信息 -->
-        <div class="card section-card" id="sec-identity">
-            <h4>身份信息 (Identity)</h4>
+        <!-- 人设背景 -->
+        <div class="card section-card" id="sec-persona">
+            <h4>人设背景 (Persona)</h4>
             <label>背景故事
-                <textarea name="identity_background" rows="4">{{ profile.identity.background }}</textarea>
+                <textarea name="persona_background" rows="4">{{ profile.persona.background }}</textarea>
             </label>
             <div class="grid">
                 <label>时代
-                    <input type="text" name="identity_era" value="{{ profile.identity.era }}">
+                    <input type="text" name="persona_era" value="{{ profile.persona.era }}">
                 </label>
                 <label>外观/年龄
-                    <input type="text" name="identity_age_appearance" value="{{ profile.identity.age_appearance }}">
+                    <input type="text" name="persona_age_appearance" value="{{ profile.persona.age_appearance }}">
                 </label>
             </div>
             <label>外貌特征 <small class="field-hint">(英文，用于图片生成保持形象一致，如 a young woman with long black hair, ...)</small>
-                <textarea name="identity_appearance" rows="2">{{ profile.identity.appearance }}</textarea>
+                <textarea name="persona_appearance" rows="2">{{ profile.persona.appearance }}</textarea>
             </label>
             <label>核心价值观 <small class="field-hint">(每行一个)</small>
-                <textarea name="identity_core_values" rows="3">{{ profile.identity.core_values | join('\n') }}</textarea>
+                <textarea name="persona_core_values" rows="3">{{ profile.persona.core_values | join('\n') }}</textarea>
             </label>
 
             <details>
-                <summary style="cursor:pointer;color:var(--primary);font-weight:500;">关系列表 ({{ profile.identity.relationships | length }} 个)</summary>
+                <summary style="cursor:pointer;color:var(--primary);font-weight:500;">关系列表 ({{ profile.persona.relationships | length }} 个)</summary>
                 <div id="relationships-container" style="margin-top:0.6rem;">
-                    {% for rel in profile.identity.relationships %}
+                    {% for rel in profile.persona.relationships %}
                     <div class="grid" style="margin-bottom:0.5rem;">
                         <input type="text" name="rel_name" value="{{ rel.name }}" placeholder="名称">
                         <input type="text" name="rel_relation" value="{{ rel.relation }}" placeholder="关系">

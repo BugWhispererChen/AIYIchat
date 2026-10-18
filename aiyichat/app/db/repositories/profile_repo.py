@@ -105,7 +105,7 @@ class ProfileRepository:
         if not update_data:
             return await self.find_by_slug(slug)
         # 嵌套对象需要转为dict
-        for key in ("identity", "language_style", "personality", "dialogue_strategy"):
+        for key in ("persona", "language_style", "personality", "dialogue_strategy"):
             if key in update_data and hasattr(update_data[key], "model_dump"):
                 update_data[key] = update_data[key].model_dump()
         update_data["updated_at"] = datetime.now(timezone.utc)

@@ -15,11 +15,11 @@ class ConversationRepository:
         return get_database().conversations
 
     async def find_active(
-        self, user_id: str, profile_id: str, service_id: str
+        self, identity_id: str, profile_id: str, service_id: str
     ) -> Optional[ConversationInDB]:
         """按用户ID、角色ID和服务ID查询活跃对话。"""
         doc = await self._collection().find_one({
-            "user_id": user_id,
+            "identity_id": identity_id,
             "profile_id": profile_id,
             "service_id": service_id,
             "status": "active",
@@ -36,12 +36,12 @@ class ConversationRepository:
         return ConversationInDB.from_mongo(doc)
 
     async def create(
-        self, user_id: str, profile_id: str, service_id: str, title: str = ""
+        self, identity_id: str, profile_id: str, service_id: str, title: str = ""
     ) -> ConversationInDB:
         """创建新对话。"""
         now = datetime.now(timezone.utc)
         doc = {
-            "user_id": user_id,
+            "identity_id": identity_id,
             "profile_id": profile_id,
             "service_id": service_id,
             "title": title,
@@ -57,13 +57,13 @@ class ConversationRepository:
         return ConversationInDB.from_mongo(doc)
 
     async def find_or_create(
-        self, user_id: str, profile_id: str, service_id: str
+        self, identity_id: str, profile_id: str, service_id: str
     ) -> ConversationInDB:
         """查找或创建活跃对话。"""
-        conv = await self.find_active(user_id, profile_id, service_id)
+        conv = await self.find_active(identity_id, profile_id, service_id)
         if conv is not None:
             return conv
-        return await self.create(user_id, profile_id, service_id)
+        return await self.create(identity_id, profile_id, service_id)
 
     async def find_active_by_key(
         self, context_key: str
@@ -78,13 +78,13 @@ class ConversationRepository:
         return ConversationInDB.from_mongo(doc)
 
     async def find_or_create_by_key(
-        self, user_id: str, profile_id: str, context_key: str
+        self, identity_id: str, profile_id: str, context_key: str
     ) -> ConversationInDB:
         """按归属 key 查找活跃对话，不存在时以当前用户与角色创建。"""
         conv = await self.find_active_by_key(context_key)
         if conv is not None:
             return conv
-        return await self.create(user_id, profile_id, context_key)
+        return await self.create(identity_id, profile_id, context_key)
 
     async def update_after_message(self, conversation_id: str, count: int = 1) -> None:
         """更新对话消息计数和最后消息时间。"""
@@ -125,10 +125,10 @@ class ConversationRepository:
             {"$set": update_fields},
         )
 
-    async def list_by_user(self, user_id: str) -> list[ConversationInDB]:
+    async def list_by_identity(self, identity_id: str) -> list[ConversationInDB]:
         """按用户ID查询对话列表。"""
         cursor = self._collection().find(
-            {"user_id": user_id}
+            {"identity_id": identity_id}
         ).sort("last_message_at", -1)
         return [ConversationInDB.from_mongo(doc) async for doc in cursor]
 
@@ -162,7 +162,7 @@ class ConversationRepository:
         regex = {"$regex": q, "$options": "i"}
         cursor = (
             self._collection()
-            .find({"$or": [{"title": regex}, {"summary": regex}, {"user_id": regex}]})
+            .find({"$or": [{"title": regex}, {"summary": regex}, {"identity_id": regex}]})
             .sort("last_message_at", -1)
             .limit(limit)
         )

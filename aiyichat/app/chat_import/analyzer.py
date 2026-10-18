@@ -288,7 +288,7 @@ async def _merge_analyses(
     display_name = role_name if role_name else target_name
     system_prompt = MERGE_ANALYSIS_PROMPT.format(extra_description=extra_hint)
 
-    user_content = (
+    identity_content = (
         f"角色名称: {display_name}\n"
         f"原始聊天对象: {target_name}\n\n"
         f"以下是多段分析结果:\n{analyses_text}"
@@ -299,7 +299,7 @@ async def _merge_analyses(
             response = await provider.complete(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
+                    {"role": "user", "content": identity_content},
                 ],
                 temperature=0.5,
                 max_tokens=4000,
@@ -363,19 +363,19 @@ def _ensure_profile_structure(data: dict[str, Any]) -> dict[str, Any]:
         补充默认值后的完整字典
     """
     # 确保四个嵌套结构存在
-    data.setdefault("identity", {})
+    data.setdefault("persona", {})
     data.setdefault("language_style", {})
     data.setdefault("personality", {})
     data.setdefault("dialogue_strategy", {})
 
-    # identity 默认值
-    identity = data["identity"]
-    identity.setdefault("background", "")
-    identity.setdefault("era", "现代")
-    identity.setdefault("age_appearance", "")
-    identity.setdefault("appearance", "")
-    identity.setdefault("core_values", [])
-    identity.setdefault("relationships", [])
+    # persona 默认值
+    persona = data["persona"]
+    persona.setdefault("background", "")
+    persona.setdefault("era", "现代")
+    persona.setdefault("age_appearance", "")
+    persona.setdefault("appearance", "")
+    persona.setdefault("core_values", [])
+    persona.setdefault("relationships", [])
 
     # language_style 默认值
     ls = data["language_style"]

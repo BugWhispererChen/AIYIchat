@@ -90,7 +90,7 @@ def mood_rate_modifier(mood: CharacterMood | None) -> str:
 
 
 def build_tts_instruction(
-    mood: CharacterMood | None, user_emotion: str | None
+    mood: CharacterMood | None, identity_emotion: str | None
 ) -> str:
     """根据用户情绪与角色心情生成自然语言指令文案。
 
@@ -98,8 +98,8 @@ def build_tts_instruction(
     均无显著信号时返回空串（不传指令，走自然音色）。
     """
     # 用户情绪优先：直接使用映射的安抚/共情语气文案（已含语速描述）
-    if user_emotion:
-        instruction = _INSTRUCTION_BY_EMOTION.get(user_emotion)
+    if identity_emotion:
+        instruction = _INSTRUCTION_BY_EMOTION.get(identity_emotion)
         if instruction:
             return _truncate_instruction(instruction)
 
@@ -117,14 +117,14 @@ def build_tts_instruction(
 
 
 def pick_emotion_tag(
-    mood: CharacterMood | None, user_emotion: str | None
+    mood: CharacterMood | None, identity_emotion: str | None
 ) -> str:
     """根据用户情绪选取文本头部情感标签（如 [empathetic]）。
 
     标签由模型族能力决定是否实际生效（见 tts_service）；无匹配返回空串。
     """
-    if user_emotion:
-        return _EMOTION_TAG_BY_EMOTION.get(user_emotion, "")
+    if identity_emotion:
+        return _EMOTION_TAG_BY_EMOTION.get(identity_emotion, "")
     return ""
 
 

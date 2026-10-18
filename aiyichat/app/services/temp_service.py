@@ -10,10 +10,10 @@ from typing import Optional
 
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceCreate, ServiceInDB
-from app.models.user import UserCreate, UserInDB
+from app.models.identity import IdentityCreate, IdentityInDB
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceI
     """
     try:
         # 获取或创建默认用户（使用系统默认QQ用户）
-        user_repo = UserRepository()
-        default_user = await _get_or_create_default_user(user_repo, account_id)
-        if not default_user:
+        identity_repo = IdentityRepository()
+        default_identity = await _get_or_create_default_identity(identity_repo, account_id)
+        if not default_identity:
             logger.warning("[TempService] 无法获取默认用户，跳过临时服务创建")
             return None
 
@@ -54,7 +54,7 @@ async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceI
             ServiceCreate(
                 name=f"{TEMP_SERVICE_PREFIX}绑定验证-{bot_id[:8]}",
                 account_id=account_id,
-                user_id=default_user.id,
+                identity_id=default_identity.id,
                 bot_id=bot_id,
                 profile_id=default_profile.slug,
                 is_active=True,
@@ -71,20 +71,20 @@ async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceI
         return None
 
 
-async def _get_or_create_default_user(
-    user_repo: UserRepository, account_id: str
-) -> Optional[UserInDB]:
+async def _get_or_create_default_identity(
+    identity_repo: IdentityRepository, account_id: str
+) -> Optional[IdentityInDB]:
     """获取或创建默认QQ用户用于临时服务。"""
     # 尝试查找已存在的系统默认用户
     default_platform_id = "system_default_qq_user"
-    existing_user = await user_repo.find_by_platform("qq", default_platform_id)
-    if existing_user:
-        return existing_user
+    existing_identity = await identity_repo.find_by_platform("qq", default_platform_id)
+    if existing_identity:
+        return existing_identity
 
     # 创建新的默认用户
     try:
-        default_user = await user_repo.create(
-            UserCreate(
+        default_identity = await identity_repo.create(
+            IdentityCreate(
                 account_id=account_id,
                 name="系统默认用户",
                 platform_id=default_platform_id,
@@ -92,8 +92,8 @@ async def _get_or_create_default_user(
                 nickname="系统默认用户",
             )
         )
-        logger.info("[TempService] 创建系统默认用户: %s", default_user.id)
-        return default_user
+        logger.info("[TempService] 创建系统默认用户: %s", default_identity.id)
+        return default_identity
     except Exception as e:
         logger.error("[TempService] 创建默认用户失败: %s", e)
         return None

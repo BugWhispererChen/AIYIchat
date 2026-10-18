@@ -18,8 +18,8 @@ class ProactiveRecord(BaseModel):
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    user_id: str  # 目标用户ID（系统内部ID）
-    platform_user_id: str  # 平台用户标识（openid / wechat user_id）
+    identity_id: str  # 目标用户ID（系统内部ID）
+    platform_openid: str  # 平台用户标识（openid / wechat identity_id）
     platform: Literal["qq", "wechat"] = "qq"
     bot_id: str  # 发送所用的Bot ID
     stage: int  # 发送阶段（1-4）

@@ -170,10 +170,10 @@ class TestSummaryTimeline:
     def test_dialog_line_carries_date_prefix(self) -> None:
         """待摘要对话行带 [MM-DD] 日期前缀，使 LLM 能保留时间脉络。"""
         complete, _ = self._run(None)
-        user_content = complete.call_args.kwargs["messages"][1]["content"]
-        assert "[08-01] 用户: 今天面试好紧张" in user_content
-        assert "[08-02] 用户: 昨天体检报告出来了" in user_content
-        assert "[08-03] 用户: 明天要去旅行" in user_content
+        identity_content = complete.call_args.kwargs["messages"][1]["content"]
+        assert "[08-01] 用户: 今天面试好紧张" in identity_content
+        assert "[08-02] 用户: 昨天体检报告出来了" in identity_content
+        assert "[08-03] 用户: 明天要去旅行" in identity_content
 
     def test_summary_range_persisted(self) -> None:
         """持久化时写入摘要覆盖的首尾时间，供注入时渲染时间坐标。"""
@@ -215,6 +215,6 @@ class TestSummaryTimeline:
             mock_dt.now.return_value = datetime(2026, 1, 2, 4, 0, tzinfo=timezone.utc)
             # window_size=2, last=0, new_summary_count=2 → 只摘要前两条
             asyncio.run(cm._generate_incremental_summary("conv1", None, 0, 2, 2))
-        user_content = provider.complete.call_args.kwargs["messages"][1]["content"]
-        assert "[2025-12-31] 用户: 跨年快乐" in user_content
-        assert "[2026-01-01] 用户: 新年新计划" in user_content
+        identity_content = provider.complete.call_args.kwargs["messages"][1]["content"]
+        assert "[2025-12-31] 用户: 跨年快乐" in identity_content
+        assert "[2026-01-01] 用户: 新年新计划" in identity_content

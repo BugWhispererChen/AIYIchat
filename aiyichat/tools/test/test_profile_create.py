@@ -21,7 +21,7 @@ from app.models.profile import PromptProfileCreate
 
 # LLM 生成的角色档案 JSON（mock 响应）
 _LLM_PROFILE_JSON = json.dumps({
-    "identity": {
+    "persona": {
         "background": "24岁的咖啡店店长，温柔细腻。",
         "era": "现代",
         "age_appearance": "24岁左右的都市女性",
@@ -128,7 +128,7 @@ class TestProfileCreateWizard:
                     assert draft.is_draft is True and draft.is_active is False
                     assert draft.name == "林小满"
                     assert draft.source == "自定义创建"
-                    assert draft.identity.appearance  # 英文外貌描述
+                    assert draft.persona.appearance  # 英文外貌描述
 
                     # 草稿不出现在角色列表与搜索
                     assert all(p.slug != slug for p in await repo.list_all())

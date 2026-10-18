@@ -13,7 +13,7 @@ from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 
 # ── 模板配置 ──────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ templates.env.filters["relative_time"] = _relative_time
 # ── Repository 实例（重构第二阶段再消除单例）───────────────
 
 _profile_repo = ProfileRepository()
-_user_repo = UserRepository()
+_identity_repo = IdentityRepository()
 _conv_repo = ConversationRepository()
 _msg_repo = MessageRepository()
 _bot_config_repo = BotConfigRepository()

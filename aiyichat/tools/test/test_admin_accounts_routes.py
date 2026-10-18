@@ -16,12 +16,12 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
 from app.models.profile import PromptProfileCreate
 from app.models.service import ServiceCreate
-from app.models.user import UserCreate, UserUpdate
+from app.models.identity import IdentityCreate, IdentityUpdate
 
 
 async def _setup_app():
@@ -125,7 +125,7 @@ class TestAccountsCrud:
         _run(flow())
 
 
-class TestAccountUsers:
+class TestAccountIdentities:
     """账号下用户管理。"""
 
     def test_user_create_delete_toggle(self) -> None:
@@ -133,63 +133,63 @@ class TestAccountUsers:
             app = await _setup_app()
             try:
                 acc_id = await _seed_account()
-                user_repo = UserRepository()
+                identity_repo = IdentityRepository()
                 async with _client(app) as client:
                     # 创建用户
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/create",
+                        f"/admin/accounts/{acc_id}/identities/create",
                         data={"name": "用户甲", "platform": "qq", "is_minor": "on"},
                     )
                     assert resp.status_code == 303
-                    users = await user_repo.list_by_account(acc_id)
-                    assert len(users) == 1 and users[0].is_minor is True
-                    uid = users[0].id
+                    identities = await identity_repo.list_by_account(acc_id)
+                    assert len(identities) == 1 and identities[0].is_minor is True
+                    uid = identities[0].id
 
                     # 有服务引用时删除被拒并渲染错误
                     await ServiceRepository().create(ServiceCreate(
-                        account_id=acc_id, user_id=uid, bot_id="b-x",
+                        account_id=acc_id, identity_id=uid, bot_id="b-x",
                         profile_id="0" * 24,  # 合法 ObjectId 占位，避免错误页回查崩溃
                     ))
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/{uid}/delete"
+                        f"/admin/accounts/{acc_id}/identities/{uid}/delete"
                     )
                     assert resp.status_code == 200 and "请先删除服务" in resp.text
 
                     # 有服务引用时禁用同样被拒
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/{uid}/toggle-block",
+                        f"/admin/accounts/{acc_id}/identities/{uid}/toggle-block",
                         data={"block_reason": "违规"},
                     )
                     assert resp.status_code == 200 and "请先删除服务" in resp.text
 
                     # 删除服务后可禁用/启用
-                    svc = await ServiceRepository().find_by_user_and_bot(uid, "b-x")
+                    svc = await ServiceRepository().find_by_identity_and_bot(uid, "b-x")
                     assert svc is not None
                     await ServiceRepository().delete(svc.id)
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/{uid}/toggle-block",
+                        f"/admin/accounts/{acc_id}/identities/{uid}/toggle-block",
                         data={"block_reason": "违规"},
                     )
                     assert resp.status_code == 303
-                    blocked = await user_repo.find_by_id(uid)
+                    blocked = await identity_repo.find_by_id(uid)
                     assert blocked is not None and blocked.is_blocked is True
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/{uid}/toggle-block"
+                        f"/admin/accounts/{acc_id}/identities/{uid}/toggle-block"
                     )
                     assert resp.status_code == 303
 
                     # 不存在的用户 toggle 直接重定向
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/no-such/toggle-block"
+                        f"/admin/accounts/{acc_id}/identities/no-such/toggle-block"
                     )
                     assert resp.status_code == 303
 
                     # 无引用后删除成功
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/users/{uid}/delete"
+                        f"/admin/accounts/{acc_id}/identities/{uid}/delete"
                     )
                     assert resp.status_code == 303
-                    assert await user_repo.find_by_id(uid) is None
+                    assert await identity_repo.find_by_id(uid) is None
             finally:
                 await _teardown_app(app)
 
@@ -237,7 +237,7 @@ class TestAccountBots:
 
                     # 有服务引用时删除/禁用被拒
                     await ServiceRepository().create(ServiceCreate(
-                        account_id=acc_id, user_id="u-x", bot_id=bid,
+                        account_id=acc_id, identity_id="u-x", bot_id=bid,
                         profile_id="0" * 24,  # 合法 ObjectId 占位，避免错误页回查崩溃
                     ))
                     resp = await client.post(
@@ -251,7 +251,7 @@ class TestAccountBots:
                     assert resp.status_code == 200 and "请先删除服务" in resp.text
 
                     # 删除服务后禁用/启用成功
-                    svc = await ServiceRepository().find_by_user_and_bot("u-x", bid)
+                    svc = await ServiceRepository().find_by_identity_and_bot("u-x", bid)
                     assert svc is not None
                     await ServiceRepository().delete(svc.id)
                     resp = await client.post(
@@ -287,14 +287,14 @@ class TestAccountServices:
 
     async def _seed_entities(self, acc_id: str) -> tuple[str, str, str]:
         """创建可用的用户、Bot、角色，返回 (user_id, bot_id, profile_slug)。"""
-        user = await UserRepository().create(UserCreate(account_id=acc_id, name="甲"))
+        identity = await IdentityRepository().create(IdentityCreate(account_id=acc_id, name="甲"))
         bot = await BotConfigRepository().create(
             BotConfigCreate(account_id=acc_id, name="机器人")
         )
         profile = await ProfileRepository().create(
             PromptProfileCreate(slug=f"role-{uuid.uuid4().hex[:6]}", name="角色")
         )
-        return user.id, bot.id, profile.slug
+        return identity.id, bot.id, profile.slug
 
     def test_service_create_validations(self) -> None:
         async def flow() -> None:
@@ -305,14 +305,14 @@ class TestAccountServices:
                 async with _client(app) as client:
                     # 缺少字段直接重定向
                     resp = await client.post(
-                        f"/admin/accounts/{acc_id}/services", data={"user_id": uid}
+                        f"/admin/accounts/{acc_id}/services", data={"identity_id": uid}
                     )
                     assert resp.status_code == 303
 
                     # 正常创建
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid, "bot_id": bid, "profile_id": slug},
+                        data={"identity_id": uid, "bot_id": bid, "profile_id": slug},
                     )
                     assert resp.status_code == 303
                     assert await ServiceRepository().count_by_bot(bid) == 1
@@ -320,29 +320,29 @@ class TestAccountServices:
                     # 1 Bot = 1 Service 约束
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid, "bot_id": bid, "profile_id": slug},
+                        data={"identity_id": uid, "bot_id": bid, "profile_id": slug},
                     )
                     assert resp.status_code == 200
                     assert "一个 Bot 只允许创建一个服务" in resp.text
 
                     # 已绑定真实平台账号的用户不能再建服务
                     uid2, bid2, slug2 = await self._seed_entities(acc_id)
-                    await UserRepository().update(
-                        uid2, UserUpdate(platform_id="real-openid")
+                    await IdentityRepository().update(
+                        uid2, IdentityUpdate(platform_id="real-openid")
                     )
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid2, "bot_id": bid2, "profile_id": slug2},
+                        data={"identity_id": uid2, "bot_id": bid2, "profile_id": slug2},
                     )
                     assert resp.status_code == 200
                     assert "已绑定真实平台账号" in resp.text
 
                     # 被禁用的用户
                     uid3, bid3, slug3 = await self._seed_entities(acc_id)
-                    await UserRepository().set_blocked(uid3, True, "违规")
+                    await IdentityRepository().set_blocked(uid3, True, "违规")
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid3, "bot_id": bid3, "profile_id": slug3},
+                        data={"identity_id": uid3, "bot_id": bid3, "profile_id": slug3},
                     )
                     assert resp.status_code == 200
                     assert "该用户已被禁用" in resp.text
@@ -352,7 +352,7 @@ class TestAccountServices:
                     await BotConfigRepository().set_blocked(bid4, True, "违规")
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid4, "bot_id": bid4, "profile_id": slug4},
+                        data={"identity_id": uid4, "bot_id": bid4, "profile_id": slug4},
                     )
                     assert resp.status_code == 200
                     assert "该 Bot 已被禁用" in resp.text
@@ -362,7 +362,7 @@ class TestAccountServices:
                     await ProfileRepository().delete(slug5)  # 软删除=禁用
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services",
-                        data={"user_id": uid5, "bot_id": bid5, "profile_id": slug5},
+                        data={"identity_id": uid5, "bot_id": bid5, "profile_id": slug5},
                     )
                     assert resp.status_code == 200
                     assert "该角色已被禁用" in resp.text
@@ -379,11 +379,11 @@ class TestAccountServices:
                 svc_repo = ServiceRepository()
                 uid, bid, slug = await self._seed_entities(acc_id)
                 svc1 = await svc_repo.create(ServiceCreate(
-                    account_id=acc_id, user_id=uid, bot_id=bid, profile_id=slug,
+                    account_id=acc_id, identity_id=uid, bot_id=bid, profile_id=slug,
                 ))
                 # 另一个账号下、不同角色的服务（用于共享组校验失败分支）
                 other = await svc_repo.create(ServiceCreate(
-                    account_id="other-acc", user_id="u-o", bot_id="b-o",
+                    account_id="other-acc", identity_id="u-o", bot_id="b-o",
                     profile_id="p-o", share_group_id="grp-1",
                 ))
                 async with _client(app) as client:
@@ -413,7 +413,7 @@ class TestAccountServices:
 
                     # 加入合法共享组（同账号同角色成员）
                     partner = await svc_repo.create(ServiceCreate(
-                        account_id=acc_id, user_id="u-p", bot_id="b-p",
+                        account_id=acc_id, identity_id="u-p", bot_id="b-p",
                         profile_id=slug, share_group_id="grp-2",
                     ))
                     resp = await client.post(
@@ -448,7 +448,7 @@ class TestAccountServices:
                     assert await conv_repo.list_by_service("grp-2") == []
 
                     # 删除后用户绑定被释放（platform_id 重置为 UUID）
-                    released = await UserRepository().find_by_id(uid)
+                    released = await IdentityRepository().find_by_id(uid)
                     assert released is not None
                     uuid.UUID(released.platform_id)  # 不抛异常即为 UUID
 

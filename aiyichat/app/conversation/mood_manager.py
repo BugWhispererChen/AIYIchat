@@ -143,8 +143,8 @@ class MoodManager:
     async def update_mood_llm(
         service_id: str,
         prev_mood: CharacterMood | None,
-        user_emotion: str | None,
-        user_text: str,
+        identity_emotion: str | None,
+        identity_text: str,
         personality_traits: dict[str, float],
     ) -> None:
         """每轮对话后异步更新角色心情（fire-and-forget，内部吃掉异常）。
@@ -186,19 +186,19 @@ class MoodManager:
             emotionality = "高" if sensitivity >= 0.7 else ("低" if sensitivity <= 0.3 else "中等")
             personality_desc = f"角色情绪化程度：{emotionality}（sensitivity={sensitivity:.1f}）"
 
-            user_emotion_desc = user_emotion or "中性"
-            user_msg = (
+            user_emotion_desc = identity_emotion or "中性"
+            identity_msg = (
                 f"{prev_desc}\n"
                 f"{personality_desc}\n"
                 f"本轮用户情绪：{user_emotion_desc}\n"
-                f"用户说：{user_text[:200]}"
+                f"用户说：{identity_text[:200]}"
             )
 
             provider = get_llm_provider("emotion")
             raw = await provider.complete(
                 messages=[
                     {"role": "system", "content": _MOOD_UPDATE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
+                    {"role": "user", "content": identity_msg},
                 ],
                 temperature=settings.emotion_temperature,
                 max_tokens=settings.emotion_max_tokens,

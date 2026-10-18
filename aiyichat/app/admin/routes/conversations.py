@@ -10,7 +10,7 @@ from app.admin.routes.common import (
     _msg_repo,
     _profile_repo,
     _render,
-    _user_repo,
+    _identity_repo,
 )
 
 conversations_router = APIRouter(tags=["admin"])
@@ -39,10 +39,10 @@ async def conversations_list(
     # 为每个对话查询关联的用户、账号、角色信息
     conv_infos: list[dict] = []
     for conv in convs:
-        user = await _user_repo.find_by_id(conv.user_id)
+        identity = await _identity_repo.find_by_id(conv.identity_id)
         account = None
-        if user and user.account_id:
-            account = await _account_repo.find_by_id(user.account_id)
+        if identity and identity.account_id:
+            account = await _account_repo.find_by_id(identity.account_id)
         # profile_id 可能是 slug 或 ObjectId
         profile = await _profile_repo.find_by_slug(conv.profile_id)
         if profile is None:
@@ -51,7 +51,7 @@ async def conversations_list(
             except Exception:
                 profile = None
         conv_infos.append({
-            "conv": conv, "user": user, "account": account, "profile": profile,
+            "conv": conv, "identity": identity, "account": account, "profile": profile,
         })
 
     return _render(request, "conversations.html", {

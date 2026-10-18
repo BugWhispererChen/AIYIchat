@@ -16,49 +16,49 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
-from app.db.repositories.user_repo import UserRepository
-from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
-from app.models.web_identity import IdentityStatus, WebIdentityInDB
+from app.models.web_credential import CredentialStatus, WebCredentialInDB
 from app.services import auth_service
 from app.services.auth_service import AuthError
 
-web_users_router = APIRouter(tags=["admin"])
+web_credentials_router = APIRouter(tags=["admin"])
 
 # 状态筛选白名单：避免任意字符串进入查询
-_VALID_STATUSES: tuple[IdentityStatus, ...] = ("pending", "active", "rejected", "disabled")
+_VALID_STATUSES: tuple[CredentialStatus, ...] = ("pending", "active", "rejected", "disabled")
 _PAGE_SIZE = 50
 
 
 def _list_redirect(filter_status: str = "pending", q: str = "", **params: str) -> RedirectResponse:
     """回到列表页并携带提示参数。"""
     query = "&".join([f"status_filter={filter_status}"] + ([f"q={q}"] if q else []) + [f"{k}={v}" for k, v in params.items()])
-    return RedirectResponse(url=f"/admin/web-users?{query}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/admin/web-credentials?{query}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-async def _build_rows(identities: list[WebIdentityInDB]) -> list[dict[str, Any]]:
+async def _build_rows(credentials: list[WebCredentialInDB]) -> list[dict[str, Any]]:
     """为每条身份补齐用户与额度信息，供表格展示。
 
     网页用户与账号是 1:1，故按身份关联的 user 反查其账号额度即可。
     """
     rows: list[dict[str, Any]] = []
-    users = UserRepository()
+    identities = IdentityRepository()
     quotas = QuotaRepository()
-    for ident in identities:
-        user = await users.find_by_id(ident.user_id) if ident.user_id else None
-        quota = await quotas.find_by_account(user.account_id) if user else None
+    for ident in credentials:
+        identity = await identities.find_by_id(ident.identity_id) if ident.identity_id else None
+        quota = await quotas.find_by_account(identity.account_id) if identity else None
         rows.append(
             {
-                "identity": ident,
-                "user": user,
+                "credential": ident,
+                "identity": identity,
                 "quota": quota,
             }
         )
     return rows
 
 
-@web_users_router.get("/web-users")
-async def web_users_page(
+@web_credentials_router.get("/web-credentials")
+async def web_credentials_page(
     request: Request,
     status_filter: str = "pending",
     q: str = "",
@@ -67,7 +67,7 @@ async def web_users_page(
     """网页用户列表：默认展示待审核，支持状态筛选与用户名搜索。"""
     from app.config import settings
 
-    repo = WebIdentityRepository()
+    repo = WebCredentialRepository()
     keyword = q.strip().lower()
     if keyword:
         # 前缀搜索覆盖全部状态，便于定位被漏看的账号（用户名已规范化，无需正则匹配）
@@ -75,15 +75,15 @@ async def web_users_page(
     else:
         pool = await repo.list_all(limit=_PAGE_SIZE)
     clean_status = status_filter if status_filter in _VALID_STATUSES else "pending"
-    identities = pool if clean_status == "all" else [i for i in pool if i.status == clean_status]
+    credentials = pool if clean_status == "all" else [i for i in pool if i.status == clean_status]
 
     counts = {s: await repo.count_by_status(s) for s in _VALID_STATUSES}
     bots = [b for b in await BotConfigRepository().list_all() if b.platform == "web"]
     return _render(
         request,
-        "web_users.html",
+        "web_credentials.html",
         {
-            "rows": await _build_rows(identities),
+            "rows": await _build_rows(credentials),
             "counts": counts,
             "status_filter": clean_status,
             "q": q,
@@ -109,12 +109,12 @@ async def web_users_page(
                 auth_service.FREE_TEXT_LIMIT
                 // (settings.chat_max_tokens + 200),
             ),
-            "active_page": "web_users",
+            "active_page": "web_credentials",
         },
     )
 
 
-@web_users_router.post("/web-users/settings")
+@web_credentials_router.post("/web-credentials/settings")
 async def save_settings(
     request: Request,
     _session: str = Depends(require_admin),
@@ -166,10 +166,10 @@ async def save_settings(
     return _list_redirect("all", msg="settings_saved")
 
 
-@web_users_router.post("/web-users/{identity_id}/review")
-async def review_user(
+@web_credentials_router.post("/web-credentials/{credential_id}/review")
+async def review_credential(
     request: Request,
-    identity_id: str,
+    credential_id: str,
     action: str = Form(...),
     note: str = Form(""),
     status_filter: str = Form("pending"),
@@ -179,32 +179,32 @@ async def review_user(
     from app.config import settings
 
     operator = settings.admin_username or "admin"
-    repo = WebIdentityRepository()
-    ident = await repo.find_by_id(identity_id)
+    repo = WebCredentialRepository()
+    ident = await repo.find_by_id(credential_id)
     if ident is None:
         return _list_redirect(status_filter, error="not_found")
 
     if action == "approve":
-        await auth_service.approve(identity_id, operator, note)
+        await auth_service.approve(credential_id, operator, note)
         msg = "approved"
     elif action == "reject":
-        await auth_service.reject(identity_id, operator, note)
+        await auth_service.reject(credential_id, operator, note)
         msg = "rejected"
     elif action == "disable":
-        await auth_service.set_disabled(identity_id, True, operator, note)
+        await auth_service.set_disabled(credential_id, True, operator, note)
         msg = "disabled"
     elif action == "enable":
-        await auth_service.set_disabled(identity_id, False, operator, note)
+        await auth_service.set_disabled(credential_id, False, operator, note)
         msg = "enabled"
     else:
         return _list_redirect(status_filter, error="unknown_action")
     return _list_redirect("all", msg=msg)
 
 
-@web_users_router.post("/web-users/{identity_id}/reset-password")
+@web_credentials_router.post("/web-credentials/{credential_id}/reset-password")
 async def reset_password(
     request: Request,
-    identity_id: str,
+    credential_id: str,
     new_password: str = Form(...),
     _session: str = Depends(require_admin),
 ):
@@ -212,35 +212,35 @@ async def reset_password(
     from app.config import settings
 
     try:
-        await auth_service.reset_password(identity_id, new_password, settings.admin_username or "admin")
+        await auth_service.reset_password(credential_id, new_password, settings.admin_username or "admin")
     except AuthError as exc:
         return _list_redirect("all", error=exc.code)
     return _list_redirect("all", msg="password_reset")
 
 
-@web_users_router.post("/web-users/{identity_id}/quota")
+@web_credentials_router.post("/web-credentials/{credential_id}/quota")
 async def adjust_quota(
     request: Request,
-    identity_id: str,
+    credential_id: str,
     text_limit: int = Form(0),
     voice_limit: int = Form(0),
     image_limit: int = Form(0),
     _session: str = Depends(require_admin),
 ):
     """调整该网页用户所属账号的额度上限（保持已用量与有效期不变）。"""
-    repo = WebIdentityRepository()
-    ident = await repo.find_by_id(identity_id)
-    if ident is None or not ident.user_id:
+    repo = WebCredentialRepository()
+    ident = await repo.find_by_id(credential_id)
+    if ident is None or not ident.identity_id:
         return _list_redirect("all", error="not_found")
-    user = await UserRepository().find_by_id(ident.user_id)
-    if user is None:
+    identity = await IdentityRepository().find_by_id(ident.identity_id)
+    if identity is None:
         return _list_redirect("all", error="no_account")
     quotas = QuotaRepository()
-    existing = await quotas.find_by_account(user.account_id)
+    existing = await quotas.find_by_account(identity.account_id)
     if existing is None:
         return _list_redirect("all", error="no_quota")
     await quotas.create_or_update(
-        user.account_id,
+        identity.account_id,
         AccountQuotaUpdate(
             text_quota=_scaled(existing.text_quota, text_limit),
             voice_quota=_scaled(existing.voice_quota, voice_limit),

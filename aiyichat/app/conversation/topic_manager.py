@@ -29,7 +29,7 @@ class TopicManager:
 
     def detect_topic_stall(
         self,
-        recent_user_msgs: list[str],
+        recent_identity_msgs: list[str],
         threshold: int = 4,
         similarity: float = 0.6,
     ) -> bool:
@@ -47,11 +47,11 @@ class TopicManager:
         Returns:
             True 表示检测到话题停滞，建议主动引导换话题
         """
-        if len(recent_user_msgs) < threshold:
+        if len(recent_identity_msgs) < threshold:
             return False
 
         # 取最近 threshold 条用户消息
-        window = recent_user_msgs[-threshold:]
+        window = recent_identity_msgs[-threshold:]
 
         # 计算相邻消息的相似度，若所有相邻对都高度相似，则话题停滞
         for i in range(len(window) - 1):

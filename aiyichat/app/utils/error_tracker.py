@@ -11,7 +11,7 @@
     try:
         ...
     except Exception as e:
-        track_error(e, context={"user_id": "123"})
+        track_error(e, context={"identity_id": "123"})
 """
 
 import hashlib
@@ -79,11 +79,11 @@ class ErrorTracker:
             if "app/" in frame.filename or "app\\" in frame.filename:
                 key_frames.append(f"{frame.filename}:{frame.lineno}")
 
-        # 上下文关键信息（如 user_id、service_id）
+        # 上下文关键信息（如 identity_id、service_id）
         context_key = ""
         if context:
             # 只取关键字段，避免上下文变化导致指纹不同
-            key_fields = ["user_id", "service_id", "bot_id", "platform"]
+            key_fields = ["identity_id", "service_id", "bot_id", "platform"]
             context_parts = [
                 f"{k}={v}" for k, v in context.items() if k in key_fields
             ]

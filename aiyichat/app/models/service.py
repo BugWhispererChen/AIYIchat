@@ -13,7 +13,7 @@ class ServiceCreate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str = ""
     account_id: str
-    user_id: str
+    identity_id: str
     bot_id: str
     profile_id: str
     is_active: bool = True  # 新建服务默认启用
@@ -58,7 +58,7 @@ class ServiceUpdate(BaseModel):
 
     name: str | None = None
     account_id: str | None = None
-    user_id: str | None = None
+    identity_id: str | None = None
     bot_id: str | None = None
     profile_id: str | None = None
     is_active: bool | None = None

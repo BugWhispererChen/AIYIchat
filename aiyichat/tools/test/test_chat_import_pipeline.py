@@ -139,7 +139,7 @@ class TestAnalyzer:
         from app.chat_import.analyzer import _ensure_profile_structure
 
         out = _ensure_profile_structure({"personality": {"traits": {"开朗": "0.8"}}})
-        assert out["identity"]["era"] == "现代"
+        assert out["persona"]["era"] == "现代"
         assert out["personality"]["traits"]["开朗"] == 0.8
         assert "safety_guardrails" in out["dialogue_strategy"]
 
@@ -217,7 +217,7 @@ class TestAnalyzer:
                 ]
                 chunk_json = json.dumps({"tone": "温柔", "traits": {}})
                 merge_json = json.dumps({
-                    "identity": {"background": "背景"},
+                    "persona": {"background": "背景"},
                     "personality": {"traits": {"开朗": 0.8}},
                 })
                 fake_provider = SimpleNamespace(complete=AsyncMock(
@@ -517,8 +517,8 @@ class TestModels:
         from app.models.conversation import ConversationInDB
 
         doc = {
-            "_id": "c1", "user_id": "u1", "profile_id": "p1",
+            "_id": "c1", "identity_id": "u1", "profile_id": "p1",
             "service_id": "s1", "status": "active",
         }
         c = ConversationInDB.from_mongo(doc)
-        assert c.id == "c1" and c.user_id == "u1"
+        assert c.id == "c1" and c.identity_id == "u1"

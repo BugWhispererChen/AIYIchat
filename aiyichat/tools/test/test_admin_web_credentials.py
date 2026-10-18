@@ -1,6 +1,6 @@
 """Admin 网页用户治理路由测试（mongomock + ASGI 内存客户端）。
 
-覆盖 `/admin/web-users` 列表、审核（通过/拒绝）、禁用/启用、重置密码、额度调整与能力配置保存。
+覆盖 `/admin/web-credentials` 列表、审核（通过/拒绝）、禁用/启用、重置密码、额度调整与能力配置保存。
 """
 
 import asyncio
@@ -17,8 +17,8 @@ from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
-from app.db.repositories.user_repo import UserRepository
-from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
@@ -61,7 +61,7 @@ def web_flags():
 
 async def _seed_env() -> Any:
     """准备内存库、系统账号、web 载体 Bot 与公共角色。"""
-    mongo._db = mongomock_motor.AsyncMongoMockClient()["t_web_users"]
+    mongo._db = mongomock_motor.AsyncMongoMockClient()["t_web_credentials"]
     account = await AccountRepository().create(AccountCreate(name="系统账号"))
     await BotConfigRepository().create(
         BotConfigCreate(id=WEB_BOT_ID, account_id=account.id, name="网页助手", platform="web")
@@ -84,9 +84,9 @@ async def _cleanup(app: Any) -> None:
     mongo._db = None
 
 
-async def _register_user(username: str) -> str:
+async def _register_identity(username: str) -> str:
     """注册并返回身份 ID（默认待审核）。"""
-    identity = await auth_service.register(
+    credential = await auth_service.register(
         username=username,
         password=PASSWORD,
         terms_accepted=True,
@@ -94,25 +94,25 @@ async def _register_user(username: str) -> str:
         age_confirmed=True,
         ip="203.0.113.9",
     )
-    return identity.id
+    return credential.id
 
 
-class TestWebUsersPage:
+class TestWebCredentialsPage:
     """列表页渲染与筛选。"""
 
     def test_list_renders_pending(self) -> None:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("pendingone")
+                ident_id = await _register_identity("pendingone")
                 async with _client(app) as client:
-                    resp = await client.get("/admin/web-users")
+                    resp = await client.get("/admin/web-credentials")
                     assert resp.status_code == 200
                     assert "待审核（1）" in resp.text
                     assert "pendingone" in resp.text
                     assert "203.0.113.9" in resp.text
                     # 已拒绝/已禁用筛选下不出现该用户
-                    resp = await client.get("/admin/web-users?status_filter=rejected")
+                    resp = await client.get("/admin/web-credentials?status_filter=rejected")
                     assert "pendingone" not in resp.text
                     assert ident_id
             finally:
@@ -124,12 +124,12 @@ class TestWebUsersPage:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                await _register_user("alpha01")
-                await _register_user("beta02")
+                await _register_identity("alpha01")
+                await _register_identity("beta02")
                 async with _client(app) as client:
-                    resp = await client.get("/admin/web-users?status_filter=all&q=alp")
+                    resp = await client.get("/admin/web-credentials?status_filter=all&q=alp")
                     assert "alpha01" in resp.text and "beta02" not in resp.text
-                    resp = await client.get("/admin/web-users?status_filter=all")
+                    resp = await client.get("/admin/web-credentials?status_filter=all")
                     assert "alpha01" in resp.text and "beta02" in resp.text
             finally:
                 await _cleanup(app)
@@ -145,7 +145,7 @@ class TestWebUsersPage:
             try:
                 async with _client(app) as client:
                     resp = await client.get(
-                        "/admin/web-users",
+                        "/admin/web-credentials",
                         headers={"Accept": "text/html,application/xhtml+xml"},
                         follow_redirects=False,
                     )
@@ -164,15 +164,15 @@ class TestReviewActions:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("tobeapproved")
+                ident_id = await _register_identity("tobeapproved")
                 async with _client(app) as client:
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "approve", "note": "资料完整", "status_filter": "pending"},
                         follow_redirects=False,
                     )
                     assert resp.status_code == 303
-                    ident = await WebIdentityRepository().find_by_id(ident_id)
+                    ident = await WebCredentialRepository().find_by_id(ident_id)
                     assert ident.status == "active"
                     assert ident.reviewed_by == "admin"
                     assert ident.review_note == "资料完整"
@@ -192,15 +192,15 @@ class TestReviewActions:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("noaction")
+                ident_id = await _register_identity("noaction")
                 async with _client(app) as client:
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"note": "缺 action", "status_filter": "pending"},
                         follow_redirects=False,
                     )
                     assert resp.status_code == 422
-                    ident = await WebIdentityRepository().find_by_id(ident_id)
+                    ident = await WebCredentialRepository().find_by_id(ident_id)
                     assert ident.status == "pending"  # 校验失败不得产生任何状态变更
             finally:
                 await _cleanup(app)
@@ -211,15 +211,15 @@ class TestReviewActions:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("rejectme")
+                ident_id = await _register_identity("rejectme")
                 async with _client(app) as client:
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "reject", "note": "资料不实", "status_filter": "pending"},
                         follow_redirects=False,
                     )
                     assert resp.status_code == 303
-                    ident = await WebIdentityRepository().find_by_id(ident_id)
+                    ident = await WebCredentialRepository().find_by_id(ident_id)
                     assert ident.status == "rejected" and ident.reviewed_at is not None
                     # 冷却期内同名注册被拒
                     with pytest.raises(auth_service.AuthError) as err:
@@ -243,10 +243,10 @@ class TestReviewActions:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("bannedviaadmin")
+                ident_id = await _register_identity("bannedviaadmin")
                 async with _client(app) as client:
                     await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "approve", "status_filter": "pending"},
                     )
                     login = await client.post(
@@ -258,7 +258,7 @@ class TestReviewActions:
                     ).status_code == 200
 
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "disable", "note": "违规使用", "status_filter": "active"},
                         follow_redirects=False,
                     )
@@ -266,7 +266,7 @@ class TestReviewActions:
                     assert (
                         await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
                     ).status_code == 401
-                    assert await WebSessionRepository().list_by_identity(ident_id) == []
+                    assert await WebSessionRepository().list_by_credential(ident_id) == []
                     # 已禁用不属于可重注状态：仍返回 409
                     resp = await client.post(
                         "/api/auth/register",
@@ -278,10 +278,10 @@ class TestReviewActions:
                     assert resp.status_code == 409
                     # 重新启用后恢复可登录
                     await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "enable", "status_filter": "disabled"},
                     )
-                    assert (await WebIdentityRepository().find_by_id(ident_id)).status == "active"
+                    assert (await WebCredentialRepository().find_by_id(ident_id)).status == "active"
             finally:
                 await _cleanup(app)
 
@@ -293,14 +293,14 @@ class TestReviewActions:
             try:
                 async with _client(app) as client:
                     resp = await client.post(
-                        "/admin/web-users/no-such-id/review",
+                        "/admin/web-credentials/no-such-id/review",
                         data={"action": "approve", "status_filter": "pending"},
                         follow_redirects=False,
                     )
                     assert resp.status_code == 303 and "error=not_found" in resp.headers["location"]
-                    ident_id = await _register_user("badaction")
+                    ident_id = await _register_identity("badaction")
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/review",
+                        f"/admin/web-credentials/{ident_id}/review",
                         data={"action": "explode", "status_filter": "pending"},
                         follow_redirects=False,
                     )
@@ -318,14 +318,14 @@ class TestPasswordAndQuota:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("pwmgmt")
+                ident_id = await _register_identity("pwmgmt")
                 async with _client(app) as client:
                     await client.post(
-                        f"/admin/web-users/{ident_id}/review", data={"action": "approve"}
+                        f"/admin/web-credentials/{ident_id}/review", data={"action": "approve"}
                     )
                     # 弱密码被策略拦下
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/reset-password",
+                        f"/admin/web-credentials/{ident_id}/reset-password",
                         data={"new_password": "password123"},
                         follow_redirects=False,
                     )
@@ -337,7 +337,7 @@ class TestPasswordAndQuota:
                         )
                     ).json()["token"]
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/reset-password",
+                        f"/admin/web-credentials/{ident_id}/reset-password",
                         data={"new_password": "brandnew99"},
                         follow_redirects=False,
                     )
@@ -345,7 +345,7 @@ class TestPasswordAndQuota:
                     assert (
                         await client.get("/api/auth/me", headers={"Authorization": f"Bearer {old}"})
                     ).status_code == 401
-                    ident = await WebIdentityRepository().find_by_id(ident_id)
+                    ident = await WebCredentialRepository().find_by_id(ident_id)
                     assert verify_password("brandnew99", ident.password_hash)
             finally:
                 await _cleanup(app)
@@ -358,22 +358,22 @@ class TestPasswordAndQuota:
         async def flow() -> None:
             app = await _seed_env()
             try:
-                ident_id = await _register_user("quotamgmt")
-                ident = await WebIdentityRepository().find_by_id(ident_id)
-                user = await UserRepository().find_by_id(ident.user_id)
+                ident_id = await _register_identity("quotamgmt")
+                ident = await WebCredentialRepository().find_by_id(ident_id)
+                identity = await IdentityRepository().find_by_id(ident.identity_id)
                 # 预置：文字额度上限 500、已用 7
                 await QuotaRepository().create_or_update(
-                    user.account_id,
+                    identity.account_id,
                     AccountQuotaUpdate(text_quota=QuotaEntry(limit=500, used=7)),
                 )
                 async with _client(app) as client:
                     resp = await client.post(
-                        f"/admin/web-users/{ident_id}/quota",
+                        f"/admin/web-credentials/{ident_id}/quota",
                         data={"text_limit": "1200", "voice_limit": "0", "image_limit": "0"},
                         follow_redirects=False,
                     )
                     assert "msg=quota_updated" in resp.headers["location"]
-                    quota = await QuotaRepository().find_by_account(user.account_id)
+                    quota = await QuotaRepository().find_by_account(identity.account_id)
                     assert quota.text_quota.limit == 1200
                     # 已用量原样保留，未传正数的语音/图片上限不变
                     assert quota.text_quota.used == 7
@@ -391,7 +391,7 @@ class TestPasswordAndQuota:
             try:
                 async with _client(app) as client:
                     resp = await client.post(
-                        "/admin/web-users/no-id/quota",
+                        "/admin/web-credentials/no-id/quota",
                         data={"text_limit": "10"},
                         follow_redirects=False,
                     )
@@ -411,7 +411,7 @@ class TestSettingsSave:
             try:
                 async with _client(app) as client:
                     resp = await client.post(
-                        "/admin/web-users/settings",
+                        "/admin/web-credentials/settings",
                         data={
                             "web_auth_enabled": "on",
                             "web_register_enabled": "on",

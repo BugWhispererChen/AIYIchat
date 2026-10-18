@@ -157,7 +157,7 @@ async def wizard_image_generate(
     profile = await _get_draft(slug)
 
     appearance = (
-        profile.identity.appearance or profile.identity.age_appearance
+        profile.persona.appearance or profile.persona.age_appearance
     ).strip()
     if not appearance:
         return _render_step(

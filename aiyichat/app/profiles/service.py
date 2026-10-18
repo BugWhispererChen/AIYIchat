@@ -8,7 +8,7 @@ from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.profile import (
     ProfileDialogueStrategy,
-    ProfileIdentity,
+    ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     PromptProfileCreate,
@@ -206,12 +206,12 @@ class ProfileService:
             is_active=form.get("is_active") == "on",
             visibility=visibility,  # type: ignore[arg-type]
             account_id=account_id,
-            identity=ProfileIdentity(
-                background=form.get("identity_background", ""),
-                era=form.get("identity_era", ""),
-                age_appearance=form.get("identity_age_appearance", ""),
-                appearance=str(form.get("identity_appearance", "")),
-                core_values=_lines("identity_core_values"),
+            persona=ProfilePersona(
+                background=form.get("persona_background", ""),
+                era=form.get("persona_era", ""),
+                age_appearance=form.get("persona_age_appearance", ""),
+                appearance=str(form.get("persona_appearance", "")),
+                core_values=_lines("persona_core_values"),
                 relationships=relationships,
             ),
             language_style=ProfileLanguageStyle(

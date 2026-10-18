@@ -91,7 +91,7 @@
                     {% endif %}
                 </td>
                 <td><span class="badge {% if ev.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ ev.platform or '-' }}</span></td>
-                <td>{{ info.user_display or '-' }}</td>
+                <td>{{ info.identity_display or '-' }}</td>
                 <td><code style="font-size:0.8rem;">{{ ev.matched or '-' }}</code></td>
                 <td><small class="muted">{{ ev.handled or '-' }}</small></td>
             </tr>

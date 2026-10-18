@@ -57,7 +57,7 @@ class TestTempService:
                 assert service.bot_id == "bot-1"
                 assert service.account_id == "acc-1"
                 # 临时服务会创建新的默认用户，所以user_id不为空即可
-                assert service.user_id != ""
+                assert service.identity_id != ""
                 assert service.profile_id == profile.slug
                 assert service.is_active is True
 
@@ -89,15 +89,15 @@ class TestTempService:
             try:
                 from app.db.repositories.profile_repo import ProfileRepository
                 from app.db.repositories.service_repo import ServiceRepository
-                from app.db.repositories.user_repo import UserRepository
+                from app.db.repositories.identity_repo import IdentityRepository
                 from app.models.profile import PromptProfileCreate
                 from app.models.service import ServiceCreate
-                from app.models.user import UserCreate
+                from app.models.identity import IdentityCreate
 
                 # 创建测试数据
-                user_repo = UserRepository()
-                user = await user_repo.create(
-                    UserCreate(
+                identity_repo = IdentityRepository()
+                identity = await identity_repo.create(
+                    IdentityCreate(
                         account_id="acc-1",
                         name="测试用户",
                         platform_id="test_qq_user",
@@ -119,7 +119,7 @@ class TestTempService:
                     ServiceCreate(
                         name=f"{TEMP_SERVICE_PREFIX}测试",
                         account_id="acc-1",
-                        user_id=user.id,
+                        identity_id=identity.id,
                         bot_id="bot-1",
                         profile_id=profile.slug,
                     )
@@ -146,13 +146,13 @@ class TestTempService:
             try:
                 # 创建测试数据
                 from app.db.repositories.profile_repo import ProfileRepository
-                from app.db.repositories.user_repo import UserRepository
+                from app.db.repositories.identity_repo import IdentityRepository
                 from app.models.profile import PromptProfileCreate
-                from app.models.user import UserCreate
+                from app.models.identity import IdentityCreate
 
-                user_repo = UserRepository()
-                await user_repo.create(
-                    UserCreate(
+                identity_repo = IdentityRepository()
+                await identity_repo.create(
+                    IdentityCreate(
                         account_id="acc-1",
                         name="测试用户",
                         platform_id="test_qq_user",
@@ -215,13 +215,13 @@ class TestTempService:
             try:
                 # 创建测试数据
                 from app.db.repositories.profile_repo import ProfileRepository
-                from app.db.repositories.user_repo import UserRepository
+                from app.db.repositories.identity_repo import IdentityRepository
                 from app.models.profile import PromptProfileCreate
-                from app.models.user import UserCreate
+                from app.models.identity import IdentityCreate
 
-                user_repo = UserRepository()
-                await user_repo.create(
-                    UserCreate(
+                identity_repo = IdentityRepository()
+                await identity_repo.create(
+                    IdentityCreate(
                         account_id="acc-1",
                         name="测试用户",
                         platform_id="test_qq_user",

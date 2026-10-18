@@ -878,7 +878,7 @@ class WeChatClient(ChannelAdapter):
         Returns:
             发送是否成功
         """
-        ctx = self._get_user_context_token(user_id)
+        ctx = self._get_context_token(user_id)
         if not ctx:
             logger.warning(
                 "%s 主动消息失败: 用户 %s 无 context_token",
@@ -895,7 +895,7 @@ class WeChatClient(ChannelAdapter):
             )
             return False
 
-    def _get_user_context_token(self, user_id: str) -> str:
+    def _get_context_token(self, user_id: str) -> str:
         """获取指定用户的 context_token。"""
         ctx = self._context_tokens.get(user_id, "")
         if not ctx:
@@ -922,7 +922,7 @@ class WeChatClient(ChannelAdapter):
                 "client_id": "ec-%s" % uuid.uuid4().hex[:12],
                 "message_type": 2,  # BOT 消息
                 "message_state": 2,  # FINISHED
-                "context_token": self._get_user_context_token(to_user_id),
+                "context_token": self._get_context_token(to_user_id),
                 "item_list": [
                     {"type": 1, "text_item": {"text": text}}
                 ],
@@ -933,7 +933,7 @@ class WeChatClient(ChannelAdapter):
         logger.info(
             "%s 发送文本: to=%s, len=%d, has_ctx=%s",
             self._label, to_user_id, len(text),
-            bool(self._get_user_context_token(to_user_id)),
+            bool(self._get_context_token(to_user_id)),
         )
 
         try:
@@ -982,7 +982,7 @@ class WeChatClient(ChannelAdapter):
                 "client_id": "ec-%s" % uuid.uuid4().hex[:12],
                 "message_type": 2,
                 "message_state": 2,
-                "context_token": self._get_user_context_token(to_user_id),
+                "context_token": self._get_context_token(to_user_id),
                 "item_list": [
                     {
                         "type": 2,
@@ -1044,7 +1044,7 @@ class WeChatClient(ChannelAdapter):
                 "client_id": "ec-%s" % uuid.uuid4().hex[:12],
                 "message_type": 2,
                 "message_state": 2,
-                "context_token": self._get_user_context_token(to_user_id),
+                "context_token": self._get_context_token(to_user_id),
                 "item_list": [
                     {
                         "type": 4,

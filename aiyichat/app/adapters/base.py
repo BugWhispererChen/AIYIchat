@@ -8,8 +8,10 @@ from typing import Optional
 class NormalizedMessage:
     """标准化消息格式，平台无关"""
     platform: str          # "qq" / "wechat" / "web"
+    # user_id 装的是平台下发的 openid（QQ 按 appid 生成、微信为 iLink uid），
+    # 不是本项目 identities 集合的主键 identity_id。属外部协议标识，禁止改名。
     user_id: str           # 平台用户ID
-    nickname: str          # 用户昵称
+    nickname: str          # 身份昵称
     content: str           # 消息文本
     message_id: str = ""   # 原始消息ID
     is_group: bool = False # 是否群消息

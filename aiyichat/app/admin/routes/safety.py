@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.admin.auth import require_admin
-from app.admin.routes.common import _render, _user_repo
+from app.admin.routes.common import _render, _identity_repo
 from app.conversation.safety_checker import (
     builtin_word_counts,
     reset_safety_checker,
@@ -54,14 +54,14 @@ async def safety_page(
     event_infos = []
     for ev in events:
         display = ev.platform_id
-        if ev.user_id:
+        if ev.identity_id:
             try:
-                user = await _user_repo.find_by_id(ev.user_id)
-                if user:
-                    display = user.nickname or user.name or ev.platform_id
+                identity = await _identity_repo.find_by_id(ev.identity_id)
+                if identity:
+                    display = identity.nickname or identity.name or ev.platform_id
             except Exception:
                 pass
-        event_infos.append({"event": ev, "user_display": display})
+        event_infos.append({"event": ev, "identity_display": display})
 
     stats_7d = await _safety_repo.count_recent_by_type(days=7)
 

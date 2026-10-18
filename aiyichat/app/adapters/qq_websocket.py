@@ -94,8 +94,8 @@ class QQWebSocketClient:
         self._dedup_max_size = 500
         # 保护 _processed_msg_ids 的并发访问，防止竞态条件
         self._dedup_lock = asyncio.Lock()
-        # 限流退避缓存：user_id → 退避到期时间（UTC）
-        self._rate_limited_users: dict[str, datetime] = {}
+        # 限流退避缓存：平台 openid → 退避到期时间（UTC）。键是 QQ 侧标识，非 identity_id
+        self._rate_limited_openids: dict[str, datetime] = {}
         # 最近一次发送失败的详情（QQ 错误码/消息），供主动消息记录留痕
         self._last_send_error: str = ""
         # 多媒体服务（延迟导入，按需实例化）
@@ -245,6 +245,8 @@ class QQWebSocketClient:
         content = data.get("content", "").strip()
         attachments = data.get("attachments", [])
 
+        # user_id 取的是 QQ 官方下发的 openid（按 Bot appid 生成，同一人在不同 Bot 下不同），
+        # 属平台协议字段，与本项目 identities 的 identity_id 无关，禁止改名。
         if event_type == "C2C_MESSAGE_CREATE":
             user_id = author.get("user_openid", "")
             nickname = author.get("username", "QQ用户")
@@ -487,6 +489,7 @@ class QQWebSocketClient:
             if is_group and group_id:
                 url = f"{base}/v2/groups/{group_id}/messages"
             else:
+                # `/v2/users/` 是 QQ 官方路径字面量，非本项目命名，禁止改名
                 url = f"{base}/v2/users/{user_id}/messages"
 
             self._msg_seq += 1
@@ -559,7 +562,7 @@ class QQWebSocketClient:
             error_message = error_data.get("message", "")
             if error_code == 40034122 or "召回消息已达区间上限" in error_message:
                 expire_at = datetime.now(timezone.utc) + timedelta(hours=1)
-                self._rate_limited_users[user_id] = expire_at
+                self._rate_limited_openids[user_id] = expire_at
                 logger.warning(
                     "QQ 限流，用户 %s 退避至 %s", user_id, expire_at.isoformat()
                 )
@@ -568,12 +571,12 @@ class QQWebSocketClient:
 
     def _is_rate_limited(self, user_id: str) -> bool:
         """检查用户是否在限流退避期内。"""
-        expire_time = self._rate_limited_users.get(user_id)
+        expire_time = self._rate_limited_openids.get(user_id)
         if expire_time is None:
             return False
         if datetime.now(timezone.utc) > expire_time:
             # 退避期已过，移除记录
-            del self._rate_limited_users[user_id]
+            del self._rate_limited_openids[user_id]
             return False
         return True
 

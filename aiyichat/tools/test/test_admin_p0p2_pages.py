@@ -205,11 +205,11 @@ class TestProactiveRecordCleanup:
                 repo = ProactiveRecordRepository()
                 old = datetime.now(timezone.utc) - timedelta(days=40)
                 old_id = await repo.create(ProactiveRecord(
-                    user_id="u-1", platform_user_id="oid-1", bot_id="b-1",
+                    identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
                     stage=1, created_at=old,
                 ))
                 new_id = await repo.create(ProactiveRecord(
-                    user_id="u-1", platform_user_id="oid-1", bot_id="b-1",
+                    identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
                     stage=2,
                 ))
 

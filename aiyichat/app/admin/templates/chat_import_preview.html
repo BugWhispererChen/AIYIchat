@@ -32,7 +32,7 @@
     <!-- 左侧锚点导航 -->
     <aside class="anchor-nav">
         <a href="#sec-basic">基本信息</a>
-        <a href="#sec-identity">身份信息</a>
+        <a href="#sec-persona">人设背景</a>
         <a href="#sec-language">语言风格</a>
         <a href="#sec-personality">性格特征</a>
         <a href="#sec-dialogue">对话策略</a>
@@ -97,22 +97,22 @@
             </label>
         </div>
 
-        <!-- 身份信息 -->
-        <div class="card section-card" id="sec-identity">
-            <h4>身份信息 (Identity)</h4>
+        <!-- 人设背景 -->
+        <div class="card section-card" id="sec-persona">
+            <h4>人设背景 (Persona)</h4>
             <label>背景故事
-                <textarea name="identity_background" rows="4">{{ profile.identity.background if profile.identity else '' }}</textarea>
+                <textarea name="persona_background" rows="4">{{ profile.persona.background if profile.persona else '' }}</textarea>
             </label>
             <div class="grid">
                 <label>时代
-                    <input type="text" name="identity_era" value="{{ profile.identity.era if profile.identity else '现代' }}">
+                    <input type="text" name="persona_era" value="{{ profile.persona.era if profile.persona else '现代' }}">
                 </label>
                 <label>外观/年龄
-                    <input type="text" name="identity_age_appearance" value="{{ profile.identity.age_appearance if profile.identity else '' }}">
+                    <input type="text" name="persona_age_appearance" value="{{ profile.persona.age_appearance if profile.persona else '' }}">
                 </label>
             </div>
             <label>核心价值观 <small class="field-hint">(每行一个)</small>
-                <textarea name="identity_core_values" rows="3">{% if profile.identity and profile.identity.core_values %}{{ profile.identity.core_values | join('\n') }}{% endif %}</textarea>
+                <textarea name="persona_core_values" rows="3">{% if profile.persona and profile.persona.core_values %}{{ profile.persona.core_values | join('\n') }}{% endif %}</textarea>
             </label>
         </div>
 

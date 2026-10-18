@@ -15,14 +15,14 @@ from app.db.repositories.order_repo import OrderRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.account import AccountCreate, AccountUpdate
 from app.models.bot_config import BotConfigCreate, BotConfigUpdate
 from app.models.order import OrderCreate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.quota_template import QuotaTemplateCreate, QuotaTemplateUpdate
 from app.models.service import ServiceCreate, ServiceUpdate
-from app.models.user import UserCreate, UserUpdate
+from app.models.identity import IdentityCreate, IdentityUpdate
 from tools.test.db_test_utils import run_with_db
 
 
@@ -131,7 +131,7 @@ class TestAccountRepository:
                 {"conversation_id": str(conv["_id"]), "content": "hi"}
             )
             await db.service_memories.insert_one({"service_id": "svc-1"})
-            await db.users.insert_one({"id": "u-1", "account_id": acc.id})
+            await db.identities.insert_one({"id": "u-1", "account_id": acc.id})
             await db.bot_configs.insert_one({"id": "b-1", "account_id": acc.id})
             await db.account_quotas.insert_one({"account_id": acc.id})
             await db.profiles.insert_one(
@@ -143,7 +143,7 @@ class TestAccountRepository:
             assert stats["conversations"] == 1
             assert stats["service_memories"] == 1
             assert stats["services"] == 1
-            assert stats["users"] == 1
+            assert stats["identities"] == 1
             assert stats["bots"] == 1
             assert stats["quotas"] == 1
             assert stats["private_profiles"] == 1
@@ -152,31 +152,31 @@ class TestAccountRepository:
         run_with_db(body)
 
 
-class TestUserRepository:
+class TestIdentityRepository:
     """用户仓库测试集。"""
 
     def test_crud_and_query(self) -> None:
         async def body():
-            repo = UserRepository()
-            user = await repo.create(
-                UserCreate(account_id="acc-1", platform="qq", platform_id="oid-1", nickname="小明")
+            repo = IdentityRepository()
+            identity = await repo.create(
+                IdentityCreate(account_id="acc-1", platform="qq", platform_id="oid-1", nickname="小明")
             )
-            assert await repo.find_by_id(user.id) is not None
+            assert await repo.find_by_id(identity.id) is not None
             assert await repo.find_by_id("no-such") is None
             assert await repo.find_by_platform("qq", "oid-1") is not None
             assert await repo.find_by_platform("qq", "none") is None
 
             # find_or_create：已存在时复用并刷新活跃时间
             again = await repo.find_or_create("qq", "oid-1", "acc-1")
-            assert again.id == user.id
+            assert again.id == identity.id
             # 不存在时创建
             created = await repo.find_or_create("wechat", "oid-2", "acc-1", "小红")
             assert created.platform == "wechat"
 
             # 更新
-            same = await repo.update(user.id, UserUpdate())
+            same = await repo.update(identity.id, IdentityUpdate())
             assert same is not None
-            updated = await repo.update(user.id, UserUpdate(nickname="新昵称"))
+            updated = await repo.update(identity.id, IdentityUpdate(nickname="新昵称"))
             assert updated is not None and updated.nickname == "新昵称"
 
             # 列表与统计
@@ -187,32 +187,32 @@ class TestUserRepository:
             assert len(await repo.search("小红")) == 1
 
             # 禁用/启用与活跃时间
-            assert await repo.set_blocked(user.id, True, "违规") is True
-            blocked = await repo.find_by_id(user.id)
+            assert await repo.set_blocked(identity.id, True, "违规") is True
+            blocked = await repo.find_by_id(identity.id)
             assert blocked is not None and blocked.is_blocked is True
-            assert await repo.set_blocked(user.id, False) is True
-            assert await repo.update_last_active(user.id) is True
+            assert await repo.set_blocked(identity.id, False) is True
+            assert await repo.update_last_active(identity.id) is True
 
             # 绑定平台 openid
-            await repo.bind_platform_id(user.id, "real-oid", "真实昵称")
-            bound = await repo.find_by_id(user.id)
+            await repo.bind_platform_id(identity.id, "real-oid", "真实昵称")
+            bound = await repo.find_by_id(identity.id)
             assert bound is not None and bound.platform_id == "real-oid"
 
             # 按 Bot 维度记录 openid 映射（多 Bot 场景下主动消息路由）
-            assert await repo.bind_bot_openid(user.id, "bot-a", "oid-a") is True
+            assert await repo.bind_bot_openid(identity.id, "bot-a", "oid-a") is True
             # 幂等：值未变化时不产生写入
-            assert await repo.bind_bot_openid(user.id, "bot-a", "oid-a") is False
+            assert await repo.bind_bot_openid(identity.id, "bot-a", "oid-a") is False
             # 同一用户在不同 Bot 下的 openid 各自独立保存
-            assert await repo.bind_bot_openid(user.id, "bot-b", "oid-b") is True
-            mapped = await repo.find_by_id(user.id)
+            assert await repo.bind_bot_openid(identity.id, "bot-b", "oid-b") is True
+            mapped = await repo.find_by_id(identity.id)
             assert mapped is not None
             assert mapped.bot_openids == {"bot-a": "oid-a", "bot-b": "oid-b"}
             # 空参数直接跳过
-            assert await repo.bind_bot_openid(user.id, "", "oid-x") is False
+            assert await repo.bind_bot_openid(identity.id, "", "oid-x") is False
             assert await repo.bind_bot_openid("no-such-user", "bot-a", "oid") is False
 
             # 删除
-            assert await repo.delete(user.id) is True
+            assert await repo.delete(identity.id) is True
             assert await repo.delete_by_account("acc-1") == 1
 
         run_with_db(body)
@@ -225,24 +225,24 @@ class TestServiceRepository:
         async def body():
             repo = ServiceRepository()
             svc = await repo.create(ServiceCreate(
-                account_id="acc-1", user_id="u-1", bot_id="b-1", profile_id="p-1",
+                account_id="acc-1", identity_id="u-1", bot_id="b-1", profile_id="p-1",
             ))
             assert svc.context_key == svc.id
 
             assert await repo.find_by_id(svc.id) is not None
             assert await repo.find_by_id("no-such") is None
-            assert await repo.find_by_user_and_bot("u-1", "b-1") is not None
+            assert await repo.find_by_identity_and_bot("u-1", "b-1") is not None
             assert await repo.find_active_by_bot("b-1") is not None
 
             # 列表
             assert len(await repo.list_by_account("acc-1")) == 1
-            assert len(await repo.list_by_user("u-1")) == 1
+            assert len(await repo.list_by_identity("u-1")) == 1
             assert len(await repo.list_by_bot("b-1")) == 1
             assert len(await repo.list_all_active()) == 1
             assert await repo.list_active_bot_ids() == {"b-1"}
 
             # 引用统计
-            assert await repo.count_by_user("u-1") == 1
+            assert await repo.count_by_identity("u-1") == 1
             assert await repo.count_by_bot("b-1") == 1
             assert await repo.count_by_profile("p-1") == 1
 
@@ -257,8 +257,8 @@ class TestServiceRepository:
 
             # 禁用后可通过 find_disabled 查询
             await repo.update(svc.id, ServiceUpdate(is_active=False, disable_reason="停用"))
-            assert await repo.find_by_user_and_bot("u-1", "b-1") is None
-            disabled = await repo.find_disabled_by_user_and_bot("u-1", "b-1")
+            assert await repo.find_by_identity_and_bot("u-1", "b-1") is None
+            disabled = await repo.find_disabled_by_identity_and_bot("u-1", "b-1")
             assert disabled is not None and disabled.disable_reason == "停用"
 
             assert await repo.delete(svc.id) is True

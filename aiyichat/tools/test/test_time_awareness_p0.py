@@ -271,7 +271,7 @@ class TestTimeAuditLog:
             idle="9 小时", tagged=2, separators=1,
         )
         ConversationEngine._log_time_audit(
-            audit, user_id="u1", service_id="s1",
+            audit, identity_id="u1", service_id="s1",
             conversation_id="c1", pending_event_count=2,
         )
         record = next(
@@ -289,7 +289,7 @@ class TestTimeAuditLog:
         """未注入的字段以 '-' 留痕，便于从日志直接区分「注入失败」与「推理失败」。"""
         caplog.set_level(logging.INFO, logger="app.conversation.engine")
         ConversationEngine._log_time_audit(
-            TimeAudit(), user_id="u1", service_id="s1",
+            TimeAudit(), identity_id="u1", service_id="s1",
             conversation_id="c1", pending_event_count=0,
         )
         record = next(

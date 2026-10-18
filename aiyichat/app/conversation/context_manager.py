@@ -244,7 +244,7 @@ class ContextManager:
                     "要求：中文，不超过200字，保留关键信息和情感变化。\n"
                     + timeline_rule
                 )
-                user_content = (
+                identity_content = (
                     f"已有摘要：{current_summary}\n\n"
                     f"新增对话：\n{new_dialog}\n\n"
                     "请合并为一份完整摘要。"
@@ -255,13 +255,13 @@ class ContextManager:
                     "要求：中文，不超过200字，保留关键信息和情感变化。\n"
                     + timeline_rule
                 )
-                user_content = f"对话内容：\n{new_dialog}\n\n请生成摘要。"
+                identity_content = f"对话内容：\n{new_dialog}\n\n请生成摘要。"
 
             provider = get_llm_provider("summary")
             response = await provider.complete(
                 messages=[
                     {"role": "system", "content": system_content},
-                    {"role": "user", "content": user_content},
+                    {"role": "user", "content": identity_content},
                 ],
                 temperature=settings.summary_temperature,
                 max_tokens=settings.summary_max_tokens,

@@ -65,7 +65,7 @@ def _fallback_tz() -> timezone:
 
 
 def resolve_tz(
-    service_timezone: str = "", user_timezone: str = ""
+    service_timezone: str = "", identity_timezone: str = ""
 ) -> tuple[tzinfo, str]:
     """解析时区：service → user → 全局默认偏移，逐级回落，绝不抛异常。
 
@@ -77,7 +77,7 @@ def resolve_tz(
         (tzinfo, 展示名)。IANA 解析成功时展示名为原名（如 "Asia/Shanghai"），
         回落固定偏移时展示名为 "UTC+08:00"。
     """
-    for name in (service_timezone, user_timezone):
+    for name in (service_timezone, identity_timezone):
         name = (name or "").strip()
         if not name:
             continue
@@ -166,8 +166,8 @@ class TimeContext:
 
 def build_context(
     service_timezone: str = "",
-    user_timezone: str = "",
-    last_user_msg_at: datetime | None = None,
+    identity_timezone: str = "",
+    last_identity_msg_at: datetime | None = None,
 ) -> TimeContext:
     """构建单轮时间上下文。
 
@@ -179,14 +179,14 @@ def build_context(
     Returns:
         TimeContext（idle_seconds 为 None 时 idle_phrase 为空串）
     """
-    tz, tz_name = resolve_tz(service_timezone, user_timezone)
+    tz, tz_name = resolve_tz(service_timezone, identity_timezone)
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(tz)
 
     idle_seconds: float | None = None
     idle_phrase = ""
-    if last_user_msg_at is not None:
-        idle_seconds = (now_utc - ensure_aware(last_user_msg_at)).total_seconds()
+    if last_identity_msg_at is not None:
+        idle_seconds = (now_utc - ensure_aware(last_identity_msg_at)).total_seconds()
         if idle_seconds > 0:
             idle_phrase = format_gap(idle_seconds)
         else:

@@ -414,8 +414,8 @@ class ServiceMemoryRepository:
             if ent.name in by_name:
                 # 合并：更新关系与属性，刷新提及时间
                 cur = by_name[ent.name]
-                if ent.relation_to_user:
-                    cur["relation_to_user"] = ent.relation_to_user
+                if ent.relation_to_identity:
+                    cur["relation_to_identity"] = ent.relation_to_identity
                 cur.setdefault("attributes", {}).update(ent.attributes)
                 cur["last_mentioned_at"] = now
                 # 新字段合并

@@ -176,7 +176,7 @@ async def reference_image_generate(
         raise HTTPException(status_code=404, detail="角色不存在")
 
     appearance = (
-        profile.identity.appearance or profile.identity.age_appearance
+        profile.persona.appearance or profile.persona.age_appearance
     ).strip()
     if not appearance:
         return await _render_detail(

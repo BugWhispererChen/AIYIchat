@@ -263,7 +263,7 @@ class TestProcessService:
 
     def _make_service(self, **kw):
         base = dict(
-            id="svc-1", user_id="u-1", account_id="acc-1",
+            id="svc-1", identity_id="u-1", account_id="acc-1",
             bot_id="b-1", profile_id="companion", share_group_id="",
             last_message_at=None,
         )
@@ -272,10 +272,10 @@ class TestProcessService:
         ns.context_key = ns.share_group_id or ns.id
         return ns
 
-    def _make_user(self, **kw):
+    def _make_identity(self, **kw):
         base = dict(
             id="u-1", platform_id="real-openid", platform="qq",
-            is_blocked=False, last_active_at=None, identity_description="",
+            is_blocked=False, last_active_at=None, self_description="",
         )
         base.update(kw)
         return SimpleNamespace(**base)
@@ -289,26 +289,26 @@ class TestProcessService:
                 cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
                 # 用户不存在
-                sched._user_repo.find_by_id = AsyncMock(return_value=None)
+                sched._identity_repo.find_by_id = AsyncMock(return_value=None)
                 await sched._process_service(svc, cutoff)
 
                 # 被禁用
-                sched._user_repo.find_by_id = AsyncMock(
-                    return_value=self._make_user(is_blocked=True)
+                sched._identity_repo.find_by_id = AsyncMock(
+                    return_value=self._make_identity(is_blocked=True)
                 )
                 await sched._process_service(svc, cutoff)
 
                 # 未绑定（platform_id 为 UUID）
-                sched._user_repo.find_by_id = AsyncMock(
-                    return_value=self._make_user(
+                sched._identity_repo.find_by_id = AsyncMock(
+                    return_value=self._make_identity(
                         platform_id="12345678-1234-1234-1234-123456789abc"
                     )
                 )
                 await sched._process_service(svc, cutoff)
 
                 # 非推送平台
-                sched._user_repo.find_by_id = AsyncMock(
-                    return_value=self._make_user(platform="web")
+                sched._identity_repo.find_by_id = AsyncMock(
+                    return_value=self._make_identity(platform="web")
                 )
                 await sched._process_service(svc, cutoff)
             finally:
@@ -330,10 +330,10 @@ class TestProcessService:
                     sched = ProactiveScheduler()
                     # 用户 5 小时前活跃 → 触发阶段1
                     last = datetime.now(timezone.utc) - timedelta(hours=5)
-                    user = self._make_user(last_active_at=last)
+                    identity = self._make_identity(last_active_at=last)
                     svc = self._make_service()
 
-                    sched._user_repo.find_by_id = AsyncMock(return_value=user)
+                    sched._identity_repo.find_by_id = AsyncMock(return_value=identity)
                     sched._can_send = lambda *a, **k: True
                     sched._is_quiet_hours = lambda *a, **k: False
                     sched._generate_content = AsyncMock(return_value=("你好呀", ""))
@@ -356,10 +356,10 @@ class TestProcessService:
             try:
                 sched = ProactiveScheduler()
                 # 1 小时前活跃 → 跳过（<4h）
-                user = self._make_user(
+                identity = self._make_identity(
                     last_active_at=datetime.now(timezone.utc) - timedelta(hours=1)
                 )
-                sched._user_repo.find_by_id = AsyncMock(return_value=user)
+                sched._identity_repo.find_by_id = AsyncMock(return_value=identity)
                 sched._send_message = AsyncMock()
                 cutoff = datetime.now(timezone.utc) - timedelta(days=30)
                 await sched._process_service(self._make_service(), cutoff)
@@ -424,8 +424,8 @@ class TestGenerateContent:
                     id="svc-1", bot_id=bot.id, profile_id="companion",
                     share_group_id="", context_key="svc-1",
                 )
-                user = SimpleNamespace(
-                    id="u-1", identity_description="", platform="qq",
+                identity = SimpleNamespace(
+                    id="u-1", self_description="", platform="qq",
                 )
                 fake_provider = SimpleNamespace(
                     complete=AsyncMock(side_effect=[
@@ -443,12 +443,12 @@ class TestGenerateContent:
                     patch.object(settings, "message_time_enabled", True),
                 ):
                     if kind == "care":
-                        content, ref = await sched._generate_content(user, svc, stage)
+                        content, ref = await sched._generate_content(identity, svc, stage)
                         assert ref == ""
                     elif kind == "event":
-                        content = await sched._generate_event_content(user, svc, "面试结果")
+                        content = await sched._generate_event_content(identity, svc, "面试结果")
                     else:
-                        content = await sched._generate_share_content(user, svc, kind)
+                        content = await sched._generate_share_content(identity, svc, kind)
 
                 fallback = kind == "news" and not expected
                 assert content == ("分享个有趣的小发现。" if fallback else expected)
@@ -487,7 +487,7 @@ class TestGenerateContent:
                     id="svc-2", bot_id="no-bot", profile_id="companion",
                     share_group_id="", context_key="svc-2",
                 )
-                content2, _ = await sched._generate_content(user, svc2, stage)
+                content2, _ = await sched._generate_content(identity, svc2, stage)
                 assert content2 == ""
             finally:
                 mongo._db = None
@@ -518,7 +518,7 @@ class TestPendingEvents:
                     id="svc-1", bot_id="b-1", profile_id="companion",
                     share_group_id="", context_key="svc-1",
                 )
-                user = SimpleNamespace(
+                identity = SimpleNamespace(
                     id="u-1", platform="qq", platform_id="oid-1",
                 )
                 sched._can_send = lambda *a, **k: True
@@ -526,12 +526,12 @@ class TestPendingEvents:
                 sched._generate_event_content = AsyncMock(return_value="面试怎么样啦？")
                 sched._send_message = AsyncMock(return_value=True)
 
-                handled = await sched._process_pending_events(svc, user)
+                handled = await sched._process_pending_events(svc, identity)
                 assert handled is True
                 sched._send_message.assert_awaited()
 
                 # 事件已跟进后不再处理
-                handled2 = await sched._process_pending_events(svc, user)
+                handled2 = await sched._process_pending_events(svc, identity)
                 assert handled2 is False
             finally:
                 mongo._db = None
@@ -546,8 +546,8 @@ class TestPendingEvents:
                 svc = SimpleNamespace(
                     id="svc-x", context_key="svc-x",
                 )
-                user = SimpleNamespace(id="u-1", platform="qq", platform_id="oid")
-                assert await sched._process_pending_events(svc, user) is False
+                identity = SimpleNamespace(id="u-1", platform="qq", platform_id="oid")
+                assert await sched._process_pending_events(svc, identity) is False
             finally:
                 mongo._db = None
 
@@ -596,7 +596,7 @@ class TestMultiBotRouting:
 
     def _make_service(self, **kw):
         base = dict(
-            id="svc-1", user_id="u-1", account_id="acc-1",
+            id="svc-1", identity_id="u-1", account_id="acc-1",
             bot_id="b-1", profile_id="companion", share_group_id="",
             last_message_at=None,
         )
@@ -605,10 +605,10 @@ class TestMultiBotRouting:
         ns.context_key = ns.share_group_id or ns.id
         return ns
 
-    def _make_user(self, **kw):
+    def _make_identity(self, **kw):
         base = dict(
             id="u-1", platform_id="oid-latest", platform="qq",
-            is_blocked=False, identity_description="",
+            is_blocked=False, self_description="",
             last_active_at=datetime.now(timezone.utc) - timedelta(hours=5),
             bot_openids={},
         )
@@ -618,11 +618,11 @@ class TestMultiBotRouting:
     def test_resolve_platform_id(self) -> None:
         """优先用该 Bot 的 openid，缺失时回退 platform_id。"""
         sched = ProactiveScheduler()
-        user = self._make_user(bot_openids={"b-1": "oid-b1", "b-2": "oid-b2"})
-        assert sched._resolve_platform_id(user, "b-1") == "oid-b1"
-        assert sched._resolve_platform_id(user, "b-2") == "oid-b2"
+        identity = self._make_identity(bot_openids={"b-1": "oid-b1", "b-2": "oid-b2"})
+        assert sched._resolve_platform_id(identity, "b-1") == "oid-b1"
+        assert sched._resolve_platform_id(identity, "b-2") == "oid-b2"
         # 无映射的 Bot（存量数据）→ 回退
-        assert sched._resolve_platform_id(user, "b-3") == "oid-latest"
+        assert sched._resolve_platform_id(identity, "b-3") == "oid-latest"
         # 无 bot_openids 属性的旧对象 → 回退
         legacy = SimpleNamespace(id="u-1", platform_id="oid-latest")
         assert sched._resolve_platform_id(legacy, "b-1") == "oid-latest"
@@ -637,10 +637,10 @@ class TestMultiBotRouting:
             settings.proactive_share_enabled = False
             try:
                 sched = ProactiveScheduler()
-                user = self._make_user(
+                identity = self._make_identity(
                     bot_openids={"b-1": "oid-b1", "b-2": "oid-b2"}
                 )
-                sched._user_repo.find_by_id = AsyncMock(return_value=user)
+                sched._identity_repo.find_by_id = AsyncMock(return_value=identity)
                 sched._can_send = lambda *a, **k: True
                 sched._is_quiet_hours = lambda *a, **k: False
                 sched._generate_content = AsyncMock(return_value=("你好呀", ""))
@@ -654,7 +654,7 @@ class TestMultiBotRouting:
 
                 assert sched._send_message.await_count == 2
                 targets = {
-                    c.kwargs["user_platform_id"]
+                    c.kwargs["platform_id"]
                     for c in sched._send_message.await_args_list
                 }
                 assert targets == {"oid-b1", "oid-b2"}
@@ -677,15 +677,15 @@ class TestMultiBotRouting:
 
                 repo = ProactiveRecordRepository()
                 sent = ProactiveRecord(
-                    user_id="u-1", platform_user_id="oid-b1", platform="qq",
+                    identity_id="u-1", platform_openid="oid-b1", platform="qq",
                     bot_id="b-1", stage=1,
                 )
                 await repo.create(sent)
                 await repo.mark_sent(sent.id, "刚发过的一条")
 
                 sched = ProactiveScheduler()
-                sched._user_repo.find_by_id = AsyncMock(
-                    return_value=self._make_user()
+                sched._identity_repo.find_by_id = AsyncMock(
+                    return_value=self._make_identity()
                 )
                 sched._send_message = AsyncMock()
                 cutoff = datetime.now(timezone.utc) - timedelta(days=30)
@@ -710,8 +710,8 @@ class TestMultiBotRouting:
                 )
 
                 sched = ProactiveScheduler()
-                sched._user_repo.find_by_id = AsyncMock(
-                    return_value=self._make_user(bot_openids={"b-1": "oid-b1"})
+                sched._identity_repo.find_by_id = AsyncMock(
+                    return_value=self._make_identity(bot_openids={"b-1": "oid-b1"})
                 )
                 sched._can_send = lambda *a, **k: True
                 sched._is_quiet_hours = lambda *a, **k: False
@@ -727,12 +727,12 @@ class TestMultiBotRouting:
                 cutoff = datetime.now(timezone.utc) - timedelta(days=30)
                 await sched._process_service(self._make_service(), cutoff)
 
-                records = await ProactiveRecordRepository().find_latest_by_user(
+                records = await ProactiveRecordRepository().find_latest_by_identity(
                     "u-1", "b-1", 1
                 )
                 assert records and records[0].status == "failed"
                 assert "40034122" in records[0].error_msg
-                assert records[0].platform_user_id == "oid-b1"
+                assert records[0].platform_openid == "oid-b1"
 
                 # 客户端无错误详情属性 → 兜底文案
                 sched._qq_manager = SimpleNamespace(

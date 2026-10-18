@@ -16,7 +16,7 @@ from app.chat_import.analyzer import create_task, get_task, run_analysis, save_t
 from app.chat_import.parser import parse_json_file, save_uploaded_file
 from app.models.profile import (
     ProfileDialogueStrategy,
-    ProfileIdentity,
+    ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     PromptProfileCreate,
@@ -216,11 +216,11 @@ async def chat_import_save(
         is_active=form.get("is_active") == "on",
         visibility=visibility,  # type: ignore[arg-type]
         account_id=account_id,
-        identity=ProfileIdentity(
-            background=str(form.get("identity_background", "")),
-            era=str(form.get("identity_era", "")),
-            age_appearance=str(form.get("identity_age_appearance", "")),
-            core_values=_lines("identity_core_values"),
+        persona=ProfilePersona(
+            background=str(form.get("persona_background", "")),
+            era=str(form.get("persona_era", "")),
+            age_appearance=str(form.get("persona_age_appearance", "")),
+            core_values=_lines("persona_core_values"),
             relationships=[],
         ),
         language_style=ProfileLanguageStyle(

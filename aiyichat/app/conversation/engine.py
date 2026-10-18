@@ -43,17 +43,17 @@ from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.safety_event_repo import SafetyEventRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.llm.base import LLMUsage
 from app.llm.prompt_assembler import (
-    GapMode, PromptAssembler, TimeAudit, _ensure_aware, _last_user_message_at,
+    GapMode, PromptAssembler, TimeAudit, _ensure_aware, _last_identity_message_at,
 )
 from app.llm.provider_factory import get_llm_provider
 from app.models.conversation import ConversationInDB
 from app.models.profile import PromptProfileInDB
 from app.models.safety_event import SafetyEvent, SafetyEventType
 from app.models.service import ServiceInDB, ServiceUpdate
-from app.models.user import UserInDB
+from app.models.identity import IdentityInDB
 from app.models.service_memory import (
     CharacterMood,
     MemoryFact,
@@ -154,7 +154,7 @@ class ConversationEngine:
 
     def __init__(self, bot_id: str = ""):
         self.bot_id = bot_id
-        self.user_repo = UserRepository()
+        self.identity_repo = IdentityRepository()
         self.bot_repo = BotConfigRepository()
         self.service_repo = ServiceRepository()
         self.account_repo = AccountRepository()
@@ -226,23 +226,23 @@ class ConversationEngine:
             return EngineResult(text=msg)
 
         # 1. 按平台+openid 查找已绑定的用户
-        user = await self.user_repo.find_by_platform(platform, platform_id)
+        identity = await self.identity_repo.find_by_platform(platform, platform_id)
 
-        if user is not None:
+        if identity is not None:
             # 1.1 已绑定用户 → 检查禁用状态
-            if user.is_blocked:
+            if identity.is_blocked:
                 msg = "服务异常，请联系管理员！"
-                if user.block_reason:
-                    msg += f"\n原因：{user.block_reason}"
+                if identity.block_reason:
+                    msg += f"\n原因：{identity.block_reason}"
                 return EngineResult(text=msg)
 
             # 1.2 查找该用户+Bot 的服务
-            service = await self.service_repo.find_by_user_and_bot(
-                user.id, self.bot_id
+            service = await self.service_repo.find_by_identity_and_bot(
+                identity.id, self.bot_id
             )
             if service is None:
-                disabled_svc = await self.service_repo.find_disabled_by_user_and_bot(
-                    user.id, self.bot_id
+                disabled_svc = await self.service_repo.find_disabled_by_identity_and_bot(
+                    identity.id, self.bot_id
                 )
                 if disabled_svc:
                     msg = "服务已禁用，请联系管理员！"
@@ -252,8 +252,8 @@ class ConversationEngine:
                 return EngineResult(text=self._no_service_message())
 
             # 1.2.1 记录该 Bot 下的 openid 映射（主动消息按 Bot 路由发送目标）
-            await self.user_repo.bind_bot_openid(
-                user.id, self.bot_id, platform_id
+            await self.identity_repo.bind_bot_openid(
+                identity.id, self.bot_id, platform_id
             )
         else:
             # 1.3 未找到用户 → 尝试自动绑定 openid 到该 Bot 的服务用户
@@ -266,38 +266,38 @@ class ConversationEngine:
                 return EngineResult(text=self._no_service_message())
 
             # 获取服务关联的用户
-            user = await self.user_repo.find_by_id(service.user_id)
-            if user is None:
+            identity = await self.identity_repo.find_by_id(service.identity_id)
+            if identity is None:
                 return EngineResult(text=self._no_service_message())
 
             # 检查用户是否被禁用
-            if user.is_blocked:
+            if identity.is_blocked:
                 msg = "服务异常，请联系管理员！"
-                if user.block_reason:
-                    msg += f"\n原因：{user.block_reason}"
+                if identity.block_reason:
+                    msg += f"\n原因：{identity.block_reason}"
                 return EngineResult(text=msg)
 
             # 判断用户是否已绑定其他真实 openid
-            if not self._is_uuid(user.platform_id):
+            if not self._is_uuid(identity.platform_id):
                 # 已绑定其他真实平台用户，拒绝
                 logger.info(
                     "Bot=%s service already bound to platform_id=%s, "
                     "rejecting new openid=%s",
-                    self.bot_id, user.platform_id, platform_id,
+                    self.bot_id, identity.platform_id, platform_id,
                 )
                 return EngineResult(text="该Bot的服务已绑定其他用户。")
 
             # 绑定真实 openid 到管理员预创建的用户
-            await self.user_repo.bind_platform_id(
-                user.id, platform_id, nickname
+            await self.identity_repo.bind_platform_id(
+                identity.id, platform_id, nickname
             )
             # 同步记录该 Bot 下的 openid 映射（主动消息按 Bot 路由发送目标）
-            await self.user_repo.bind_bot_openid(
-                user.id, self.bot_id, platform_id
+            await self.identity_repo.bind_bot_openid(
+                identity.id, self.bot_id, platform_id
             )
             logger.info(
                 "Auto-bound openid=%s to user=%s (bot=%s)",
-                platform_id, user.id, self.bot_id,
+                platform_id, identity.id, self.bot_id,
             )
 
         # 3. 确定当前角色 Profile（校验可见性）
@@ -311,17 +311,17 @@ class ConversationEngine:
 
         # 4. 查找或创建对话会话（关联到服务；共享组内复用同一会话）
         conversation = await self._find_or_create_conversation(
-            user, profile, service
+            identity, profile, service
         )
 
         # 4.5 内容安全检查（危机干预 / 违禁拦截优先于额度与 LLM）
         verdict = self.safety_checker.check_input(text)
         if verdict.action != SafetyAction.PASS:
             await self._record_safety_event(
-                verdict, platform, platform_id, user, service, bot
+                verdict, platform, platform_id, identity, service, bot
             )
             # 危机/违禁消息不扣额度、不调用 LLM，直接返回安全话术并留痕对话
-            await self.turn_recorder.record_user_message(
+            await self.turn_recorder.record_identity_message(
                 conversation_id=conversation.id,
                 text=text,
                 emotion_tag=detect_emotion(text),
@@ -336,7 +336,7 @@ class ConversationEngine:
                 latency_ms=0,
             )
             await self.turn_recorder.update_conversation_meta(conversation.id)
-            await self.user_repo.update_last_active(user.id)
+            await self.identity_repo.update_last_active(identity.id)
             return EngineResult(
                 text=verdict.reply,
                 conversation_id=conversation.id,
@@ -399,10 +399,10 @@ class ConversationEngine:
             dynamic_memory_facts, dynamic_memory_objs,
         ) = self._prepare_memory_layers(scored_facts)
 
-        last_user_at = _last_user_message_at(history)
-        gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
+        last_identity_at = _last_identity_message_at(history)
+        gap_mode = _gap_mode((received_at - last_identity_at).total_seconds()) if last_identity_at else "none"
         last_proactive_at, last_proactive_text = await self._recent_proactive_context(
-            user.id, last_user_at, received_at, gap_mode
+            identity.id, last_identity_at, received_at, gap_mode
         )
         if gap_mode != "none":
             topic_context = await self._reset_topic_after_gap(
@@ -424,12 +424,12 @@ class ConversationEngine:
         # 7e. 话题停滞检测：连续多轮同话题时生成换话题引导提示
         topic_stall_hint = ""
         if settings.topic_stall_detection_enabled and gap_mode == "none":
-            recent_user_msgs = [
+            recent_identity_msgs = [
                 getattr(m, "content", "") or ""
                 for m in history if getattr(m, "role", "") == "user"
             ]
             if self.topic_manager.detect_topic_stall(
-                recent_user_msgs,
+                recent_identity_msgs,
                 threshold=settings.topic_stall_threshold,
                 similarity=settings.topic_stall_similarity,
             ):
@@ -440,7 +440,7 @@ class ConversationEngine:
                 )
                 logger.info(
                     "话题停滞检测命中: user=%s, conv=%s, recent_user_msgs=%d",
-                    user.id, conversation.id, len(recent_user_msgs),
+                    identity.id, conversation.id, len(recent_identity_msgs),
                 )
 
         # 8. 组装Prompt（含长度软引导、未成年人保护注入与时间上下文审计）
@@ -451,7 +451,7 @@ class ConversationEngine:
             text=text,
             summary=summary,
             emotion_hint=emotion_hint,
-            user=user,
+            identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
             verbosity=getattr(profile, "verbosity", "standard"),
@@ -471,7 +471,7 @@ class ConversationEngine:
         )
         self._log_time_audit(
             time_audit,
-            user_id=user.id,
+            identity_id=identity.id,
             service_id=service.id,
             conversation_id=conversation.id,
             pending_event_count=len(pending_events),
@@ -507,7 +507,7 @@ class ConversationEngine:
 
             await track_error(e, context={
                 "bot_id": self.bot_id,
-                "user_id": user.id,
+                "identity_id": identity.id,
                 "service_id": service.id,
             })
             # 预检仅查余额不预扣，失败请求不产生费用，无需退款补偿
@@ -532,7 +532,7 @@ class ConversationEngine:
                     "复读检测命中（%s，相似度=%.2f）: user=%s, conv=%s",
                     "严重" if is_severe else "轻微",
                     similarity,
-                    user.id, conversation.id,
+                    identity.id, conversation.id,
                 )
                 retry_max = max(settings.reply_jitter_retry_max, 1)
                 temp_step = settings.reply_jitter_retry_temp_step
@@ -563,12 +563,12 @@ class ConversationEngine:
                         if not self._is_repeat_of_recent(response_text, history):
                             logger.info(
                                 "复读重试成功（第%d次）: user=%s, conv=%s",
-                                attempt, user.id, conversation.id,
+                                attempt, identity.id, conversation.id,
                             )
                             break
                         logger.warning(
                             "复读重试第%d次仍重复: user=%s, conv=%s",
-                            attempt, user.id, conversation.id,
+                            attempt, identity.id, conversation.id,
                         )
                     except Exception as e:
                         logger.warning("复读重试第%d次失败，沿用原回复: %s", attempt, e)
@@ -576,13 +576,13 @@ class ConversationEngine:
                 else:
                     logger.warning(
                         "复读检测重试%d次后仍重复，照常发送: user=%s, conv=%s",
-                        retry_max, user.id, conversation.id,
+                        retry_max, identity.id, conversation.id,
                     )
 
         # 后处理：清洗标签 + 消息拆分 + 人设一致性自检（与流式链路共用）
         clean_text, messages, image_specs, sticker_specs = (
             self._postprocess_response(
-                response_text, profile, user.id
+                response_text, profile, identity.id
             )
         )
         # 合并 Function Calling 产生的图片提示（置于文本标签之前）
@@ -620,7 +620,7 @@ class ConversationEngine:
         # 10-13. 回合收尾：持久化、元数据、异步摘要与焦点提取（与流式链路共用）
         await self._finalize_turn(
             conversation=conversation,
-            user=user,
+            identity=identity,
             service=service,
             service_memory=service_memory,
             text=text,
@@ -657,7 +657,7 @@ class ConversationEngine:
             "Turn completed: bot=%s, user=%s, profile=%s, "
             "emotion=%s, latency=%dms, img_tags=%d",
             self.bot_id,
-            user.id,
+            identity.id,
             profile.slug,
             emotion_tag,
             latency_ms,
@@ -703,8 +703,8 @@ class ConversationEngine:
         if bot is None or getattr(bot, "is_blocked", False):
             yield self._no_service_message()
             return
-        user = await self.user_repo.find_by_platform(platform, platform_id)
-        if user is None or user.is_blocked:
+        identity = await self.identity_repo.find_by_platform(platform, platform_id)
+        if identity is None or identity.is_blocked:
             yield self._no_service_message()
             return
         service = None
@@ -713,12 +713,12 @@ class ConversationEngine:
             # 只接受归属本人的服务：越权指定他人服务时静默回落，不泄露存在性
             if (
                 candidate is not None
-                and candidate.user_id == user.id
+                and candidate.identity_id == identity.id
                 and candidate.bot_id == self.bot_id
             ):
                 service = candidate
         if service is None:
-            service = await self.service_repo.find_by_user_and_bot(user.id, self.bot_id)
+            service = await self.service_repo.find_by_identity_and_bot(identity.id, self.bot_id)
         if service is None:
             yield self._no_service_message()
             return
@@ -729,17 +729,17 @@ class ConversationEngine:
             yield self._no_profile_message()
             return
         conversation = await self._find_or_create_conversation(
-            user, profile, service
+            identity, profile, service
         )
 
         # 内容安全检查（危机干预 / 违禁拦截优先于额度与 LLM）
         verdict = self.safety_checker.check_input(text)
         if verdict.action != SafetyAction.PASS:
             await self._record_safety_event(
-                verdict, platform, platform_id, user, service, bot
+                verdict, platform, platform_id, identity, service, bot
             )
             # 与非流式路径保持一致：留痕本轮对话并更新元数据/活跃时间
-            await self.turn_recorder.record_user_message(
+            await self.turn_recorder.record_identity_message(
                 conversation_id=conversation.id,
                 text=text,
                 emotion_tag=detect_emotion(text),
@@ -753,7 +753,7 @@ class ConversationEngine:
                 latency_ms=0,
             )
             await self.turn_recorder.update_conversation_meta(conversation.id)
-            await self.user_repo.update_last_active(user.id)
+            await self.identity_repo.update_last_active(identity.id)
             yield verdict.reply
             return
 
@@ -791,10 +791,10 @@ class ConversationEngine:
             dynamic_memory_facts, dynamic_memory_objs,
         ) = self._prepare_memory_layers(scored_facts)
 
-        last_user_at = _last_user_message_at(history)
-        gap_mode = _gap_mode((received_at - last_user_at).total_seconds()) if last_user_at else "none"
+        last_identity_at = _last_identity_message_at(history)
+        gap_mode = _gap_mode((received_at - last_identity_at).total_seconds()) if last_identity_at else "none"
         last_proactive_at, last_proactive_text = await self._recent_proactive_context(
-            user.id, last_user_at, received_at, gap_mode
+            identity.id, last_identity_at, received_at, gap_mode
         )
         if gap_mode != "none":
             topic_context = await self._reset_topic_after_gap(
@@ -816,12 +816,12 @@ class ConversationEngine:
         # 话题停滞检测：连续多轮同话题时生成换话题引导提示
         topic_stall_hint = ""
         if settings.topic_stall_detection_enabled and gap_mode == "none":
-            recent_user_msgs = [
+            recent_identity_msgs = [
                 getattr(m, "content", "") or ""
                 for m in history if getattr(m, "role", "") == "user"
             ]
             if self.topic_manager.detect_topic_stall(
-                recent_user_msgs,
+                recent_identity_msgs,
                 threshold=settings.topic_stall_threshold,
                 similarity=settings.topic_stall_similarity,
             ):
@@ -832,7 +832,7 @@ class ConversationEngine:
                 )
                 logger.info(
                     "话题停滞检测命中（流式）: user=%s, conv=%s",
-                    user.id, conversation.id,
+                    identity.id, conversation.id,
                 )
 
         stream_time_audit = TimeAudit()
@@ -842,7 +842,7 @@ class ConversationEngine:
             text=text,
             summary=summary,
             emotion_hint=emotion_hint,
-            user=user,
+            identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
             verbosity=getattr(profile, "verbosity", "standard"),
@@ -862,7 +862,7 @@ class ConversationEngine:
         )
         self._log_time_audit(
             stream_time_audit,
-            user_id=user.id,
+            identity_id=identity.id,
             service_id=service.id,
             conversation_id=conversation.id,
             pending_event_count=len(pending_events),
@@ -891,7 +891,7 @@ class ConversationEngine:
 
             await track_error(e, context={
                 "bot_id": self.bot_id,
-                "user_id": user.id,
+                "identity_id": identity.id,
                 "service_id": service.id,
             })
             if not chunks:
@@ -903,7 +903,7 @@ class ConversationEngine:
         latency_ms = int((time.monotonic() - start_time) * 1000)
         response_text = "".join(chunks)
         clean_text, _, _, _ = self._postprocess_response(
-            response_text, profile, user.id
+            response_text, profile, identity.id
         )
 
         # 按 API 实际 usage 结算本轮 token 消耗（后端未返回时按零值跳过）
@@ -914,7 +914,7 @@ class ConversationEngine:
         await self._settle_usage(service.account_id, stream_usage)
         await self._finalize_turn(
             conversation=conversation,
-            user=user,
+            identity=identity,
             service=service,
             service_memory=service_memory,
             text=text,
@@ -937,17 +937,17 @@ class ConversationEngine:
 
     async def _find_or_create_conversation(
         self,
-        user: UserInDB,
+        identity: IdentityInDB,
         profile: PromptProfileInDB,
         service: ServiceInDB,
     ) -> ConversationInDB:
         """查找或创建会话；服务设置共享组时按组 key 复用同一会话。"""
         if service.share_group_id:
             return await self.conversation_repo.find_or_create_by_key(
-                user.id, profile.id, service.context_key
+                identity.id, profile.id, service.context_key
             )
         return await self.conversation_repo.find_or_create(
-            user.id, profile.id, service.id
+            identity.id, profile.id, service.id
         )
 
     async def switch_profile(
@@ -962,10 +962,10 @@ class ConversationEngine:
         if bot is None:
             return None
 
-        user = await self.user_repo.find_by_platform(platform, platform_id)
-        if user is None:
+        identity = await self.identity_repo.find_by_platform(platform, platform_id)
+        if identity is None:
             return None
-        service = await self.service_repo.find_by_user_and_bot(user.id, bot_id)
+        service = await self.service_repo.find_by_identity_and_bot(identity.id, bot_id)
         if service is None:
             return None
 
@@ -1183,8 +1183,8 @@ class ConversationEngine:
 
                 # 渲染实体行：名称（与用户关系，情感）——关系网络；属性
                 line = f"{ent.name}"
-                if ent.relation_to_user:
-                    line += f"（用户的{ent.relation_to_user}"
+                if ent.relation_to_identity:
+                    line += f"（用户的{ent.relation_to_identity}"
                     if ent.sentiment:
                         line += f"，情感：{ent.sentiment}"
                     line += "）"
@@ -1349,15 +1349,15 @@ class ConversationEngine:
         return new_context + topic_context.removeprefix(old_context)
 
     async def _recent_proactive_context(
-        self, user_id: str, last_user_at: datetime | None,
+        self, identity_id: str, last_identity_at: datetime | None,
         received_at: datetime, gap_mode: GapMode,
     ) -> tuple[datetime | None, str]:
-        if gap_mode not in ("session", "reunion") or last_user_at is None:
+        if gap_mode not in ("session", "reunion") or last_identity_at is None:
             return None, ""
-        record = await self.proactive_repo.get_latest_sent(user_id=user_id, bot_id=self.bot_id)
+        record = await self.proactive_repo.get_latest_sent(identity_id=identity_id, bot_id=self.bot_id)
         if record is not None and record.sent_at is not None:
             sent_at = _ensure_aware(record.sent_at)
-            if last_user_at < sent_at <= received_at:
+            if last_identity_at < sent_at <= received_at:
                 return sent_at, ResponseProcessor.strip_time_tags(record.content)
         return None, ""
 
@@ -1369,7 +1369,7 @@ class ConversationEngine:
         text: str,
         summary,
         emotion_hint: str,
-        user,
+        identity,
         current_topic: str,
         memory_facts: list[str],
         verbosity: str,
@@ -1399,10 +1399,10 @@ class ConversationEngine:
         messages = self.prompt_assembler.assemble(
             profile=profile,
             history=history,
-            user_input=text,
+            identity_input=text,
             summary=summary,
             emotion_hint=emotion_hint,
-            user=user,
+            identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
             length_instruction=self._length_instruction_for(verbosity),
@@ -1422,7 +1422,7 @@ class ConversationEngine:
             last_proactive_text=last_proactive_text,
         )
         # 未成年人保护：注入合规约束（紧贴 user_input 前）
-        if getattr(user, "is_minor", False):
+        if getattr(identity, "is_minor", False):
             messages.insert(
                 len(messages) - 1,
                 {"role": "system", "content": _MINOR_GUARD_PROMPT},
@@ -1433,7 +1433,7 @@ class ConversationEngine:
     def _log_time_audit(
         audit: TimeAudit,
         *,
-        user_id: str,
+        identity_id: str,
         service_id: str,
         conversation_id: str,
         pending_event_count: int,
@@ -1448,11 +1448,11 @@ class ConversationEngine:
             "gap_mode=%s events=%d user=%s service=%s conv=%s",
             audit.anchor or "-", audit.now or "-", audit.tz or "-",
             audit.idle or "-", audit.tagged, audit.separators,
-            audit.gap_mode, pending_event_count, user_id, service_id, conversation_id,
+            audit.gap_mode, pending_event_count, identity_id, service_id, conversation_id,
         )
 
     def _postprocess_response(
-        self, response_text: str, profile, user_id: str
+        self, response_text: str, profile, identity_id: str
     ) -> tuple[str, list[str], list[tuple[str, bool]], list[str]]:
         """LLM 回复后处理：标签清洗 + 消息拆分 + 人设一致性自检。
 
@@ -1487,7 +1487,7 @@ class ConversationEngine:
             )
             if not ok:
                 logger.warning(
-                    "一致性自检: user=%s, issues=%s", user_id, issues
+                    "一致性自检: user=%s, issues=%s", identity_id, issues
                 )
                 # 禁用词与角色越界同等处理：原先只记日志等于没拦截，
                 # 与人格冲突的词仍会原样发到用户屏幕上
@@ -1540,7 +1540,7 @@ class ConversationEngine:
     async def _resolve_sticker_tasks(
         self,
         sticker_specs: list[str],
-        user_text: str,
+        identity_text: str,
         profile: PromptProfileInDB,
     ) -> list[StickerTask]:
         """组装表情包发送任务：标签语义检索 + 以图回图 + 随机穿插概率触发。
@@ -1593,7 +1593,7 @@ class ConversationEngine:
         if (
             not tasks
             and max_count > 0
-            and self._is_sticker_only_message(user_text)
+            and self._is_sticker_only_message(identity_text)
             and random.random() < settings.sticker_reply_probability
         ):
             try:
@@ -1613,7 +1613,7 @@ class ConversationEngine:
         if (
             not tasks
             and max_count > 0
-            and not self._is_sticker_only_message(user_text)
+            and not self._is_sticker_only_message(identity_text)
             and random.random() < settings.sticker_casual_probability
         ):
             try:
@@ -1699,7 +1699,7 @@ class ConversationEngine:
         self,
         *,
         conversation,
-        user,
+        identity,
         service,
         service_memory,
         text: str,
@@ -1722,7 +1722,7 @@ class ConversationEngine:
     ) -> None:
         """回合收尾：持久化双方消息、更新元数据/活跃时间、异步摘要与焦点提取。"""
         # 持久化用户消息与 AI 回复（保存清理后的纯文本；用户消息按接收时刻落时间戳）
-        user_msg = await self.turn_recorder.record_user_message(
+        identity_msg = await self.turn_recorder.record_identity_message(
             conversation_id=conversation.id,
             text=text,
             emotion_tag=emotion_tag,
@@ -1739,7 +1739,7 @@ class ConversationEngine:
         await self.turn_recorder.update_conversation_meta(conversation.id)
 
         # 更新用户最后活跃时间（消息持久化成功后刷新）
-        await self.user_repo.update_last_active(user.id)
+        await self.identity_repo.update_last_active(identity.id)
 
         # 异步触发增量摘要（移出主链路，下一轮生效，带并发限制）
         spawn_with_limit(
@@ -1763,7 +1763,7 @@ class ConversationEngine:
                 # 带上本轮双方消息：否则提取总滞后一轮，久别重逢时还会把旧话题重新提取回来
                 self.focus_tracker.extract_and_save(
                     service.context_key,
-                    [*history, user_msg, assistant_msg],
+                    [*history, identity_msg, assistant_msg],
                     memory_facts,
                     current_topic=current_topic,
                 )
@@ -1868,7 +1868,7 @@ class ConversationEngine:
             logger.warning("注入快照采集失败: %s", e)
 
     async def _record_safety_event(
-        self, verdict, platform, platform_id, user, service, bot
+        self, verdict, platform, platform_id, identity, service, bot
     ) -> None:
         """写入内容安全事件（fire-and-forget 语义，内部吃掉异常）。
 
@@ -1887,7 +1887,7 @@ class ConversationEngine:
                     event_type=event_type,
                     platform=platform,
                     platform_id=platform_id,
-                    user_id=user.id if user else "",
+                    identity_id=identity.id if identity else "",
                     account_id=service.account_id if service else "",
                     bot_id=service.bot_id if service else "",
                     matched=verdict.matched,
@@ -2041,8 +2041,8 @@ class ConversationEngine:
         心情强烈时追加情绪氛围修饰词，使本人出镜表情与当前心情一致。
         """
         ref_url = getattr(profile, "reference_image_url", "") or ""
-        identity = getattr(profile, "identity", None)
-        appearance = (getattr(identity, "appearance", "") or "").strip()
+        persona = getattr(profile, "persona", None)
+        appearance = (getattr(persona, "appearance", "") or "").strip()
         mood_suffix = MoodManager.image_mood_suffix(mood)
         tasks: list[ImageTask] = []
         for prompt, contains_self in specs:

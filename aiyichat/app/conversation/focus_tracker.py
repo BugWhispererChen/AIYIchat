@@ -81,7 +81,7 @@ _EVENTS_ADDENDUM = (
 _ENTITIES_ADDENDUM = (
     "\n\n此外，如果对话中出现与用户相关的人物/事物实体（如朋友、家人、宠物、物品等），"
     "提取到 entities 数组：\n"
-    'entities: [{{"name": "实体名", "relation_to_user": "与用户的关系", '
+    'entities: [{{"name": "实体名", "relation_to_identity": "与对方的关系", '
     '"aliases": ["别名1", "别名2"], "entity_type": "person|pet|thing", '
     '"sentiment": "用户对该实体的情感倾向", '
     '"attributes": {{"属性名": "属性值"}}, '
@@ -507,7 +507,7 @@ class FocusTracker:
 
             # 第二层消歧：embedding 相似度（启用时）
             if matched is None and emb_service.enabled:
-                new_text = f"{name} {' '.join(aliases)} {item.get('relation_to_user', '')}"
+                new_text = f"{name} {' '.join(aliases)} {item.get('relation_to_identity', '')}"
                 new_embedding = await emb_service.embed(new_text)
                 if new_embedding:
                     best_sim = 0.0
@@ -523,8 +523,8 @@ class FocusTracker:
 
             if matched is not None:
                 # 合并到已有实体
-                if item.get("relation_to_user"):
-                    matched.relation_to_user = str(item["relation_to_user"]).strip()
+                if item.get("relation_to_identity"):
+                    matched.relation_to_identity = str(item["relation_to_identity"]).strip()
                 matched.attributes.update(attrs)
                 if sentiment:
                     matched.sentiment = sentiment
@@ -554,7 +554,7 @@ class FocusTracker:
                 # 新实体
                 new_entity = MemoryEntity(
                     name=name,
-                    relation_to_user=str(item.get("relation_to_user", "")).strip(),
+                    relation_to_identity=str(item.get("relation_to_identity", "")).strip(),
                     attributes=attrs,
                     entity_type=entity_type,
                     aliases=aliases,
@@ -564,7 +564,7 @@ class FocusTracker:
                 )
                 # 写入 embedding（启用时）
                 if emb_service.enabled:
-                    new_text = f"{name} {' '.join(aliases)} {new_entity.relation_to_user}"
+                    new_text = f"{name} {' '.join(aliases)} {new_entity.relation_to_identity}"
                     new_entity.embedding = await emb_service.embed(new_text)
                 merged_entities.append(new_entity)
                 existing_entities.append(new_entity)
@@ -777,8 +777,8 @@ class FocusTracker:
                 line = f"- {ent.name}"
                 if ent.aliases:
                     line += f"（别名：{'、'.join(ent.aliases)}）"
-                if ent.relation_to_user:
-                    line += f"：用户的{ent.relation_to_user}"
+                if ent.relation_to_identity:
+                    line += f"：用户的{ent.relation_to_identity}"
                 entity_lines.append(line)
             if entity_lines:
                 entities_text = (

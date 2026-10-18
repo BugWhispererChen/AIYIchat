@@ -106,7 +106,7 @@ class MemoryEntity(BaseModel):
     """
 
     name: str  # 实体名，如 "小红"
-    relation_to_user: str = ""  # 与用户关系，如 "女朋友"
+    relation_to_identity: str = ""  # 与用户关系，如 "女朋友"
     attributes: dict[str, str] = Field(default_factory=dict)  # 属性，如 {"生日": "下周三"}
     last_mentioned_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)

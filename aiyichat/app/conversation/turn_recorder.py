@@ -22,7 +22,7 @@ class TurnRecorder:
         self.message_repo = message_repo or MessageRepository()
         self.conversation_repo = conversation_repo or ConversationRepository()
 
-    async def record_user_message(
+    async def record_identity_message(
         self,
         conversation_id: str,
         text: str,

@@ -118,7 +118,7 @@
                     {% for alias in ent.aliases %}<span class="badge badge-neutral">{{ alias }}</span> {% endfor %}
                     {% else %}-{% endif %}
                 </td>
-                <td>{{ ent.relation_to_user or '-' }}</td>
+                <td>{{ ent.relation_to_identity or '-' }}</td>
                 <td>{{ ent.sentiment or '-' }}</td>
                 <td>{{ ent.mention_count }}</td>
                 <td>

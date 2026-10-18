@@ -55,7 +55,7 @@
             </div>
 
             <details class="sub" open>
-                <summary>身份与背景</summary>
+                <summary>人设背景</summary>
                 <div class="grid">
                     <div>
                         <label for="f-background">背景经历</label>
@@ -220,18 +220,18 @@
 
         function fillForm(profile) {
             const src = profile || {};
-            const identity = src.identity || {};
+            const persona = src.persona || {};
             const ls = src.language_style || {};
             const p = src.personality || {};
             const ds = src.dialogue_strategy || {};
             el('name').value = src.name || '';
             el('category').value = (src.category === 'custom') ? 'custom' : 'original';
             el('verbosity').value = src.verbosity || 'standard';
-            el('background').value = identity.background || '';
-            el('appearance').value = identity.appearance || '';
-            el('era').value = identity.era || '';
-            el('ageAppearance').value = identity.age_appearance || '';
-            el('coreValues').value = toLines(identity.core_values);
+            el('background').value = persona.background || '';
+            el('appearance').value = persona.appearance || '';
+            el('era').value = persona.era || '';
+            el('ageAppearance').value = persona.age_appearance || '';
+            el('coreValues').value = toLines(persona.core_values);
             el('tone').value = ls.tone || '';
             el('vocabulary').value = toLines(ls.vocabulary);
             el('sentence').value = toLines(ls.sentence_patterns);
@@ -253,15 +253,15 @@
         /* 以载入对象为底、表单覆盖，避免 relationships 等未展示字段被清空 */
         function buildPayload() {
             const src = base || {};
-            const identity = Object.assign({}, src.identity || {});
+            const persona = Object.assign({}, src.persona || {});
             const ls = Object.assign({}, src.language_style || {});
             const p = Object.assign({}, src.personality || {});
             const ds = Object.assign({}, src.dialogue_strategy || {});
-            identity.background = el('background').value.trim();
-            identity.appearance = el('appearance').value.trim();
-            identity.era = el('era').value.trim();
-            identity.age_appearance = el('ageAppearance').value.trim();
-            identity.core_values = fromLines(el('coreValues').value);
+            persona.background = el('background').value.trim();
+            persona.appearance = el('appearance').value.trim();
+            persona.era = el('era').value.trim();
+            persona.age_appearance = el('ageAppearance').value.trim();
+            persona.core_values = fromLines(el('coreValues').value);
             ls.tone = el('tone').value.trim();
             ls.vocabulary = fromLines(el('vocabulary').value);
             ls.sentence_patterns = fromLines(el('sentence').value);
@@ -282,7 +282,7 @@
                 category: el('category').value,
                 verbosity: el('verbosity').value,
                 meta_instructions: el('meta').value,
-                identity: identity,
+                persona: persona,
                 language_style: ls,
                 personality: p,
                 dialogue_strategy: ds

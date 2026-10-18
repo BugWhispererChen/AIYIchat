@@ -145,13 +145,13 @@ class TestCommandsAndRateLimit:
         client = _make_client()
         assert client._is_rate_limited("u-1") is False
         assert client.can_send_proactive("u-1") is True
-        client._rate_limited_users["u-1"] = (
+        client._rate_limited_openids["u-1"] = (
             datetime.now(timezone.utc) + timedelta(hours=1)
         )
         assert client._is_rate_limited("u-1") is True
         assert client.can_send_proactive("u-1") is False
         # 已过期自动清除
-        client._rate_limited_users["u-2"] = (
+        client._rate_limited_openids["u-2"] = (
             datetime.now(timezone.utc) - timedelta(hours=1)
         )
         assert client._is_rate_limited("u-2") is False
@@ -162,12 +162,12 @@ class TestCommandsAndRateLimit:
             "code": 40034122, "message": "召回消息已达区间上限",
         })
         client._check_rate_limit_error(resp, "u-1")
-        assert "u-1" in client._rate_limited_users
+        assert "u-1" in client._rate_limited_openids
         # 非限流码不记录
         client._check_rate_limit_error(
             FakeHttpxResponse(json_data={"code": 0}), "u-2"
         )
-        assert "u-2" not in client._rate_limited_users
+        assert "u-2" not in client._rate_limited_openids
 
     def test_stop_and_close(self) -> None:
         async def body():
@@ -208,7 +208,7 @@ class TestSendReply:
             with patch("app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient):
                 ok = await client._send_reply("u-1", "hi", "m-1", False, "")
                 assert ok is False
-                assert "u-1" in client._rate_limited_users
+                assert "u-1" in client._rate_limited_openids
 
         _run(body())
 
@@ -217,7 +217,7 @@ class TestSendReply:
             from datetime import datetime, timedelta, timezone
 
             client = _make_client()
-            client._rate_limited_users["u-1"] = (
+            client._rate_limited_openids["u-1"] = (
                 datetime.now(timezone.utc) + timedelta(hours=1)
             )
             assert await client.send_proactive("u-1", "hi") is False

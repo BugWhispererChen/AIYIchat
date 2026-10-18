@@ -24,7 +24,7 @@ class SafetyEvent(BaseModel):
     event_type: SafetyEventType
     platform: str = ""          # qq / wechat / web
     platform_id: str = ""       # 平台用户标识
-    user_id: str = ""           # 系统内部用户ID（可能为空：未绑定场景）
+    identity_id: str = ""           # 系统内部用户ID（可能为空：未绑定场景）
     account_id: str = ""        # 归属账号
     bot_id: str = ""            # 触发所用的 Bot
     matched: str = ""           # 命中的关键词/类别（用于运营核查，不存完整原文）

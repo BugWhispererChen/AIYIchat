@@ -14,7 +14,7 @@ from app.admin.routes.common import (
     _profile_repo,
     _render,
     _service_repo,
-    _user_repo,
+    _identity_repo,
 )
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
@@ -23,7 +23,7 @@ from app.models.account import AccountCreate, AccountUpdate
 from app.models.bot_config import BotConfigCreate, BotConfigUpdate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.service import ServiceCreate, ServiceUpdate
-from app.models.user import UserCreate, UserUpdate
+from app.models.identity import IdentityCreate, IdentityUpdate
 from app.conversation.time_context import COMMON_TIMEZONES, resolve_tz
 
 accounts_router = APIRouter(tags=["admin"])
@@ -50,19 +50,19 @@ async def _account_detail_with_error(
             "image_quota": unlimited,
         })()
     services = await _service_repo.list_by_account(account_id)
-    users = await _user_repo.list_by_account(account_id, limit=1000)
+    identities = await _identity_repo.list_by_account(account_id, limit=1000)
     bots = await _bot_config_repo.list_by_account(account_id)
     profiles = await _profile_repo.list_active(account_id=account_id)
     service_infos = []
     for svc in services:
-        user = await _user_repo.find_by_id(svc.user_id)
+        identity = await _identity_repo.find_by_id(svc.identity_id)
         bot = await _bot_config_repo.find_by_id(svc.bot_id)
         profile = await _profile_repo.find_by_slug(svc.profile_id)
         if profile is None:
             profile = await _profile_repo.find_by_id(svc.profile_id)
         service_infos.append({
             "service": svc,
-            "user": user,
+            "identity": identity,
             "bot": bot,
             "profile": profile,
         })
@@ -70,7 +70,7 @@ async def _account_detail_with_error(
         "account": account,
         "quota": quota,
         "service_infos": service_infos,
-        "users": users,
+        "identities": identities,
         "bots": bots,
         "profiles": profiles,
         "common_timezones": COMMON_TIMEZONES,
@@ -147,14 +147,14 @@ async def account_detail(
             "image_quota": unlimited,
         })()
     services = await _service_repo.list_by_account(account_id)
-    users = await _user_repo.list_by_account(account_id, limit=1000)
+    identities = await _identity_repo.list_by_account(account_id, limit=1000)
     bots = await _bot_config_repo.list_by_account(account_id)
     profiles = await _profile_repo.list_active(account_id=account_id)
 
     # 组装服务展示信息
     service_infos = []
     for svc in services:
-        user = await _user_repo.find_by_id(svc.user_id)
+        identity = await _identity_repo.find_by_id(svc.identity_id)
         # svc.bot_id 现在存储的是 Bot 的 UUID id
         bot = await _bot_config_repo.find_by_id(svc.bot_id)
         # profile_id 可能是 slug 或 ObjectId，优先按 slug 查找，失败则按 id 查找
@@ -163,7 +163,7 @@ async def account_detail(
             profile = await _profile_repo.find_by_id(svc.profile_id)
         service_infos.append({
             "service": svc,
-            "user": user,
+            "identity": identity,
             "bot": bot,
             "profile": profile,
         })
@@ -174,7 +174,7 @@ async def account_detail(
         "account": account,
         "quota": quota,
         "service_infos": service_infos,
-        "users": users,
+        "identities": identities,
         "bots": bots,
         "profiles": profiles,
         "quota_templates": quota_templates,
@@ -250,9 +250,9 @@ async def account_quota_update(
 
 
 @accounts_router.post(
-    "/accounts/{account_id}/users/create", response_class=HTMLResponse
+    "/accounts/{account_id}/identities/create", response_class=HTMLResponse
 )
-async def account_user_create(
+async def account_identity_create(
     request: Request,
     account_id: str,
     _s: str = Depends(require_admin),
@@ -263,13 +263,13 @@ async def account_user_create(
     if platform not in ("qq", "wechat", "web"):
         platform = "qq"
 
-    await _user_repo.create(
-        UserCreate(
+    await _identity_repo.create(
+        IdentityCreate(
             account_id=account_id,
             name=str(form.get("name", "")).strip(),
             platform=platform,  # type: ignore[arg-type]
             nickname=str(form.get("nickname", "")).strip(),
-            identity_description=str(form.get("identity_description", "")).strip(),
+            self_description=str(form.get("self_description", "")).strip(),
             is_minor=form.get("is_minor") == "on",
         )
     )
@@ -280,23 +280,23 @@ async def account_user_create(
 
 
 @accounts_router.post(
-    "/accounts/{account_id}/users/{user_id}/delete",
+    "/accounts/{account_id}/identities/{identity_id}/delete",
     response_class=HTMLResponse,
 )
-async def account_user_delete(
+async def account_identity_delete(
     request: Request,
     account_id: str,
-    user_id: str,
+    identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
     """删除账号下的用户（需先删除关联服务）。"""
-    svc_count = await _service_repo.count_by_user(user_id)
+    svc_count = await _service_repo.count_by_identity(identity_id)
     if svc_count > 0:
         return await _account_detail_with_error(
             request, account_id,
             f"该用户下有 {svc_count} 个对话服务，请先删除服务",
         )
-    await _user_repo.delete(user_id)
+    await _identity_repo.delete(identity_id)
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -304,13 +304,13 @@ async def account_user_delete(
 
 
 @accounts_router.post(
-    "/accounts/{account_id}/users/{user_id}/timezone",
+    "/accounts/{account_id}/identities/{identity_id}/timezone",
     response_class=HTMLResponse,
 )
-async def account_user_set_timezone(
+async def account_identity_set_timezone(
     request: Request,
     account_id: str,
-    user_id: str,
+    identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
     """设置用户时区（IANA 名，空串回落全局默认偏移）。
@@ -325,13 +325,13 @@ async def account_user_set_timezone(
     ).strip()
     if tz_name:
         # 试解析：无效名会静默回落，这里主动检测并提示运营
-        resolved, resolved_name = resolve_tz(user_timezone=tz_name)
+        resolved, resolved_name = resolve_tz(identity_timezone=tz_name)
         if resolved_name != tz_name:
             return await _account_detail_with_error(
                 request, account_id,
                 f"时区名「{tz_name}」无效或无法识别，请使用 IANA 标准名（如 Asia/Shanghai）",
             )
-    await _user_repo.update(user_id, UserUpdate(timezone=tz_name))
+    await _identity_repo.update(identity_id, IdentityUpdate(timezone=tz_name))
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -339,36 +339,36 @@ async def account_user_set_timezone(
 
 
 @accounts_router.post(
-    "/accounts/{account_id}/users/{user_id}/toggle-block",
+    "/accounts/{account_id}/identities/{identity_id}/toggle-block",
     response_class=HTMLResponse,
 )
-async def account_user_toggle_block(
+async def account_identity_toggle_block(
     request: Request,
     account_id: str,
-    user_id: str,
+    identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
     """禁用/启用账号下的用户（禁用前需先删除关联服务）。"""
-    user = await _user_repo.find_by_id(user_id)
-    if not user:
+    identity = await _identity_repo.find_by_id(identity_id)
+    if not identity:
         return RedirectResponse(
             url=f"/admin/accounts/{account_id}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     form = await request.form()
-    if not user.is_blocked:
+    if not identity.is_blocked:
         # 禁用：检查引用
-        svc_count = await _service_repo.count_by_user(user_id)
+        svc_count = await _service_repo.count_by_identity(identity_id)
         if svc_count > 0:
             return await _account_detail_with_error(
                 request, account_id,
                 f"该用户下有 {svc_count} 个对话服务，请先删除服务后再禁用",
             )
         reason = str(form.get("block_reason", "")).strip()
-        await _user_repo.set_blocked(user_id, True, reason)
+        await _identity_repo.set_blocked(identity_id, True, reason)
     else:
         # 启用
-        await _user_repo.set_blocked(user_id, False)
+        await _identity_repo.set_blocked(identity_id, False)
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -549,11 +549,11 @@ async def account_service_create(
 ) -> Response:
     """为账号添加对话服务，名称自动生成：{用户}-{角色}-{Bot名称}。"""
     form = await request.form()
-    user_id = str(form.get("user_id", "")).strip()
+    identity_id = str(form.get("identity_id", "")).strip()
     bot_id = str(form.get("bot_id", "")).strip()
     profile_id = str(form.get("profile_id", "")).strip()
 
-    if not all([user_id, bot_id, profile_id]):
+    if not all([identity_id, bot_id, profile_id]):
         return RedirectResponse(
             url=f"/admin/accounts/{account_id}",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -567,17 +567,17 @@ async def account_service_create(
         )
 
     # 检查引用的实体是否被禁用
-    user = await _user_repo.find_by_id(user_id)
+    identity = await _identity_repo.find_by_id(identity_id)
     # 检查用户是否已绑定真实平台账号（非UUID表示已有真实用户绑定，新用户将无法使用该Bot）
-    if user:
+    if identity:
         try:
-            uuid.UUID(user.platform_id)
+            uuid.UUID(identity.platform_id)
         except (ValueError, AttributeError):
             return await _account_detail_with_error(
                 request, account_id,
                 "该用户已绑定真实平台账号，无法创建新服务。请选择未绑定的用户或新建用户。",
             )
-    if user and user.is_blocked:
+    if identity and identity.is_blocked:
         return await _account_detail_with_error(
             request, account_id, "该用户已被禁用，无法创建服务",
         )
@@ -597,7 +597,7 @@ async def account_service_create(
     # 自动生成服务名称：{用户}-{角色}-{Bot名称}
     name = "-".join(
         p for p in [
-            user.name or user.platform_id if user else "",
+            identity.name or identity.platform_id if identity else "",
             profile.name if profile else "",
             bot.name if bot else "",
         ] if p
@@ -606,7 +606,7 @@ async def account_service_create(
     service = ServiceCreate(
         name=name,
         account_id=account_id,
-        user_id=user_id,
+        identity_id=identity_id,
         bot_id=bot_id,
         profile_id=profile_id,
     )
@@ -677,7 +677,7 @@ async def account_service_delete(
 
     共享组保护：组 key 下的对话/记忆仅在删除组内最后一个成员时才一并清理。
     """
-    # 先查询服务，获取共享组与关联的 user_id，用于后续保护判断与释放绑定
+    # 先查询服务，获取共享组与关联的 identity_id，用于后续保护判断与释放绑定
     service = await _service_repo.find_by_id(service_id)
 
     # 级联删除服务自身 key 下的数据（加入共享组前的历史仍挂在服务自身 ID 下）
@@ -703,11 +703,11 @@ async def account_service_delete(
 
     # 释放用户绑定：若该用户无其他服务，重置 platform_id 为 UUID（恢复可绑定状态）
     if service:
-        remaining = await _service_repo.count_by_user(service.user_id)
+        remaining = await _service_repo.count_by_identity(service.identity_id)
         if remaining == 0:
-            await _user_repo.update(
-                service.user_id,
-                UserUpdate(platform_id=str(uuid.uuid4())),
+            await _identity_repo.update(
+                service.identity_id,
+                IdentityUpdate(platform_id=str(uuid.uuid4())),
             )
 
     return RedirectResponse(

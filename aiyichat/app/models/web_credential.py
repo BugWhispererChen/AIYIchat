@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 # 身份状态：pending 待审核 / active 可用 / rejected 审核拒绝 / disabled 管理员封禁
-IdentityStatus = Literal["pending", "active", "rejected", "disabled"]
+CredentialStatus = Literal["pending", "active", "rejected", "disabled"]
 
 # 当前合规文本版本：条款或隐私政策改版时递增，注册留痕按版本记录
 TERMS_VERSION = "v1.0"
@@ -38,14 +38,14 @@ class WebConsent(BaseModel):
     age_confirmed_at: Optional[datetime] = None
 
 
-class WebIdentityCreate(BaseModel):
+class WebCredentialCreate(BaseModel):
     """创建网页身份。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    user_id: str = ""  # 关联 users.id；注册先占用户名，四件套建齐后回填
+    identity_id: str = ""  # 关联 users.id；注册先占用户名，四件套建齐后回填
     username: str
     password_hash: str
-    status: IdentityStatus = "pending"
+    status: CredentialStatus = "pending"
     failed_count: int = 0  # 连续登录失败次数（成功后清零）
     locked_until: Optional[datetime] = None  # 登录锁定到期时间
     reviewed_by: str = ""  # 审核操作人（管理员用户名）
@@ -55,7 +55,7 @@ class WebIdentityCreate(BaseModel):
     consent: WebConsent = Field(default_factory=WebConsent)
 
 
-class WebIdentityInDB(WebIdentityCreate):
+class WebCredentialInDB(WebCredentialCreate):
     """数据库中的网页身份记录。"""
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -70,7 +70,7 @@ class WebIdentityInDB(WebIdentityCreate):
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
         # 兼容存量数据：可选字段缺失时回落默认值
-        doc.setdefault("user_id", "")
+        doc.setdefault("identity_id", "")
         doc.setdefault("failed_count", 0)
         doc.setdefault("locked_until", None)
         doc.setdefault("reviewed_by", "")

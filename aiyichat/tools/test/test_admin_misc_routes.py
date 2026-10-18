@@ -24,10 +24,10 @@ from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.user_repo import UserRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.models.profile import PromptProfileCreate
 from app.models.service import ServiceCreate
-from app.models.user import UserCreate
+from app.models.identity import IdentityCreate
 
 
 async def _setup_app(override_auth: bool = True):
@@ -345,8 +345,8 @@ class TestAdminConversations:
             try:
                 conv_repo = ConversationRepository()
                 msg_repo = MessageRepository()
-                user = await UserRepository().create(UserCreate(account_id="acc-1"))
-                conv = await conv_repo.create(user.id, "prof-x", "svc-1", title="谈心")
+                identity = await IdentityRepository().create(IdentityCreate(account_id="acc-1"))
+                conv = await conv_repo.create(identity.id, "prof-x", "svc-1", title="谈心")
                 msg = await msg_repo.create(conv.id, "user", "你好")
 
                 async with _client(app) as client:
@@ -500,7 +500,7 @@ class TestAdminProfiles:
 
                     # 被服务引用时禁用 → 400
                     svc = await ServiceRepository().create(ServiceCreate(
-                        account_id="acc-1", user_id="u-1", bot_id="b-1",
+                        account_id="acc-1", identity_id="u-1", bot_id="b-1",
                         profile_id=profile.id,
                     ))
                     resp = await client.post(
@@ -526,7 +526,7 @@ class TestAdminProfiles:
                         "/admin/profiles/hero/edit",
                         data={
                             "name": "主角v2", "is_active": "on",
-                            "identity_core_values": "勇敢\n善良",
+                            "persona_core_values": "勇敢\n善良",
                             "rel_name": "配角", "rel_relation": "朋友",
                             "rel_attitude": "信任",
                             "trait_key": "开朗", "trait_value": "bad",
@@ -676,7 +676,7 @@ class TestPublicApi:
                 msg_repo = MessageRepository()
                 svc_repo = ServiceRepository()
                 svc = await svc_repo.create(ServiceCreate(
-                    account_id="acc-1", user_id="u-1", bot_id="b-1",
+                    account_id="acc-1", identity_id="u-1", bot_id="b-1",
                     profile_id="p-1", share_group_id="grp-1",
                 ))
                 conv = await conv_repo.create("u-1", "p-1", svc.id)
@@ -688,7 +688,7 @@ class TestPublicApi:
                     assert resp.status_code == 200 and resp.json() == []
                     # 按用户
                     resp = await client.get(
-                        "/api/conversations", params={"user_id": "u-1"}
+                        "/api/conversations", params={"identity_id": "u-1"}
                     )
                     assert resp.status_code == 200 and len(resp.json()) == 1
                     # 按服务（含共享组补充）
@@ -734,12 +734,12 @@ class TestProactiveApi:
                 from app.models.proactive_record import ProactiveRecord
                 from app.proactive.scheduler import get_proactive_scheduler
 
-                user_repo = UserRepository()
-                user = await user_repo.create(UserCreate(
+                identity_repo = IdentityRepository()
+                identity = await identity_repo.create(IdentityCreate(
                     account_id="acc-1", platform="qq", platform_id="oid-1",
                 ))
                 await ServiceRepository().create(ServiceCreate(
-                    account_id="acc-1", user_id=user.id, bot_id="b-1",
+                    account_id="acc-1", identity_id=identity.id, bot_id="b-1",
                     profile_id="p-1",
                 ))
 
@@ -749,13 +749,13 @@ class TestProactiveApi:
                 async with _client(app) as client:
                     # 用户不存在 → 404
                     resp = await client.post("/api/proactive/trigger", json={
-                        "user_id": "no-user", "bot_id": "b-1",
+                        "identity_id": "no-user", "bot_id": "b-1",
                     })
                     assert resp.status_code == 404
 
                     # 自定义内容 + 发送成功
                     resp = await client.post("/api/proactive/trigger", json={
-                        "user_id": user.id, "bot_id": "b-1",
+                        "identity_id": identity.id, "bot_id": "b-1",
                         "content": "想你了", "stage": 1,
                     })
                     assert resp.status_code == 200
@@ -765,17 +765,17 @@ class TestProactiveApi:
                     # 发送失败分支
                     scheduler._send_message = AsyncMock(return_value=False)
                     resp = await client.post("/api/proactive/trigger", json={
-                        "user_id": user.id, "bot_id": "b-1", "content": "在吗",
+                        "identity_id": identity.id, "bot_id": "b-1", "content": "在吗",
                     })
                     assert resp.status_code == 200 and resp.json()["success"] is False
 
                     # 记录查询
                     await ProactiveRecordRepository().create(ProactiveRecord(
-                        user_id=user.id, platform_user_id="oid-1", bot_id="b-1",
+                        identity_id=identity.id, platform_openid="oid-1", bot_id="b-1",
                         stage=1,
                     ))
                     resp = await client.get("/api/proactive/records", params={
-                        "user_id": user.id, "bot_id": "b-1",
+                        "identity_id": identity.id, "bot_id": "b-1",
                     })
                     assert resp.status_code == 200 and len(resp.json()) >= 1
             finally:

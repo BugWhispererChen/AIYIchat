@@ -93,7 +93,7 @@ class SupportStrategySelector:
         emotion: str | None,
         intensity: float,
         negative_streak: int,
-        user_input: str,
+        identity_input: str,
     ) -> SupportPlan | None:
         """根据情绪状态选择支持策略。
 
@@ -106,7 +106,7 @@ class SupportStrategySelector:
         Returns:
             SupportPlan；无需特殊策略（如平静/愉快且未求助）时返回 None
         """
-        text = user_input or ""
+        text = identity_input or ""
         help_seeking = any(m in text for m in _HELP_SEEKING_MARKERS)
 
         # 明确求助 → 行动策略（无论情绪正负）

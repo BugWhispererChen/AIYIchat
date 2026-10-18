@@ -156,34 +156,34 @@ class TestResolvePlatformId:
         self.scheduler = ProactiveScheduler()
 
     @staticmethod
-    def _user(**overrides):
+    def _identity(**overrides):
         base = dict(id="u1", platform_id="oid-latest", bot_openids={})
         base.update(overrides)
         return SimpleNamespace(**base)
 
     def test_uses_bot_specific_openid(self) -> None:
         """存在该 Bot 的映射时优先使用，不受 platform_id 覆盖影响。"""
-        user = self._user(bot_openids={"bot-a": "oid-a", "bot-b": "oid-b"})
-        assert self.scheduler._resolve_platform_id(user, "bot-a") == "oid-a"
-        assert self.scheduler._resolve_platform_id(user, "bot-b") == "oid-b"
+        identity = self._identity(bot_openids={"bot-a": "oid-a", "bot-b": "oid-b"})
+        assert self.scheduler._resolve_platform_id(identity, "bot-a") == "oid-a"
+        assert self.scheduler._resolve_platform_id(identity, "bot-b") == "oid-b"
 
     def test_falls_back_to_platform_id(self) -> None:
         """无该 Bot 映射（存量数据）→ 回退 platform_id。"""
-        user = self._user(bot_openids={"bot-a": "oid-a"})
-        assert self.scheduler._resolve_platform_id(user, "bot-z") == "oid-latest"
+        identity = self._identity(bot_openids={"bot-a": "oid-a"})
+        assert self.scheduler._resolve_platform_id(identity, "bot-z") == "oid-latest"
 
-    def test_legacy_user_without_mapping_field(self) -> None:
+    def test_legacy_identity_without_mapping_field(self) -> None:
         """旧对象无 bot_openids 属性 → 回退 platform_id 且不报错。"""
         legacy = SimpleNamespace(id="u1", platform_id="oid-latest")
         assert self.scheduler._resolve_platform_id(legacy, "bot-a") == "oid-latest"
 
     def test_group_openid_mapping_preserved(self) -> None:
         """群聊联合键（group_id::member_openid）原样保存与返回。"""
-        user = self._user(bot_openids={"bot-a": "gid::mid"})
-        assert self.scheduler._resolve_platform_id(user, "bot-a") == "gid::mid"
+        identity = self._identity(bot_openids={"bot-a": "gid::mid"})
+        assert self.scheduler._resolve_platform_id(identity, "bot-a") == "gid::mid"
 
 
-class TestWebUserSkipped:
+class TestWebPrincipalSkipped:
     """非推送平台守卫测试集（_process_service 的平台白名单早退）。"""
 
     def setup_method(self) -> None:
@@ -202,7 +202,7 @@ class TestWebUserSkipped:
         monkeypatch.setattr(settings, "proactive_event_enabled", False)
         monkeypatch.setattr(settings, "proactive_share_enabled", False)
 
-        user = SimpleNamespace(
+        identity = SimpleNamespace(
             id="u-web-1",
             platform="web",
             platform_id="alice",  # 用户名而非 openid，刻意避开 UUID 兜底检查
@@ -212,14 +212,14 @@ class TestWebUserSkipped:
             bot_openids={},
         )
         service = SimpleNamespace(
-            id="svc-web-1", user_id="u-web-1", account_id="acc-1",
+            id="svc-web-1", identity_id="u-web-1", account_id="acc-1",
             bot_id="b-1", profile_id="companion", share_group_id="",
             last_message_at=None, timezone="",
         )
         service.context_key = service.share_group_id or service.id
 
         # 守卫之后的链路全部打桩为"本可发送"，仅靠守卫本身拦截
-        self.scheduler._user_repo.find_by_id = AsyncMock(return_value=user)
+        self.scheduler._identity_repo.find_by_id = AsyncMock(return_value=identity)
         self.scheduler._proactive_repo.get_latest_sent = AsyncMock(return_value=None)
         self.scheduler._proactive_repo.get_attempted_stages = AsyncMock(return_value=[])
         self.scheduler._proactive_repo.count_sent_this_month = AsyncMock(return_value=0)

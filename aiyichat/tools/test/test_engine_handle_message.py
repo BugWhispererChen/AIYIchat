@@ -32,7 +32,7 @@ def _make_bot(**overrides):
     return SimpleNamespace(**base)
 
 
-def _make_user(**overrides):
+def _make_identity(**overrides):
     base = dict(
         id="user-1", is_blocked=False, block_reason="",
         is_minor=False, platform_id="real-openid",
@@ -43,7 +43,7 @@ def _make_user(**overrides):
 
 def _make_service(**overrides):
     base = dict(
-        id="svc-1", user_id="user-1", account_id="acc-1",
+        id="svc-1", identity_id="user-1", account_id="acc-1",
         profile_id="companion", bot_id="bot-1", share_group_id=None,
     )
     base.update(overrides)
@@ -76,7 +76,7 @@ def _make_quota_doc(limit: int = 10**9, used: int = 0, expires_at=None):
 
 
 def _build_engine(
-    bot=..., user=..., service=..., profile=..., quota_doc=...,
+    bot=..., identity=..., service=..., profile=..., quota_doc=...,
 ):
     """构建各依赖均被 mock 的引擎实例（省略参数使用默认正常数据）。"""
     from app.conversation.engine import ConversationEngine
@@ -88,16 +88,16 @@ def _build_engine(
         return_value=_make_bot() if bot is ... else bot
     )
 
-    engine.user_repo = MagicMock()
-    engine.user_repo.find_by_platform = AsyncMock(
-        return_value=_make_user() if user is ... else user
+    engine.identity_repo = MagicMock()
+    engine.identity_repo.find_by_platform = AsyncMock(
+        return_value=_make_identity() if identity is ... else identity
     )
-    engine.user_repo.update_last_active = AsyncMock()
+    engine.identity_repo.update_last_active = AsyncMock()
     # 按 Bot 记录 openid 映射（主动消息路由），主链路不关心其返回值
-    engine.user_repo.bind_bot_openid = AsyncMock(return_value=False)
+    engine.identity_repo.bind_bot_openid = AsyncMock(return_value=False)
 
     engine.service_repo = MagicMock()
-    engine.service_repo.find_by_user_and_bot = AsyncMock(
+    engine.service_repo.find_by_identity_and_bot = AsyncMock(
         return_value=_make_service() if service is ... else service
     )
 
@@ -120,7 +120,7 @@ def _build_engine(
     engine.quota_repo.refund = AsyncMock(return_value=True)
 
     engine.turn_recorder = MagicMock()
-    engine.turn_recorder.record_user_message = AsyncMock()
+    engine.turn_recorder.record_identity_message = AsyncMock()
     engine.turn_recorder.record_assistant_message = AsyncMock()
     engine.turn_recorder.update_conversation_meta = AsyncMock()
 
@@ -263,8 +263,8 @@ class TestReceivedAt:
             engine.bot_repo.find_by_id = AsyncMock(side_effect=find_bot)
             result, provider = _run(engine, text, stream=stream)
 
-        engine.turn_recorder.record_user_message.assert_awaited_once()
-        kwargs = engine.turn_recorder.record_user_message.await_args.kwargs
+        engine.turn_recorder.record_identity_message.assert_awaited_once()
+        kwargs = engine.turn_recorder.record_identity_message.await_args.kwargs
         assert kwargs["created_at"] == received_at
         assert kwargs["text"] == text
         engine.turn_recorder.record_assistant_message.assert_awaited_once()
@@ -290,7 +290,7 @@ class TestReceivedAt:
             created_at=received_at - timedelta(minutes=5),
         )
         history = [old]
-        user_msg = MessageInDB(
+        identity_msg = MessageInDB(
             _id="saved-user", conversation_id="conv-1", role="user", content="当前输入",
             created_at=received_at,
         )
@@ -299,7 +299,7 @@ class TestReceivedAt:
             content="当前回复", created_at=received_at + timedelta(seconds=3),
         )
         engine.context_manager.get_context.return_value = (history, "")
-        engine.turn_recorder.record_user_message.return_value = user_msg
+        engine.turn_recorder.record_identity_message.return_value = identity_msg
         engine.turn_recorder.record_assistant_message.return_value = assistant_msg
         engine.focus_tracker.should_extract.return_value = True
         with patch("app.conversation.engine.datetime", wraps=datetime) as clock:
@@ -313,7 +313,7 @@ class TestReceivedAt:
         extracted = args[1]
         assert len(extracted) == 3
         assert extracted[0] is old
-        assert extracted[1] is user_msg
+        assert extracted[1] is identity_msg
         assert extracted[2] is assistant_msg
         assert extracted[1].created_at == received_at
         assert extracted[2].created_at > received_at
@@ -375,10 +375,10 @@ class TestGapTopicIntegration:
         """近期 assistant 不重置用户空闲时间，短间隔仍保留既有停滞行为。"""
         engine = _build_engine()
         received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
-        last_user_at = received_at - timedelta(hours=hours)
+        last_identity_at = received_at - timedelta(hours=hours)
         history = [MessageInDB(
             _id=f"old-user-{i}", conversation_id="conv-1", role="user",
-            content="一直在讨论考试", created_at=last_user_at - timedelta(minutes=3 - i),
+            content="一直在讨论考试", created_at=last_identity_at - timedelta(minutes=3 - i),
         ) for i in range(4)]
         history.append(MessageInDB(
             _id="recent-assistant", conversation_id="conv-1", role="assistant",
@@ -388,7 +388,7 @@ class TestGapTopicIntegration:
             _id="memory-1", service_id="svc-1", current_topic="考试",
             topic_history=["电影", "旅行"],
             entities=[MemoryEntity(
-                name="小红", relation_to_user="朋友", attributes={"爱好": "摄影"},
+                name="小红", relation_to_identity="朋友", attributes={"爱好": "摄影"},
             )],
             pending_events=[PendingEvent(
                 content="参加面试", due_at=received_at + timedelta(days=1),
@@ -448,7 +448,7 @@ class TestGapTopicIntegration:
             assert kwargs["last_proactive_at"] == received_at - timedelta(minutes=10)
             assert kwargs["last_proactive_text"] == "我来问候你"
             engine.proactive_repo.get_latest_sent.assert_awaited_once_with(
-                user_id="user-1", bot_id="bot-1",
+                identity_id="user-1", bot_id="bot-1",
             )
         assert memory.current_topic == "考试"  # 清理持久化焦点，不篡改已返回的记忆对象。
 
@@ -501,7 +501,7 @@ class TestGapTopicIntegration:
 
             received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
             recorder = TurnRecorder()
-            engine.turn_recorder.record_user_message = AsyncMock(wraps=recorder.record_user_message)
+            engine.turn_recorder.record_identity_message = AsyncMock(wraps=recorder.record_identity_message)
             engine.turn_recorder.record_assistant_message = AsyncMock(
                 wraps=recorder.record_assistant_message,
             )
@@ -552,18 +552,18 @@ class TestGapTopicIntegration:
             assert engine.focus_tracker.should_extract.call_count == 2
             engine.focus_tracker.extract_and_save.assert_not_called()
             assert await recorder.message_repo.count_by_conversation("conv-1") == 5
-            saved_users = [
+            saved_identities = [
                 message for message in await recorder.message_repo.get_recent("conv-1")
                 if message.role == "user"
             ]
-            assert saved_users[1].created_at.replace(tzinfo=timezone.utc) == received_at
-            assert saved_users[2].created_at.replace(tzinfo=timezone.utc) == received_at + timedelta(minutes=1)
+            assert saved_identities[1].created_at.replace(tzinfo=timezone.utc) == received_at
+            assert saved_identities[2].created_at.replace(tzinfo=timezone.utc) == received_at + timedelta(minutes=1)
 
         run_with_db(body)
 
     @pytest.mark.parametrize("stream", [False, True], ids=["normal", "stream"])
     @pytest.mark.parametrize("history_kind", ["empty", "assistant", "untimed-user"])
-    def test_missing_user_time_does_not_invent_gap(
+    def test_missing_identity_time_does_not_invent_gap(
         self, stream: bool, history_kind: str,
     ) -> None:
         """无真实用户时间时不能凭 assistant 时间或当前时间推断久别。"""
@@ -596,35 +596,35 @@ class TestRecentProactiveContext:
     ) -> None:
         """下界严格排除，上界包含；MongoDB 无时区发送时间按 UTC 处理。"""
         engine = _build_engine()
-        last_user_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
-        received_at = last_user_at + timedelta(hours=1)
-        sent_at = last_user_at + timedelta(seconds=offset) if offset is not None else None
+        last_identity_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        received_at = last_identity_at + timedelta(hours=1)
+        sent_at = last_identity_at + timedelta(seconds=offset) if offset is not None else None
         stored_at = sent_at.replace(tzinfo=None) if sent_at and naive else sent_at
         engine.proactive_repo.get_latest_sent.return_value = SimpleNamespace(
             sent_at=stored_at, content="[10-15 08:30] 我来问候你",
         )
         result = asyncio.run(engine._recent_proactive_context(
-            "user-1", last_user_at, received_at, mode,
+            "user-1", last_identity_at, received_at, mode,
         ))
         assert result == ((sent_at, "我来问候你") if included else (None, ""))
         engine.proactive_repo.get_latest_sent.assert_awaited_once_with(
-            user_id="user-1", bot_id="bot-1",
+            identity_id="user-1", bot_id="bot-1",
         )
 
-    @pytest.mark.parametrize(("mode", "has_user_time"), [
+    @pytest.mark.parametrize(("mode", "has_identity_time"), [
         ("none", True), ("session", False), ("reunion", False),
     ])
-    def test_unneeded_query_is_skipped(self, mode: str, has_user_time: bool) -> None:
+    def test_unneeded_query_is_skipped(self, mode: str, has_identity_time: bool) -> None:
         """无分档或无用户时间不查主动记录，避免多余查询与错误注入。"""
         engine = _build_engine()
         now = datetime(2026, 10, 15, tzinfo=timezone.utc)
         result = asyncio.run(engine._recent_proactive_context(
-            "user-1", now - timedelta(hours=8) if has_user_time else None, now, mode,
+            "user-1", now - timedelta(hours=8) if has_identity_time else None, now, mode,
         ))
         assert result == (None, "")
         engine.proactive_repo.get_latest_sent.assert_not_awaited()
 
-    def test_only_current_user_and_bot_sent_record_is_used(self) -> None:
+    def test_only_current_identity_and_bot_sent_record_is_used(self) -> None:
         """用真实主动消息仓库验证用户、Bot、发送状态的隔离。"""
         from app.conversation.engine import ConversationEngine
         from app.models.proactive_record import ProactiveRecord
@@ -634,9 +634,9 @@ class TestRecentProactiveContext:
             """其他 Bot、其他用户或失败记录即使更新也不能覆盖有效问候。"""
             engine = ConversationEngine("bot-1")
             received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
-            last_user_at = received_at - timedelta(hours=8)
+            last_identity_at = received_at - timedelta(hours=8)
             assert await engine._recent_proactive_context(
-                "user-1", last_user_at, received_at, "session",
+                "user-1", last_identity_at, received_at, "session",
             ) == (None, "")
             records: list[tuple[str, str, Literal["sent", "failed"], str]] = [
                 ("user-1", "bot-1", "sent", "本轮有效问候"),
@@ -644,16 +644,16 @@ class TestRecentProactiveContext:
                 ("user-2", "bot-1", "sent", "其他用户"),
                 ("user-1", "bot-1", "failed", "失败不能注入"),
             ]
-            for index, (user_id, bot_id, status, content) in enumerate(records):
-                sent_at = last_user_at + timedelta(minutes=index + 1)
+            for index, (identity_id, bot_id, status, content) in enumerate(records):
+                sent_at = last_identity_at + timedelta(minutes=index + 1)
                 await engine.proactive_repo.create(ProactiveRecord(
-                    user_id=user_id, platform_user_id="openid-1", bot_id=bot_id,
+                    identity_id=identity_id, platform_openid="openid-1", bot_id=bot_id,
                     stage=1, status=status, content=content,
                     created_at=sent_at, sent_at=sent_at,
                 ))
             assert await engine._recent_proactive_context(
-                "user-1", last_user_at, received_at, "session",
-            ) == (last_user_at + timedelta(minutes=1), "本轮有效问候")
+                "user-1", last_identity_at, received_at, "session",
+            ) == (last_identity_at + timedelta(minutes=1), "本轮有效问候")
 
         run_with_db(body)
 
@@ -684,9 +684,9 @@ class TestHappyPath:
         )
 
         # 双向消息均持久化，且 AI 回复带模型名
-        engine.turn_recorder.record_user_message.assert_awaited_once()
+        engine.turn_recorder.record_identity_message.assert_awaited_once()
         assert (
-            engine.turn_recorder.record_user_message.await_args
+            engine.turn_recorder.record_identity_message.await_args
             .kwargs["text"] == text
         )
         engine.turn_recorder.record_assistant_message.assert_awaited_once()
@@ -700,10 +700,10 @@ class TestHappyPath:
         engine.turn_recorder.update_conversation_meta.assert_awaited_once_with(
             "conv-1"
         )
-        engine.user_repo.update_last_active.assert_awaited_once_with("user-1")
+        engine.identity_repo.update_last_active.assert_awaited_once_with("user-1")
 
         # 按 Bot 记录 openid 映射（主动消息需按 Bot 路由发送目标）
-        engine.user_repo.bind_bot_openid.assert_awaited_once_with(
+        engine.identity_repo.bind_bot_openid.assert_awaited_once_with(
             "user-1", "bot-1", "openid-1"
         )
 
@@ -712,24 +712,24 @@ class TestAutoBindOpenid:
     """未绑定用户自动绑定分支：platform_id 与 Bot 维度映射同步写入。"""
 
     def test_bind_platform_id_and_bot_openid(self) -> None:
-        engine = _build_engine(user=None)
+        engine = _build_engine(identity=None)
         # 预创建用户（platform_id 为 UUID = 未绑定），服务按 Bot 反查
-        engine.user_repo.find_by_id = AsyncMock(
-            return_value=_make_user(
+        engine.identity_repo.find_by_id = AsyncMock(
+            return_value=_make_identity(
                 platform_id="12345678-1234-1234-1234-123456789abc"
             )
         )
-        engine.user_repo.bind_platform_id = AsyncMock()
+        engine.identity_repo.bind_platform_id = AsyncMock()
         engine.service_repo.find_active_by_bot = AsyncMock(
             return_value=_make_service()
         )
 
         _run(engine, "你好")
 
-        engine.user_repo.bind_platform_id.assert_awaited_once_with(
+        engine.identity_repo.bind_platform_id.assert_awaited_once_with(
             "user-1", "openid-1", ""
         )
-        engine.user_repo.bind_bot_openid.assert_awaited_once_with(
+        engine.identity_repo.bind_bot_openid.assert_awaited_once_with(
             "user-1", "bot-1", "openid-1"
         )
 
@@ -747,7 +747,7 @@ class TestQuotaDenied:
         assert result.conversation_id == "conv-1"
         provider.complete_with_usage.assert_not_awaited()
         engine.quota_repo.deduct.assert_not_awaited()
-        engine.turn_recorder.record_user_message.assert_not_awaited()
+        engine.turn_recorder.record_identity_message.assert_not_awaited()
         engine.turn_recorder.record_assistant_message.assert_not_awaited()
 
 
@@ -785,7 +785,7 @@ class TestLLMFailure:
         assert result.text == "网络有点开小差了，你可以再发一次吗？"
         engine.quota_repo.deduct.assert_not_awaited()
         engine.quota_repo.refund.assert_not_awaited()
-        engine.turn_recorder.record_user_message.assert_not_awaited()
+        engine.turn_recorder.record_identity_message.assert_not_awaited()
         engine.turn_recorder.record_assistant_message.assert_not_awaited()
 
 
@@ -836,7 +836,7 @@ class TestBotNotFound:
 
         assert result.text == "您尚未绑定对话服务，请联系管理员。"
         assert result.conversation_id == ""
-        engine.user_repo.find_by_platform.assert_not_awaited()
+        engine.identity_repo.find_by_platform.assert_not_awaited()
         provider.complete_with_usage.assert_not_awaited()
 
 

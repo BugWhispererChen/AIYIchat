@@ -21,7 +21,7 @@ from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
 from app.models.profile import PromptProfileCreate
@@ -98,9 +98,9 @@ async def _signup(client: AsyncClient, username: str) -> str:
         },
     )
     assert resp.status_code == 201, resp.text
-    identity = await WebIdentityRepository().find_by_username(username)
-    assert identity is not None
-    assert await auth_service.approve(identity.id, "admin") is True
+    persona = await WebCredentialRepository().find_by_username(username)
+    assert persona is not None
+    assert await auth_service.approve(persona.id, "admin") is True
     resp = await client.post("/api/auth/login", json={"username": username, "password": PASSWORD})
     assert resp.status_code == 200, resp.text
     return str(resp.json()["token"])
@@ -111,7 +111,7 @@ def _h(token: str) -> dict[str, str]:
 
 
 def _profile_body(name: str = "阿禾") -> dict[str, Any]:
-    return {"name": name, "category": "original", "identity": {"background": "山间书院的学徒"}}
+    return {"name": name, "category": "original", "persona": {"background": "山间书院的学徒"}}
 
 
 def _run(coro: Any) -> None:
@@ -307,13 +307,13 @@ class TestWebServiceSelfService:
                     assert saved.bot_id == WEB_BOT_ID
                     assert saved.profile_id == pid
                     assert saved.account_id == (await ProfileRepository().find_by_id(pid)).account_id
-                    assert saved.user_id == me.json()["user_id"]
+                    assert saved.identity_id == me.json()["identity_id"]
             finally:
                 mongo._db = None
 
         _run(flow())
 
-    def test_cannot_bind_other_users_private_profile(self) -> None:
+    def test_cannot_bind_other_identities_private_profile(self) -> None:
         async def flow() -> None:
             app = await _setup_app("svc_priv")
             try:

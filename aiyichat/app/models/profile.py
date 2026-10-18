@@ -4,8 +4,12 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-class ProfileIdentity(BaseModel):
-    """角色身份背景信息。"""
+class ProfilePersona(BaseModel):
+    """角色人设背景（出身、时代、外貌、价值观）。
+
+    注意与下文的 `ProfilePersonality`（性格特征：MBTI/特质/关怀方式）区分：
+    persona 回答"这个角色是谁、从哪来"，personality 回答"这个角色怎么待人"。
+    """
 
     background: str = ""
     era: str = ""
@@ -62,7 +66,7 @@ class PromptProfileCreate(BaseModel):
     visibility: Literal["public", "private"] = "public"
     account_id: str | None = None  # private 时必填
     disable_reason: str = ""  # 禁用原因
-    identity: ProfileIdentity = Field(default_factory=ProfileIdentity)
+    persona: ProfilePersona = Field(default_factory=ProfilePersona)
     language_style: ProfileLanguageStyle = Field(default_factory=ProfileLanguageStyle)
     personality: ProfilePersonality = Field(default_factory=ProfilePersonality)
     dialogue_strategy: ProfileDialogueStrategy = Field(default_factory=ProfileDialogueStrategy)
@@ -116,7 +120,7 @@ class PromptProfileUpdate(BaseModel):
     is_active: Optional[bool] = None
     visibility: Optional[Literal["public", "private"]] = None
     account_id: Optional[str] = None
-    identity: Optional[ProfileIdentity] = None
+    persona: Optional[ProfilePersona] = None
     language_style: Optional[ProfileLanguageStyle] = None
     personality: Optional[ProfilePersonality] = None
     dialogue_strategy: Optional[ProfileDialogueStrategy] = None

@@ -107,7 +107,7 @@ async def generate_profile(name: str, description: str) -> PromptProfileCreate:
         ValueError: 多次尝试均失败时抛出，含原因说明
     """
     provider = get_llm_provider("chat_import")
-    user_content = f"角色名称：{name}\n角色描述：{description}"
+    identity_content = f"角色名称：{name}\n角色描述：{description}"
 
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
@@ -115,7 +115,7 @@ async def generate_profile(name: str, description: str) -> PromptProfileCreate:
             response = await provider.complete(
                 messages=[
                     {"role": "system", "content": CUSTOM_PROFILE_PROMPT},
-                    {"role": "user", "content": user_content},
+                    {"role": "user", "content": identity_content},
                 ],
                 temperature=0.7,
                 max_tokens=4000,

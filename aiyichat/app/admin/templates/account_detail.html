@@ -36,7 +36,7 @@
 <div class="tabs" data-tabs-key="account-{{ account.id }}">
     <div class="tab-labels">
         <button type="button" class="tab-label active" data-tab="info">基本信息</button>
-        <button type="button" class="tab-label" data-tab="users">用户管理 <small class="muted">({{ users|length }})</small></button>
+        <button type="button" class="tab-label" data-tab="identities">身份管理 <small class="muted">({{ identities|length }})</small></button>
         <button type="button" class="tab-label" data-tab="bots">Bot 管理 <small class="muted">({{ bots|length }})</small></button>
         <button type="button" class="tab-label" data-tab="services">对话服务 <small class="muted">({{ service_infos|length }})</small></button>
     </div>
@@ -177,16 +177,16 @@
     </div>
 
     {# ─────────── Tab 2：用户管理 ─────────── #}
-    <div class="tab-content" data-tab-content="users">
+    <div class="tab-content" data-tab-content="identities">
         <div class="card">
-            <h4>用户管理 <small class="muted" style="font-size:0.82rem;">({{ users|length }} 个)</small></h4>
-            {% if users %}
+            <h4>身份管理 <small class="muted" style="font-size:0.82rem;">({{ identities|length }} 个)</small></h4>
+            {% if identities %}
             <table>
                 <thead>
                     <tr><th>名称</th><th>平台ID</th><th>平台</th><th>昵称</th><th>状态</th><th>操作</th></tr>
                 </thead>
                 <tbody>
-                    {% for u in users %}
+                    {% for u in identities %}
                     <tr>
                         <td><strong>{{ u.name or '-' }}</strong></td>
                         <td><code style="font-size:0.8rem;">{{ u.platform_id }}</code></td>
@@ -204,7 +204,7 @@
                         <td>
                             <div class="btn-row" style="gap:0.3rem;">
                                 {# 禁用/启用用户：禁用时通过 Modal 输入禁用原因 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/users/{{ u.id }}/toggle-block" style="margin:0;"
+                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block" style="margin:0;"
                                       {% if not u.is_blocked %}data-confirm="确认禁用用户「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用用户「{{ u.name or u.platform_id }}」？"{% endif %}>
                                     <input type="hidden" name="block_reason" value="">
                                     {% if not u.is_blocked %}
@@ -214,7 +214,7 @@
                                     {% endif %}
                                 </form>
                                 {# 删除用户：不可恢复，需二次确认 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/users/{{ u.id }}/delete" style="margin:0;"
+                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete" style="margin:0;"
                                       data-confirm="确认删除此用户？此操作不可恢复！" data-danger data-confirm-text="删除">
                                     <button type="submit" class="danger outline btn-sm">删除</button>
                                 </form>
@@ -224,7 +224,7 @@
                     {# 时区设置行：常用 IANA 下拉 + 手动输入，校验失败在页面顶部提示 #}
                     <tr>
                         <td colspan="6" style="padding-top:0;border-top:none;">
-                            <form method="post" action="/admin/accounts/{{ account.id }}/users/{{ u.id }}/timezone"
+                            <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/timezone"
                                   style="display:flex;align-items:center;gap:0.5rem;margin:0;">
                                 <small class="muted" style="white-space:nowrap;">时区：</small>
                                 <select name="timezone" style="max-width:220px;padding:0.2rem 0.4rem;font-size:0.82rem;">
@@ -252,7 +252,7 @@
 
             <details style="margin-top:0.8rem;">
                 <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增用户</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/users/create" style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+                <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
                     <div class="grid">
                         <label>用户名称
                             <input type="text" name="name" placeholder="用户名称">
@@ -460,7 +460,7 @@
                                 {% endif %}
                             </div>
                             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
-                                <span class="badge badge-neutral">用户：{{ sinfo.user.name or sinfo.user.platform_id if sinfo.user else '-' }}</span>
+                                <span class="badge badge-neutral">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.user else '-' }}</span>
                                 <span class="badge badge-neutral">Bot：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
                                 <span class="badge badge-neutral">角色：{{ sinfo.profile.name if sinfo.profile else '-' }}</span>
                                 {% if sinfo.service.share_group_id %}
@@ -513,7 +513,7 @@
             <div class="empty-state">
                 <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
                 <div class="empty-title">暂无对话服务</div>
-                <div class="empty-desc">在下方选择用户、Bot 与角色来创建第一个对话服务</div>
+                <div class="empty-desc">在下方选择身份、Bot 与角色来创建第一个对话服务</div>
             </div>
             {% endif %}
         </div>
@@ -521,13 +521,13 @@
         <!-- 添加对话服务 -->
         <div class="card">
             <h4>添加对话服务</h4>
-            <p class="muted" style="margin-bottom:0.75rem;font-size:0.85rem;">服务名称将自动生成：{用户}-{角色}-{Bot名称}</p>
+            <p class="muted" style="margin-bottom:0.75rem;font-size:0.85rem;">服务名称将自动生成：{身份}-{角色}-{Bot名称}</p>
             <form method="post" action="/admin/accounts/{{ account.id }}/services">
                 <div class="grid">
-                    <label>选择用户
-                        <select name="user_id" required>
-                            <option value="">选择用户...</option>
-                            {% for u in users %}
+                    <label>选择身份
+                        <select name="identity_id" required>
+                            <option value="">选择身份...</option>
+                            {% for u in identities %}
                             <option value="{{ u.id }}">{{ u.name or u.platform_id }} ({{ u.platform }})</option>
                             {% endfor %}
                         </select>

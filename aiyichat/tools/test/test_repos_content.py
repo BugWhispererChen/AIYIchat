@@ -67,7 +67,7 @@ class TestConversationRepository:
             assert updated.summary == "摘要内容"
 
             # 列表/搜索/统计
-            assert len(await repo.list_by_user("u-1")) == 1
+            assert len(await repo.list_by_identity("u-1")) == 1
             assert len(await repo.list_by_service("svc-1")) == 1
             assert len(await repo.list_recent()) == 2
             assert len(await repo.search("摘要")) == 1
@@ -213,10 +213,10 @@ class TestProactiveRecordRepository:
         async def body():
             repo = ProactiveRecordRepository()
             rid1 = await repo.create(ProactiveRecord(
-                user_id="u-1", platform_user_id="oid-1", bot_id="b-1", stage=1,
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1", stage=1,
             ))
             rid2 = await repo.create(ProactiveRecord(
-                user_id="u-1", platform_user_id="oid-1", bot_id="b-1", stage=2,
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1", stage=2,
             ))
             await repo.mark_sent(rid1, "关怀内容")
             await repo.mark_failed(rid2, "接口失败")
@@ -225,7 +225,7 @@ class TestProactiveRecordRepository:
             assert r1 is not None and r1.status == "sent"
             assert await repo.find_by_id("no-such") is None
 
-            assert len(await repo.find_latest_by_user("u-1", "b-1")) == 2
+            assert len(await repo.find_latest_by_identity("u-1", "b-1")) == 2
             since = datetime.now(timezone.utc) - timedelta(days=1)
             assert await repo.get_sent_stages("u-1", "b-1", since) == [1]
             # 阶段1已发送；阶段2失败1次未达上限，不在已尝试列表
@@ -260,17 +260,17 @@ class TestProactiveRecordRepository:
             repo = ProactiveRecordRepository()
             old = datetime.now(timezone.utc) - timedelta(days=40)
             rid_old_sent = await repo.create(ProactiveRecord(
-                user_id="u-1", platform_user_id="oid-1", bot_id="b-1",
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
                 stage=1, created_at=old,
             ))
             rid_old_failed = await repo.create(ProactiveRecord(
-                user_id="u-1", platform_user_id="oid-1", bot_id="b-1",
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
                 stage=2, created_at=old,
             ))
             await repo.mark_failed(rid_old_failed, "接口失败")
             # 新记录（当前时间）不应被保留期清理命中
             await repo.create(ProactiveRecord(
-                user_id="u-1", platform_user_id="oid-1", bot_id="b-1", stage=3,
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1", stage=3,
             ))
 
             # 预览：30 天口径命中 2 条旧记录，其中失败 1 条
@@ -453,7 +453,7 @@ class TestServiceMemoryRepository:
                 "updated_at": updated_at,
                 "facts": [MemoryFact(content="喜欢猫").model_dump()],
                 "topic_history": ["电影", "旅行"],
-                "entities": [MemoryEntity(name="小红", relation_to_user="朋友").model_dump()],
+                "entities": [MemoryEntity(name="小红", relation_to_identity="朋友").model_dump()],
                 "pending_events": [PendingEvent(content="面试", due_at=updated_at).model_dump()],
                 "mood": {"label": "平静", "valence": 0.1, "updated_at": updated_at},
                 "legacy_marker": {"keep": True},
@@ -681,23 +681,23 @@ class TestServiceMemoryRepository:
             repo = ServiceMemoryRepository()
             await repo.upsert_entities("svc-e", [
                 MemoryEntity(
-                    name="小红", relation_to_user="女朋友",
+                    name="小红", relation_to_identity="女朋友",
                     attributes={"生日": "下周三"},
                 ),
             ])
             # 二次 upsert：合并属性、更新关系
             await repo.upsert_entities("svc-e", [
                 MemoryEntity(
-                    name="小红", relation_to_user="女友",
+                    name="小红", relation_to_identity="女友",
                     attributes={"城市": "上海"},
                 ),
-                MemoryEntity(name="大黄", relation_to_user="宠物狗"),
+                MemoryEntity(name="大黄", relation_to_identity="宠物狗"),
             ])
             mem = await repo.find_by_service("svc-e")
             assert mem is not None
             assert len(mem.entities) == 2
             xh = next(e for e in mem.entities if e.name == "小红")
-            assert xh.relation_to_user == "女友"
+            assert xh.relation_to_identity == "女友"
             assert xh.attributes == {"生日": "下周三", "城市": "上海"}
             # 空列表 no-op
             await repo.upsert_entities("svc-e", [])
@@ -709,14 +709,14 @@ class TestServiceMemoryRepository:
             repo = ServiceMemoryRepository()
             await repo.upsert_entities("svc-alias", [
                 MemoryEntity(
-                    name="王建国", relation_to_user="同事",
+                    name="王建国", relation_to_identity="同事",
                     aliases=["老王"], mention_count=1,
                 ),
             ])
             # 二次 upsert：同名实体追加别名，合并而非新建，别名并集去重、提及次数累加
             await repo.upsert_entities("svc-alias", [
                 MemoryEntity(
-                    name="王建国", relation_to_user="同事",
+                    name="王建国", relation_to_identity="同事",
                     aliases=["王哥"], mention_count=1,
                 ),
             ])
@@ -736,7 +736,7 @@ class TestServiceMemoryRepository:
             repo = ServiceMemoryRepository()
             await repo.upsert_entities("svc-rel", [
                 MemoryEntity(
-                    name="小红", relation_to_user="朋友",
+                    name="小红", relation_to_identity="朋友",
                     relations=[EntityRelation(target="小明", relation="同事")],
                     mention_count=1,
                 ),
@@ -744,7 +744,7 @@ class TestServiceMemoryRepository:
             # 关系变更：同事 → 哥哥（同 target 不同关系）
             await repo.upsert_entities("svc-rel", [
                 MemoryEntity(
-                    name="小红", relation_to_user="朋友",
+                    name="小红", relation_to_identity="朋友",
                     relations=[EntityRelation(target="小明", relation="哥哥")],
                     mention_count=1,
                 ),
@@ -773,7 +773,7 @@ class TestServiceMemoryRepository:
                 for i in range(4):
                     await repo.upsert_entities("svc-evict", [
                         MemoryEntity(
-                            name=f"实体{i}", relation_to_user="朋友",
+                            name=f"实体{i}", relation_to_identity="朋友",
                             mention_count=i,
                             last_mentioned_at=now + timedelta(seconds=i),
                         ),

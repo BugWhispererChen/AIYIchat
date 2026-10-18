@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.admin.auth import require_admin
-from app.admin.routes.common import _render, _user_repo
+from app.admin.routes.common import _render, _identity_repo
 from app.db.repositories.proactive_repo import ProactiveRecordRepository
 
 proactive_router = APIRouter(tags=["admin"])
@@ -58,17 +58,17 @@ async def proactive_page(
     # 补充用户展示名与阶段中文
     record_infos = []
     for rec in records:
-        display = rec.platform_user_id
-        if rec.user_id:
+        display = rec.platform_openid
+        if rec.identity_id:
             try:
-                user = await _user_repo.find_by_id(rec.user_id)
-                if user:
-                    display = user.nickname or user.name or rec.platform_user_id
+                identity = await _identity_repo.find_by_id(rec.identity_id)
+                if identity:
+                    display = identity.nickname or identity.name or rec.platform_openid
             except Exception:
                 pass
         record_infos.append({
             "record": rec,
-            "user_display": display,
+            "identity_display": display,
             "stage_label": _STAGE_LABELS.get(rec.stage, f"阶段{rec.stage}"),
             "type_label": _CONTENT_TYPE_LABELS.get(
                 getattr(rec, "content_type", "care"), "关怀"

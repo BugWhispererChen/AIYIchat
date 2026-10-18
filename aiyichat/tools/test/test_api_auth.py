@@ -20,8 +20,8 @@ from app.db import mongo
 from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
-from app.db.repositories.user_repo import UserRepository
-from app.db.repositories.web_identity_repo import WebIdentityRepository
+from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
 from app.models.profile import PromptProfileCreate
@@ -117,10 +117,10 @@ async def _login(client: AsyncClient, username: str, password: str = PASSWORD) -
 
 async def _approve(username: str) -> str:
     """走服务层审核通过，返回身份 ID。"""
-    identity = await WebIdentityRepository().find_by_username(username)
-    assert identity is not None
-    assert await auth_service.approve(identity.id, "admin") is True
-    return identity.id
+    credential = await WebCredentialRepository().find_by_username(username)
+    assert credential is not None
+    assert await auth_service.approve(credential.id, "admin") is True
+    return credential.id
 
 
 class _FakeEngine:
@@ -386,7 +386,7 @@ class TestRateLimitApi:
                     assert resp.json()["code"] == "register"
                     assert int(resp.headers["retry-after"]) >= 1
                     # 超限请求不得落库
-                    assert await WebIdentityRepository().find_by_username("rl3") is None
+                    assert await WebCredentialRepository().find_by_username("rl3") is None
             finally:
                 mongo._db = None
 
@@ -462,7 +462,7 @@ class TestChatStreamAuthorization:
 
         _with_fake_engine(flow)
 
-    def test_banned_user_cannot_chat(self) -> None:
+    def test_banned_identity_cannot_chat(self) -> None:
         """被封禁（禁用）的用户：会话即时失效，发消息被拒。"""
 
         async def flow() -> None:
@@ -488,7 +488,7 @@ class TestChatStreamAuthorization:
 
         _with_fake_engine(flow)
 
-    def test_identity_derived_from_token(self) -> None:
+    def test_credential_derived_from_token(self) -> None:
         """网页用户不传 platform_id：引擎收到的是令牌本人的身份。"""
 
         async def flow() -> None:
@@ -512,9 +512,9 @@ class TestChatStreamAuthorization:
                     assert call["platform_id"] == "alice"
                     assert call["bot_id"] == WEB_BOT_ID
                     # 两个注册用户的会话与身份互不可见：各自独立 user/service
-                    user_a = await UserRepository().find_by_platform("web", "alice")
-                    user_b = await UserRepository().find_by_platform("web", "bob")
-                    assert user_a.id != user_b.id and user_a.account_id != user_b.account_id
+                    identity_a = await IdentityRepository().find_by_platform("web", "alice")
+                    identity_b = await IdentityRepository().find_by_platform("web", "bob")
+                    assert identity_a.id != identity_b.id and identity_a.account_id != identity_b.account_id
             finally:
                 mongo._db = None
 
@@ -532,7 +532,7 @@ class TestChatStreamAuthorization:
             async def find_by_id(self, conversation_id: str) -> Any:
                 if conversation_id == "missing":
                     return None
-                return type("Conv", (), {"id": conversation_id, "user_id": self.owner_id})()
+                return type("Conv", (), {"id": conversation_id, "identity_id": self.owner_id})()
 
         async def flow() -> None:
             app = await _setup_app("t_stream_hist")
@@ -542,16 +542,16 @@ class TestChatStreamAuthorization:
                     await _register(client, "intruder")
                     await _approve("owner")
                     await _approve("intruder")
-                    owner = await UserRepository().find_by_platform("web", "owner")
-                    other = await UserRepository().find_by_platform("web", "intruder")
+                    owner = await IdentityRepository().find_by_platform("web", "owner")
+                    other = await IdentityRepository().find_by_platform("web", "intruder")
                     token = await _login(client, "owner")
                     headers = {"Authorization": f"Bearer {token}"}
 
-                    # 他人 user_id → 403
-                    resp = await client.get(f"/api/conversations?user_id={other.id}", headers=headers)
+                    # 他人 identity_id → 403
+                    resp = await client.get(f"/api/conversations?identity_id={other.id}", headers=headers)
                     assert resp.status_code == 403
-                    # 自己的 user_id → 200（无数据时为空列表）
-                    resp = await client.get(f"/api/conversations?user_id={owner.id}", headers=headers)
+                    # 自己的 identity_id → 200（无数据时为空列表）
+                    resp = await client.get(f"/api/conversations?identity_id={owner.id}", headers=headers)
                     assert resp.status_code == 200 and resp.json() == []
                     # 他人 service_id → 403
                     svc_b = (await _services_of(other.id))[0].id
@@ -575,11 +575,11 @@ class TestChatStreamAuthorization:
         asyncio.run(flow())
 
 
-async def _services_of(user_id: str) -> list[Any]:
+async def _services_of(identity_id: str) -> list[Any]:
     """取该用户名下的对话服务列表。"""
     from app.db.repositories.service_repo import ServiceRepository
 
-    return await ServiceRepository().list_by_user(user_id)
+    return await ServiceRepository().list_by_identity(identity_id)
 
 
 class TestLegacyBehaviourUnchanged:
@@ -618,7 +618,7 @@ class TestLegacyBehaviourUnchanged:
                     assert (
                         await client.post("/api/auth/login", json={"username": "ghost", "password": PASSWORD})
                     ).status_code == 403
-                    assert await WebIdentityRepository().list_all() == []
+                    assert await WebCredentialRepository().list_all() == []
             finally:
                 mongo._db = None
 

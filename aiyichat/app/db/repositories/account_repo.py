@@ -86,7 +86,7 @@ class AccountRepository:
         # 2. 删除服务
         stats["services"] = (await db.services.delete_many({"account_id": account_id})).deleted_count
         # 3. 删除用户
-        stats["users"] = (await db.users.delete_many({"account_id": account_id})).deleted_count
+        stats["identities"] = (await db.identities.delete_many({"account_id": account_id})).deleted_count
         # 4. 删除 Bot
         stats["bots"] = (await db.bot_configs.delete_many({"account_id": account_id})).deleted_count
         # 5. 删除额度

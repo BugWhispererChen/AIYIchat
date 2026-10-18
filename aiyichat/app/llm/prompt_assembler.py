@@ -8,7 +8,7 @@ from app.config import settings
 from app.models.message import MessageInDB
 from app.models.profile import PromptProfileInDB
 from app.models.service_memory import MemoryFact
-from app.models.user import UserInDB
+from app.models.identity import IdentityInDB
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class TimeAudit:
     gap_mode: str = "none"  # 本轮间隔分档（none/session/reunion/proactive）
 
 
-def _last_user_message_at(history: list[MessageInDB]) -> datetime | None:
+def _last_identity_message_at(history: list[MessageInDB]) -> datetime | None:
     """取历史中最后一条真实用户消息的时间（UTC aware）。
 
     只认 role=="user"：主动关怀/AI 消息不重置“用户空闲”时钟
@@ -132,23 +132,23 @@ def _find_session_boundary(
     history: list[MessageInDB], now_utc: datetime, threshold_seconds: float
 ) -> tuple[int, float] | None:
     """按用户消息间隔找最近边界，避免回复耗时改变重逢分档。"""
-    last = _last_user_message_at(history)
+    last = _last_identity_message_at(history)
     if last is not None:
         gap = (now_utc - last).total_seconds()
         if gap >= threshold_seconds:
             return len(history) - 1, gap
-    next_user_index: int | None = None
-    next_user_at: datetime | None = None
+    next_identity_index: int | None = None
+    next_identity_at: datetime | None = None
     for i in range(len(history) - 1, -1, -1):
         msg = history[i]
         if msg.role != "user":
             continue
         at = _ensure_aware(msg.created_at)
-        if next_user_at is not None and next_user_index is not None:
-            gap = (next_user_at - at).total_seconds()
+        if next_identity_at is not None and next_identity_index is not None:
+            gap = (next_identity_at - at).total_seconds()
             if gap >= threshold_seconds:
-                return next_user_index - 1, gap
-        next_user_index, next_user_at = i, at
+                return next_identity_index - 1, gap
+        next_identity_index, next_identity_at = i, at
     return None
 
 
@@ -234,10 +234,10 @@ class PromptAssembler:
         self,
         profile: PromptProfileInDB,
         history: list[MessageInDB],
-        user_input: str,
+        identity_input: str,
         summary: str | None = None,
         emotion_hint: str | None = None,
-        user: UserInDB | None = None,
+        identity: IdentityInDB | None = None,
         current_topic: str = "",
         memory_facts: list[str] | None = None,
         length_instruction: str = "",
@@ -294,10 +294,10 @@ class PromptAssembler:
             gap_mode = "none"
 
         # 间隔语义：idle 只认真实用户消息；分档提示复用同一间隔表达
-        last_user_at = _last_user_message_at(history) if time_enabled else None
+        last_identity_at = _last_identity_message_at(history) if time_enabled else None
         gap_phrase = ""
-        if last_user_at is not None:
-            idle_seconds = (now_utc - last_user_at).total_seconds()
+        if last_identity_at is not None:
+            idle_seconds = (now_utc - last_identity_at).total_seconds()
             if idle_seconds > 0:
                 gap_phrase = _format_gap(idle_seconds)
         idle_phrase = gap_phrase if settings.time_idle_hint_enabled else ""
@@ -306,14 +306,14 @@ class PromptAssembler:
 
         # 1. 系统提示词（精简版，不含emotion_hint和length_instruction）
         system_prompt = self._render_system_prompt(
-            profile, user, user_input,
+            profile, identity, identity_input,
             sticker_available=sticker_available, now_local=now_local,
         )
         messages.append({"role": "system", "content": system_prompt})
 
         # 2. 记忆注入（提升到summary前面，LLM更重视靠近对话的内容）
         #    先完成历史过滤与会话边界裁剪，以便向记忆段落声明被归档的消息条数（借 Letta）
-        filtered_history = self._filter_history(history, user_input)
+        filtered_history = self._filter_history(history, identity_input)
         raw_index = {id(m): i for i, m in enumerate(history)}
         boundary_idx: int | None = None
         if time_enabled:
@@ -366,7 +366,7 @@ class PromptAssembler:
         dated_changes = set(day_changes[-_MAX_DAY_SEPARATORS:])
         archive_at = day_changes[0] if len(day_changes) > _MAX_DAY_SEPARATORS else None
         boundary_emitted = False
-        user_tagged_once = False
+        identity_tagged_once = False
         tagged_count = 0
         for i, msg in enumerate(entries):
             if (
@@ -389,9 +389,9 @@ class PromptAssembler:
             tag = ""
             if msg.role == "user":
                 # 窗口内首条用户消息无论间隔都打标，给后续消息提供时间参照
-                prev_ref = prev_map.get(id(msg)) if user_tagged_once else None
+                prev_ref = prev_map.get(id(msg)) if identity_tagged_once else None
                 tag = self._time_tag(msg, prev_ref, now_local, tz)
-                user_tagged_once = True
+                identity_tagged_once = True
                 if tag:
                     tagged_count += 1
             messages.append({"role": msg.role, "content": tag + msg.content})
@@ -421,7 +421,7 @@ class PromptAssembler:
             now_local=now_local, idle_phrase=idle_phrase,
             topic_stall_hint=topic_stall_hint,
             dynamic_memory_hint=dynamic_hint,
-            last_user_local=last_user_at.astimezone(tz) if last_user_at else None,
+            last_identity_local=last_identity_at.astimezone(tz) if last_identity_at else None,
             gap_mode=gap_mode,
             gap_phrase=gap_phrase,
             has_yesterday_history=any(
@@ -438,7 +438,7 @@ class PromptAssembler:
             messages.append({"role": "system", "content": context_hint})
 
         # 6. 用户输入
-        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "user", "content": identity_input})
 
         # 时间注入审计：把本轮实际注入了什么时间上下文回写给调用方（治“无法区分注入失败与推理失败”）
         if time_audit is not None:
@@ -457,8 +457,8 @@ class PromptAssembler:
     def _render_system_prompt(
         self,
         profile: PromptProfileInDB,
-        user: UserInDB | None = None,
-        user_input: str = "",
+        identity: IdentityInDB | None = None,
+        identity_input: str = "",
         sticker_available: bool = False,
         now_local: datetime | None = None,
     ) -> str:
@@ -480,22 +480,22 @@ class PromptAssembler:
             sections.append(_render_anchor(anchor_now))
 
         # 用户身份描述（如果有）
-        if user and user.identity_description:
+        if identity and identity.self_description:
             sections.append(
                 f"【用户身份】\n"
-                f"你正在与以下用户对话：{user.identity_description}\n"
+                f"你正在与以下用户对话：{identity.self_description}\n"
                 f"请根据用户的身份背景，调整你的对话方式和关心重点。"
             )
 
         # 角色设定
-        identity = profile.identity
+        persona = profile.persona
         sections.append(
             f"【角色设定】\n"
             f"你是{profile.name}，来自{profile.source}。\n"
-            f"{identity.background}\n"
-            f"时代背景：{identity.era}\n"
-            f"外观年龄：{identity.age_appearance}\n"
-            f"核心价值观：{'、'.join(identity.core_values)}"
+            f"{persona.background}\n"
+            f"时代背景：{persona.era}\n"
+            f"外观年龄：{persona.age_appearance}\n"
+            f"核心价值观：{'、'.join(persona.core_values)}"
         )
 
         # 性格特征
@@ -535,7 +535,7 @@ class PromptAssembler:
 
         # 示例对话风格（根据当前输入动态选取最相关的示例，默认取前2条）
         if lang.example_utterances:
-            selected = self._select_examples(user_input, lang.example_utterances)
+            selected = self._select_examples(identity_input, lang.example_utterances)
             examples = "\n".join(f"- {u}" for u in selected)
             sections.append(f"【示例对话风格】\n{examples}")
 
@@ -582,8 +582,8 @@ class PromptAssembler:
         if settings.imagegen_enabled:
             # 从角色档案提取场景上下文
             img_context = (
-                f"你的时代背景是【{identity.era}】，"
-                f"生活环境是{identity.background[:60]}"
+                f"你的时代背景是【{persona.era}】，"
+                f"生活环境是{persona.background[:60]}"
             )
             # 是否具备参考图一致性生成能力（定妆照 + 参考图编辑开关）
             has_ref = bool(
@@ -604,10 +604,10 @@ class PromptAssembler:
                     "本人出镜（self）时，描述只写场景、姿态、衣着、表情、光线，"
                     "不要描述面部特征与发型（系统会自动使用你的标准形象保持一致）。"
                 )
-            elif identity.appearance:
+            elif persona.appearance:
                 # 无定妆照：退回文字外貌描述兼容链路
                 img_lines.append(
-                    f"你的外貌特征（英文，本人出镜时必须写入描述以保持形象一致）：{identity.appearance}"
+                    f"你的外貌特征（英文，本人出镜时必须写入描述以保持形象一致）：{persona.appearance}"
                 )
             img_lines.extend([
                 "图片描述要用英文，必须以 'realistic photo, ' 开头，要求如下：",
@@ -661,7 +661,7 @@ class PromptAssembler:
         idle_phrase: str = "",
         topic_stall_hint: str = "",
         dynamic_memory_hint: str = "",
-        last_user_local: datetime | None = None,
+        last_identity_local: datetime | None = None,
         gap_mode: GapMode = "none",
         gap_phrase: str = "",
         has_yesterday_history: bool = False,
@@ -709,14 +709,14 @@ class PromptAssembler:
                     f"【凌晨提示】日历已经翻到 {now.month}月{now.day}日，"
                     f"{yesterday.month}月{yesterday.day}日的事提到时要说“昨天”或“昨晚”，不要说成“今天”。"
                 )
-                if last_user_local is not None and (now.date() - last_user_local.date()).days == 1:
-                    when = "昨晚" if last_user_local.hour >= 18 else "昨天"
-                    hint += f"对方上一条消息是{when} {last_user_local.strftime('%H:%M')} 发的。"
+                if last_identity_local is not None and (now.date() - last_identity_local.date()).days == 1:
+                    when = "昨晚" if last_identity_local.hour >= 18 else "昨天"
+                    hint += f"对方上一条消息是{when} {last_identity_local.strftime('%H:%M')} 发的。"
                 parts.append(hint)
             if settings.time_idle_hint_enabled and idle_phrase:
-                if last_user_local is not None:
+                if last_identity_local is not None:
                     parts.append(
-                        f"【对话间隔】对方上一条消息发于{_format_moment(last_user_local, now)}，"
+                        f"【对话间隔】对方上一条消息发于{_format_moment(last_identity_local, now)}，"
                         f"距现在 {idle_phrase}。"
                     )
                 else:
@@ -764,7 +764,7 @@ class PromptAssembler:
         return "\n".join(parts)
 
     def _select_examples(
-        self, user_input: str, examples: list[str], k: int = 2
+        self, identity_input: str, examples: list[str], k: int = 2
     ) -> list[str]:
         """根据与当前输入的关键词重叠度选取最相关的示例对话。
 
@@ -772,9 +772,9 @@ class PromptAssembler:
         """
         if len(examples) <= k:
             return examples
-        if not user_input:
+        if not identity_input:
             return examples[:k]
-        input_kw = self._extract_keywords(user_input)
+        input_kw = self._extract_keywords(identity_input)
         if not input_kw:
             return examples[:k]
         scored = [
@@ -1049,7 +1049,7 @@ class PromptAssembler:
     def _filter_history(
         self,
         history: list[MessageInDB],
-        user_input: str,
+        identity_input: str,
     ) -> list[MessageInDB]:
         """
         智能过滤历史消息：保证最近5条 + 相关性筛选早期消息。
@@ -1078,7 +1078,7 @@ class PromptAssembler:
             return tail
 
         # 提取用户输入的关键词（简单切分，去除常见停用词）
-        input_keywords = self._extract_keywords(user_input)
+        input_keywords = self._extract_keywords(identity_input)
 
         # 对早期消息评分
         scored: list[tuple[MessageInDB, int]] = []

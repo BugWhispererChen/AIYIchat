@@ -87,8 +87,8 @@ class TestStaticHelpers:
         assert client.can_send_proactive("u-1") is False
         client._context_tokens["u-1"] = "ctx"
         assert client.can_send_proactive("u-1") is True
-        assert client._get_user_context_token("u-1") == "ctx"
-        assert client._get_user_context_token("u-x") == ""
+        assert client._get_context_token("u-1") == "ctx"
+        assert client._get_context_token("u-x") == ""
 
 
 class TestParseAndDedup:
@@ -320,9 +320,9 @@ class TestHandleMessage:
 
             # 逐条发送 3 次，接收人与内容正确
             assert client.send_text.await_count == 3
-            sent_users = [c.args[0] for c in client.send_text.await_args_list]
+            sent_identities = [c.args[0] for c in client.send_text.await_args_list]
             sent_texts = [c.args[1] for c in client.send_text.await_args_list]
-            assert sent_users == ["u-1"] * 3
+            assert sent_identities == ["u-1"] * 3
             assert sent_texts == ["第一条", "第二条", "第三条"]
             # 首条无延迟，后续每条插入打字延迟
             assert mock_sleep.await_count == 2

@@ -16,7 +16,7 @@ import mongomock_motor
 from httpx import ASGITransport, AsyncClient
 
 from app.db import mongo
-from app.models.profile import ProfileIdentity, PromptProfileCreate
+from app.models.profile import ProfilePersona, PromptProfileCreate
 
 SLUG = "test-ref-portrait"
 
@@ -37,7 +37,7 @@ async def _setup_app():
 
     await ProfileRepository().create(PromptProfileCreate(
         slug=SLUG, name="测试角色",
-        identity=ProfileIdentity(appearance="a young woman"),
+        persona=ProfilePersona(appearance="a young woman"),
     ))
 
     from app.admin.auth import require_admin
@@ -73,7 +73,7 @@ class TestAdminReferenceImage:
                     resp = await client.get(f"/admin/profiles/{SLUG}")
                     assert resp.status_code == 200
                     assert "定妆照" in resp.text
-                    assert "identity_appearance" in resp.text
+                    assert "persona_appearance" in resp.text
 
                     # AI 模型配置页渲染参考图编辑功能块
                     resp = await client.get("/admin/multimedia")
@@ -162,12 +162,12 @@ class TestAdminReferenceImage:
                         f"/admin/profiles/{SLUG}/edit",
                         data={
                             "name": "测试角色",
-                            "identity_appearance": "a young woman",
+                            "persona_appearance": "a young woman",
                         },
                     )
                     assert resp.status_code == 200
                     profile = await _get_profile()
-                    assert profile.identity.appearance == "a young woman"
+                    assert profile.persona.appearance == "a young woman"
             finally:
                 await _teardown_app(app)
 

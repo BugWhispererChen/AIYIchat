@@ -11,7 +11,7 @@
 {% block content %}
 <div class="page-header">
     <h3>账号详情：{{ account.name }}</h3>
-    <p class="subtitle">管理账号信息、用户、Bot 和对话服务</p>
+    <p class="subtitle">管理账号信息、身份、Bot 和对话服务</p>
 </div>
 
 {% if success %}
@@ -57,10 +57,10 @@
                 </div>
                 <div class="btn-row">
                     <button type="submit">保存</button>
-                    {# 删除账号：级联删除关联用户/Bot/服务，需二次确认 #}
+                    {# 删除账号：级联删除关联身份/Bot/服务，需二次确认 #}
                     <button type="submit" formaction="/admin/accounts/{{ account.id }}/delete"
                             class="danger outline" data-danger data-confirm-text="删除账号"
-                            data-confirm="确认删除账号「{{ account.name }}」？此操作不可恢复，关联的用户和 Bot 数据也将被删除！">删除账号</button>
+                            data-confirm="确认删除账号「{{ account.name }}」？此操作不可恢复，关联的身份和 Bot 数据也将被删除！">删除账号</button>
                 </div>
             </form>
         </div>
@@ -176,7 +176,7 @@
         </div>
     </div>
 
-    {# ─────────── Tab 2：用户管理 ─────────── #}
+    {# ─────────── Tab 2：身份管理 ─────────── #}
     <div class="tab-content" data-tab-content="identities">
         <div class="card">
             <h4>身份管理 <small class="muted" style="font-size:0.82rem;">({{ identities|length }} 个)</small></h4>
@@ -203,9 +203,9 @@
                         </td>
                         <td>
                             <div class="btn-row" style="gap:0.3rem;">
-                                {# 禁用/启用用户：禁用时通过 Modal 输入禁用原因 #}
+                                {# 禁用/启用身份：禁用时通过 Modal 输入禁用原因 #}
                                 <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block" style="margin:0;"
-                                      {% if not u.is_blocked %}data-confirm="确认禁用用户「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用用户「{{ u.name or u.platform_id }}」？"{% endif %}>
+                                      {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %}>
                                     <input type="hidden" name="block_reason" value="">
                                     {% if not u.is_blocked %}
                                     <button type="submit" class="ghost btn-sm">禁用</button>
@@ -213,9 +213,9 @@
                                     <button type="submit" class="btn-sm">启用</button>
                                     {% endif %}
                                 </form>
-                                {# 删除用户：不可恢复，需二次确认 #}
+                                {# 删除身份：不可恢复，需二次确认 #}
                                 <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete" style="margin:0;"
-                                      data-confirm="确认删除此用户？此操作不可恢复！" data-danger data-confirm-text="删除">
+                                      data-confirm="确认删除此身份？此操作不可恢复！" data-danger data-confirm-text="删除">
                                     <button type="submit" class="danger outline btn-sm">删除</button>
                                 </form>
                             </div>
@@ -247,15 +247,15 @@
                 </tbody>
             </table>
             {% else %}
-            <p class="muted">暂无用户</p>
+            <p class="muted">暂无身份</p>
             {% endif %}
 
             <details style="margin-top:0.8rem;">
-                <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增用户</summary>
+                <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增身份</summary>
                 <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
                     <div class="grid">
-                        <label>用户名称
-                            <input type="text" name="name" placeholder="用户名称">
+                        <label>登录名称
+                            <input type="text" name="name" placeholder="登录名称">
                         </label>
                         <label>平台
                             <select name="platform" required>
@@ -268,14 +268,14 @@
                             <input type="text" name="nickname" placeholder="昵称">
                         </label>
                     </div>
-                    <label>用户身份描述（供 LLM 参考）
+                    <label>自我描述（供 LLM 参考）
                         <textarea name="identity_description" placeholder="例如：张三，25岁，软件工程师，喜欢 hiking" rows="2"></textarea>
                     </label>
                     <label style="display:flex;align-items:center;gap:0.5rem;">
                         <input type="checkbox" name="is_minor" role="switch">
                         未成年人（启用后将限制亲密关系与不宜内容，并加强防沉迷引导）
                     </label>
-                    <button type="submit">创建用户</button>
+                    <button type="submit">创建身份</button>
                 </form>
             </details>
         </div>

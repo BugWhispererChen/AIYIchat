@@ -142,7 +142,7 @@
             <div id="success-panel" class="alert alert-success" hidden></div>
 
             <form id="register-form" autocomplete="off">
-                <label for="username">用户名</label>
+                <label for="username">登录名</label>
                 <input type="text" id="username" name="username" required maxlength="32"
                        placeholder="3-32 位字母、数字或下划线" autocomplete="username">
                 <p class="field-tip">不能使用 admin、system 等保留名，注册后不可修改。</p>
@@ -175,7 +175,7 @@
                 <div style="margin-top:.9rem;">
                     <label class="consent-item">
                         <input type="checkbox" id="terms-accepted" name="terms_accepted" required>
-                        <span>我已阅读并同意《用户协议》</span>
+                        <span>我已阅读并同意《身份协议》</span>
                     </label>
                     <label class="consent-item">
                         <input type="checkbox" id="privacy-accepted" name="privacy_accepted" required>
@@ -194,7 +194,7 @@
                 <div class="notice">
                     <strong>备案与责任声明：</strong>网页注册与对话能力由本站部署者自行开启并运营，
                     部署者须依法完成 ICP 备案及生成式人工智能相关备案、安全评估（如适用），
-                    并对本站的内容合规、用户个人信息保护与未成年人保护措施承担全部责任。
+                    并对本站的内容合规、身份个人信息保护与未成年人保护措施承担全部责任。
                 </div>
 
                 <button type="submit" id="submit-btn">注册</button>
@@ -285,7 +285,7 @@
                 grade = '弱'; width = '33%'; color = 'var(--danger)'; cls = 'lvl-weak';
                 tip.textContent = pwd.length < 8
                     ? '至少 8 位，并同时包含字母和数字。'
-                    : '该密码过于常见或包含用户名，请更换。';
+                    : '该密码过于常见或包含登录名，请更换。';
             } else if (pwd.length >= 12 && (hasSymbol || /[A-Z]/.test(pwd))) {
                 grade = '强'; width = '100%'; color = 'var(--success)'; cls = 'lvl-strong';
                 tip.textContent = '强度良好。建议再启用大小写与符号混排。';
@@ -321,7 +321,7 @@
             }
             if (!document.getElementById('terms-accepted').checked
                 || !document.getElementById('privacy-accepted').checked) {
-                showAlert('请先阅读并勾选《用户协议》与《隐私政策》。');
+                showAlert('请先阅读并勾选《身份协议》与《隐私政策》。');
                 return;
             }
 

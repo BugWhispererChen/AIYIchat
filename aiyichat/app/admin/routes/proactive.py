@@ -2,7 +2,7 @@
 
 展示主动消息（沉默召回 + 事件跟进）的发送记录与效果统计，
 让原本"黑盒"运行的主动关怀能力可观测：发送量、成功率、阶段分布；
-同时支持配置免打扰时段、用户时区与分享型消息比例（保存即热生效）。
+同时支持配置免打扰时段、身份时区与分享型消息比例（保存即热生效）。
 """
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -55,7 +55,7 @@ async def proactive_page(
         skip=skip, limit=_PAGE_SIZE, status=filter_status
     )
 
-    # 补充用户展示名与阶段中文
+    # 补充身份展示名与阶段中文
     record_infos = []
     for rec in records:
         display = rec.platform_openid
@@ -124,7 +124,7 @@ async def save_quiet_hours(
     tz_offset: int = Form(8),
     _s: str = Depends(require_admin),
 ) -> RedirectResponse:
-    """保存免打扰时段与用户时区：落库 -> 热重载（调度器运行时读取，无需重启）。
+    """保存免打扰时段与身份时区：落库 -> 热重载（调度器运行时读取，无需重启）。
 
     时区只写单一源 default_timezone_offset，对话时间感知与主动关怀共用它，
     避免运营改了主动关怀时区后对话侧仍用旧时区。

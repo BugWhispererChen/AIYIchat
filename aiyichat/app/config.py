@@ -91,7 +91,7 @@ class _RuntimeSettings:
     topic_history_max: int = 10  # 话题历史最大保存数
     topic_stall_detection_enabled: bool = True  # 话题停滞检测开关
     topic_stall_threshold: int = 4  # 连续 N 轮同话题判定为停滞
-    topic_stall_similarity: float = 0.6  # 用户输入相似度阈值（低于此值视为同话题）
+    topic_stall_similarity: float = 0.6  # 身份输入相似度阈值（低于此值视为同话题）
 
     # 拟人化多消息回复
     multi_message_enabled: bool = True  # 多消息回复总开关
@@ -116,7 +116,7 @@ class _RuntimeSettings:
     default_timezone_offset: int = 8
     # 时间感知子开关（各自独立生效，互不依赖；总开关关闭时全部不注入）
     time_anchor_enabled: bool = True  # 日期锚点：system prompt 开头声明"今天是几号"
-    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条用户消息已过去多久
+    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条身份消息已过去多久
     time_day_separator_enabled: bool = True  # 跨天分隔符：自然日变化处插入独立 system 消息
     message_time_tag_year_enabled: bool = True  # 跨年标签带年份（[2025-12-31 23:45]）
     memory_inject_time_suffix: bool = True  # 记忆注入追加"（记录于 N 天前）"后缀
@@ -147,7 +147,7 @@ class _RuntimeSettings:
     tts_config_id: str = "dashscope-default"
     # TTS 表现力：情感指令/情感标签/音调联动（关闭时语音无任何表现力修饰）
     tts_expression_enabled: bool = True
-    # 语音动态触发窗口：用户发语音触发语音回复后，该会话在随机时长的
+    # 语音动态触发窗口：身份发语音触发语音回复后，该会话在随机时长的
     # 固定窗口内文字消息也以语音回复（按会话独立，窗口内不续期）
     voice_dynamic_enabled: bool = True
     voice_window_min_minutes: int = 5
@@ -171,7 +171,7 @@ class _RuntimeSettings:
 
     # 记忆注入分层（防 prompt 前缀缓存被击穿）
     # 稳定层（core tier，每轮基本不变）留在 system prompt 前段以命中前缀缓存；
-    # 动态层（随当前输入语义变化的 top-k 召回）改注入到紧贴用户输入的易变段。
+    # 动态层（随当前输入语义变化的 top-k 召回）改注入到紧贴身份输入的易变段。
     # 依据：prompt_assembler 类注释即标注"缓存未命中会使响应从几秒恶化到几十秒"。
     memory_stable_in_prefix: bool = True
     # 动态层注入的字符预算（超出则丢弃尾部条目，控制 token 增量）
@@ -216,9 +216,9 @@ class _RuntimeSettings:
     # 主动关怀总开关与安全阈值
     proactive_enabled: bool = True  # 主动关怀总开关，异常时可一键停用
     proactive_max_retries: int = 2  # 单阶段失败重试上限，达到后不再触发（防额度耗尽）
-    proactive_monthly_limit: int = 4  # 每用户每月主动消息上限（QQ 官方约束为4条）
+    proactive_monthly_limit: int = 4  # 每身份每月主动消息上限（QQ 官方约束为4条）
 
-    # 主动关怀免打扰时段（用户本地时区，跨午夜：start~24 与 0~end）
+    # 主动关怀免打扰时段（身份本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22
     proactive_quiet_hour_end: int = 8
 
@@ -240,16 +240,16 @@ class _RuntimeSettings:
     safety_crisis_extra: list = []
     safety_forbidden_extra: list = []
 
-    # 表情包（AI 主动发送/理解用户表情/以图回图；语义检索 + 关键词兜底）
+    # 表情包（AI 主动发送/理解身份表情/以图回图；语义检索 + 关键词兜底）
     sticker_enabled: bool = False  # 表情包发送总开关（需表情库非空）
     sticker_seed_enabled: bool = True  # 启动时自动 seed 随包预置的表情包资源
     sticker_max_per_turn: int = 1  # 每轮回复最多发送的表情包数量
     sticker_similarity_threshold: float = 0.28  # 语义检索相似度门槛（低于视为未命中）
-    sticker_reply_probability: float = 0.5  # 用户仅发表情包时以图回图的概率（0~1）
+    sticker_reply_probability: float = 0.5  # 身份仅发表情包时以图回图的概率（0~1）
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
     sticker_max_dimension: int = 500  # 表情包尺寸阈值（宽或高中较大者，像素）
 
-    # C 端网页用户（自助注册 / 登录 / 会话）
+    # C 端网页身份（自助注册 / 登录 / 会话）
     # 默认值必须与 AppSettingsDocument 中的同名字段一致，详见该类的说明注释
     web_auth_enabled: bool = False  # 网页鉴权总开关（关闭时网页注册/登录/会话接口全部拒绝）
     web_register_enabled: bool = False  # 自助注册开关

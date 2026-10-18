@@ -5,6 +5,13 @@
 
 from dataclasses import dataclass
 
+# 表情包转写标记前缀：适配器生成、对话引擎判定，必须单一来源。
+# 曾因两侧各自持有中文字面量而出现"身份/对方"不一致，导致纯表情包消息判定失效。
+STICKER_TRANSCRIBE_PREFIX = "[对方发送了一个表情包"
+
+# 图片转写标记前缀：与表情包同族，适配器写入消息内容供模型理解，保持用词一致
+IMAGE_TRANSCRIBE_PREFIX = "[对方发送了一张图片"
+
 
 @dataclass
 class StickerTask:

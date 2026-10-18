@@ -42,7 +42,7 @@ async def profiles_list(
 ) -> HTMLResponse:
     """展示所有角色列表，支持搜索与可见范围筛选。
 
-    `vis=private` 用于巡查网页用户自建的角色：自助创建走内容安全前置校验，
+    `vis=private` 用于巡查网页身份自建的角色：自助创建走内容安全前置校验，
     后台按此筛选做事后复核与禁用，是 C 端开放自建能力的合规兜底入口。
     """
     profiles = await _profile_repo.search(q, limit=100) if q.strip() else await _profile_repo.list_all()

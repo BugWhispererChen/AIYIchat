@@ -121,7 +121,7 @@ class TestSchedulerHelpers:
     def test_quiet_hours_uses_service_timezone(self) -> None:
         """免打扰按 service.timezone 取当地小时，而非服务器全局偏移。
 
-        动机：按全局偏移判"深夜别打扰"，会在海外用户当地凌晨发消息，
+        动机：按全局偏移判"深夜别打扰"，会在海外身份当地凌晨发消息，
         既扰人，也暴露角色不关心对方身在何处。
         """
         from zoneinfo import ZoneInfo
@@ -288,7 +288,7 @@ class TestProcessService:
                 svc = self._make_service()
                 cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
-                # 用户不存在
+                # 身份不存在
                 sched._identity_repo.find_by_id = AsyncMock(return_value=None)
                 await sched._process_service(svc, cutoff)
 
@@ -328,7 +328,7 @@ class TestProcessService:
                 settings.proactive_share_enabled = False
                 try:
                     sched = ProactiveScheduler()
-                    # 用户 5 小时前活跃 → 触发阶段1
+                    # 身份 5 小时前活跃 → 触发阶段1
                     last = datetime.now(timezone.utc) - timedelta(hours=5)
                     identity = self._make_identity(last_active_at=last)
                     svc = self._make_service()
@@ -628,7 +628,7 @@ class TestMultiBotRouting:
         assert sched._resolve_platform_id(legacy, "b-1") == "oid-latest"
 
     def test_each_bot_service_sends_own_openid(self) -> None:
-        """同一用户的不同 Bot 服务各自触达，且发到各自的 openid。"""
+        """同一身份的不同 Bot 服务各自触达，且发到各自的 openid。"""
         async def body():
             _fresh_db()
             old_evt = settings.proactive_event_enabled

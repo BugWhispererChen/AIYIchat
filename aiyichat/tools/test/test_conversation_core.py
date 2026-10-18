@@ -191,7 +191,7 @@ class TestTopicManager:
                 ft = FocusTracker()
                 fake_provider = SimpleNamespace(complete=AsyncMock(return_value=json.dumps({
                     "current_topic": "考研复习",
-                    "new_facts": ["用户在准备考研", "喜欢喝咖啡"],
+                    "new_facts": ["身份在准备考研", "喜欢喝咖啡"],
                 })))
                 msgs = [
                     MessageInDB(
@@ -258,7 +258,7 @@ class TestTurnRecorder:
         from tools.test.db_test_utils import run_with_db
 
         async def body() -> None:
-            """模拟 LLM 完成后才落库，用户时间仍为接收时刻。"""
+            """模拟 LLM 完成后才落库，身份时间仍为接收时刻。"""
             conversations = ConversationRepository()
             messages = MessageRepository()
             conversation = await conversations.create("u-1", "p-1", "svc-1")

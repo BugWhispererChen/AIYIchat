@@ -93,7 +93,7 @@ class TestWebPagesDisabled:
                     for path in PAGE_PATHS:
                         page = await client.get(path)
                         assert page.status_code == 403, path
-                        assert "网页用户功能未开放" in page.text
+                        assert "网页身份功能未开放" in page.text
                         assert LEAK_USERNAME not in page.text
                         assert PASSWORD not in page.text
                     # 根路径不重定向：保持 FastAPI 原有 404，存量部署升级无感知
@@ -119,7 +119,7 @@ class TestWebPagesRender:
                     assert 'name="terms_accepted"' in html
                     assert 'name="privacy_accepted"' in html
                     assert 'name="age_confirmed"' in html
-                    assert "我已阅读并同意《用户协议》" in html
+                    assert "我已阅读并同意《身份协议》" in html
                     assert "我已阅读并同意《隐私政策》" in html
                     assert "我已满 14 周岁" in html
                     # 未成年人保护与部署者责任声明

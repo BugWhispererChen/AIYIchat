@@ -14,7 +14,7 @@ proactive_router = APIRouter()
 class ProactiveTriggerRequest(BaseModel):
     """手动触发主动消息的请求体。"""
 
-    identity_id: str  # 系统内部用户ID
+    identity_id: str  # 系统内部身份ID
     bot_id: str  # Bot ID
     content: Optional[str] = None  # 自定义内容（为空则AI生成）
     stage: int = 1  # 发送阶段（1-4）
@@ -47,7 +47,7 @@ async def trigger_proactive_message(
     identity_repo = IdentityRepository()
     identity = await identity_repo.find_by_id(req.identity_id)
     if identity is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=404, detail="身份不存在")
 
     scheduler = get_proactive_scheduler()
 
@@ -68,7 +68,7 @@ async def trigger_proactive_message(
         svc_repo = ServiceRepository()
         service = await svc_repo.find_by_identity_and_bot(req.identity_id, req.bot_id)
         if service is None:
-            raise HTTPException(status_code=404, detail="用户无对应服务")
+            raise HTTPException(status_code=404, detail="身份无对应服务")
 
         if req.content_type in ("news", "trivia"):
             # 分享型：news 联网时事 / trivia 创作趣事（失败返回空串）
@@ -89,7 +89,7 @@ async def trigger_proactive_message(
         return ProactiveTriggerResponse(
             success=False, message=f"暂不支持向 {identity.platform} 平台主动推送"
         )
-    # 发送目标按 Bot 路由：QQ openid 按 appid 生成，同一用户在不同 Bot 下不同
+    # 发送目标按 Bot 路由：QQ openid 按 appid 生成，同一身份在不同 Bot 下不同
     target_id = scheduler._resolve_platform_id(identity, req.bot_id)
 
     repo = ProactiveRecordRepository()
@@ -135,7 +135,7 @@ async def list_proactive_records(
     bot_id: str,
     limit: int = 20,
 ) -> list[dict]:
-    """查询用户的主动消息发送记录。"""
+    """查询身份的主动消息发送记录。"""
     from app.db.repositories.proactive_repo import ProactiveRecordRepository
 
     repo = ProactiveRecordRepository()

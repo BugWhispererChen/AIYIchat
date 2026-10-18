@@ -36,7 +36,7 @@ async def conversations_list(
         total = await _conv_repo.count()
         total_pages = max(1, (total + per_page - 1) // per_page)
 
-    # 为每个对话查询关联的用户、账号、角色信息
+    # 为每个对话查询关联的身份、账号、角色信息
     conv_infos: list[dict] = []
     for conv in convs:
         identity = await _identity_repo.find_by_id(conv.identity_id)

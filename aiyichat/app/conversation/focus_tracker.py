@@ -2,7 +2,7 @@
 
 每隔若干轮对话，通过轻量 LLM 调用从最近消息中提取：
 1. 当前话题焦点（current_topic）
-2. 新发现的用户事实（new_facts）
+2. 新发现的对方事实（new_facts）
 
 提取结果保存到 service_memories 集合，供后续 Prompt 注入使用。
 """
@@ -30,19 +30,19 @@ logger = logging.getLogger(__name__)
 _EXTRACT_SYSTEM_PROMPT = (
     "你是一个对话分析助手。请分析以下对话，提取两项信息：\n"
     "1. current_topic: 当前对话的核心话题，用一句简短的中文描述（不超过30字）\n"
-    "2. new_facts: 从对话中发现的关于用户的新事实（兴趣爱好、生活事件、人际关系、"
+    "2. new_facts: 从对话中发现的关于对方的新事实（兴趣爱好、生活事件、人际关系、"
     "情绪模式等），每条为对象：\n"
     '   {{"content": "事实描述(不超过20字)", '
     '"valid_at": "该事实发生或开始成立的绝对日期 YYYY-MM-DD，无法确定则为 null"}}\n'
     "注意：提取事实时，如果内容包含\"今天/今日/昨天/明天/后天/大后天\"等相对时间词，"
     "必须替换为绝对日期（如\"8月25日\"），例如：\n"
-    "- 用户说\"今天上班好累\" → content 为\"用户8月25日上班感到疲惫\"，"
+    "- 对方说\"今天上班好累\" → content 为\"对方8月25日上班感到疲惫\"，"
     "valid_at 为\"2026-08-25\"\n"
-    "- 用户说\"明天要面试\" → content 为\"用户8月26日有面试\"，"
+    "- 对方说\"明天要面试\" → content 为\"对方8月26日有面试\"，"
     "valid_at 为\"2026-08-26\"\n"
-    "- 长期稳定的信息（如\"用户喜欢喝咖啡\"、\"用户对花生过敏\"、\"用户住在杭州\"）"
+    "- 长期稳定的信息（如\"对方喜欢喝咖啡\"、\"对方对花生过敏\"、\"对方住在杭州\"）"
     "valid_at 返回 null，因为它们不随时间失效\n\n"
-    "已知的用户事实（不要重复提取）：\n{existing_facts}\n\n"
+    "已知的对方事实（不要重复提取）：\n{existing_facts}\n\n"
     "请严格按以下 JSON 格式输出，不要输出其他内容：\n"
     '{{"current_topic": "话题描述", "new_facts": '
     '[{{"content": "事实1", "valid_at": null}}]}}\n\n'
@@ -68,7 +68,7 @@ _RESOLVE_SYSTEM_PROMPT = (
 # 要求直接输出绝对日期串：LLM 自行推算 days_from_now 整数时易错，
 # 且“下周三/9月15号”这类表达无法用整数天数准确表达（解析失败时回落整数逻辑）
 _EVENTS_ADDENDUM = (
-    "\n\n此外，如果用户提到未来某个时间点会发生、值得日后关心的具体事件"
+    "\n\n此外，如果对方提到未来某个时间点会发生、值得日后关心的具体事件"
     "（如面试、考试、约会、体检、旅行等），提取到 events 数组：\n"
     'events: [{{"content": "事件描述(不超过20字)", '
     '"date": "事件发生的绝对日期，格式 YYYY-MM-DD"}}]\n'
@@ -79,17 +79,17 @@ _EVENTS_ADDENDUM = (
 
 # 实体关系提取附加指令（轻量关系图谱）
 _ENTITIES_ADDENDUM = (
-    "\n\n此外，如果对话中出现与用户相关的人物/事物实体（如朋友、家人、宠物、物品等），"
+    "\n\n此外，如果对话中出现与对方相关的人物/事物实体（如朋友、家人、宠物、物品等），"
     "提取到 entities 数组：\n"
     'entities: [{{"name": "实体名", "relation_to_identity": "与对方的关系", '
     '"aliases": ["别名1", "别名2"], "entity_type": "person|pet|thing", '
-    '"sentiment": "用户对该实体的情感倾向", '
+    '"sentiment": "对方对该实体的情感倾向", '
     '"attributes": {{"属性名": "属性值"}}, '
     '"relations": [{{"target": "目标实体名", "relation": "关系描述"}}]}}]\n'
     "说明：\n"
     "- aliases: 实体的别名/昵称（如'老王'、'王哥'），用于消歧\n"
     "- entity_type: person=人物, pet=宠物, thing=事物\n"
-    "- sentiment: 用户对该实体的情感倾向（如'亲近'、'有矛盾'），无则留空\n"
+    "- sentiment: 对方对该实体的情感倾向（如'亲近'、'有矛盾'），无则留空\n"
     "- relations: 该实体与其他实体的关系（如'小红的哥哥是小明'），无则留空数组\n"
     "没有则 entities 返回空数组。"
 )
@@ -105,7 +105,7 @@ def _build_full_output_format(include_events: bool) -> str:
 
 
 class FocusTracker:
-    """对话焦点追踪器，负责提取话题焦点和用户记忆事实。"""
+    """对话焦点追踪器，负责提取话题焦点和对方记忆事实。"""
 
     # 话题转换信号词
     _TOPIC_SHIFT_MARKERS: list[str] = [
@@ -122,7 +122,7 @@ class FocusTracker:
 
         Args:
             message_count: 当前会话的总消息数
-            last_msg: 最新一条用户消息内容
+            last_msg: 最新一条对方消息内容
             last_extract_time: 上次提取的时间（可选）
 
         Returns:
@@ -433,7 +433,7 @@ class FocusTracker:
         - 第一层：新实体 name/aliases 与已有实体精确匹配命中 → 直接合并
         - 第二层（embedding 启用时）：拼接文本向量与已有实体 embedding 余弦相似度
           ≥ memory_entity_merge_threshold → 视为同一实体合并
-        - 合并：更新 relation_to_user/attributes/sentiment，aliases 并集去重，
+        - 合并：更新 relation_to_identity/attributes/sentiment，aliases 并集去重，
           mention_count += 1，刷新 last_mentioned_at；新实体写入 embedding
         - relations 合并：同 target 新旧关系语义相似度低于阈值 → 旧关系标 invalid
           保留时间线、新关系写入；相似度高则仅刷新 updated_at
@@ -747,12 +747,12 @@ class FocusTracker:
 
         # 构建对话文本：每行带该消息自身的绝对日期（时间基点 = 消息时刻，非抽取时刻）
         # 抽取为异步后台任务，recent_messages 可能是昨晚的消息；若只给“当前日期”，
-        # 用户昨晚说“今天上班好累”会被 LLM 解析成今天而非昨天（借 Graphiti episode reference timestamp）
+        # 对方昨晚说“今天上班好累”会被 LLM 解析成今天而非昨天（借 Graphiti episode reference timestamp）
         tz = timezone(timedelta(hours=settings.default_timezone_offset))
         now = datetime.now(tz)
         dialog_lines: list[str] = []
         for msg in messages_for_extract:
-            role_label = "用户" if msg.role == "user" else "AI"
+            role_label = "对方" if msg.role == "user" else "AI"
             created = getattr(msg, "created_at", None)
             if created is not None:
                 if created.tzinfo is None:
@@ -778,7 +778,7 @@ class FocusTracker:
                 if ent.aliases:
                     line += f"（别名：{'、'.join(ent.aliases)}）"
                 if ent.relation_to_identity:
-                    line += f"：用户的{ent.relation_to_identity}"
+                    line += f"：对方的{ent.relation_to_identity}"
                 entity_lines.append(line)
             if entity_lines:
                 entities_text = (

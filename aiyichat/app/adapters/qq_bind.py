@@ -2,7 +2,7 @@
 
 实现 QQ 机器人“扫码接入”凭据绑定流程：
 1. create_bind_task: 本地生成 AES-256 bind_key，创建绑定任务获取 task_id
-2. 二维码内容指向平台 connect 页面，用户手机 QQ 扫码选择机器人
+2. 二维码内容指向平台 connect 页面，身份手机 QQ 扫码选择机器人
 3. poll_bind_result: 轮询绑定结果，完成后解密得到 AppID/AppSecret
 
 凭据下发使用 AES-256-GCM 加密（nonce 12B + 密文 + tag 16B），

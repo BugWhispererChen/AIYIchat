@@ -50,7 +50,7 @@ async def safety_page(
         skip=skip, limit=_PAGE_SIZE, event_type=filter_type
     )
 
-    # 补充用户展示名（昵称/名称），失败不阻断
+    # 补充身份展示名（昵称/名称），失败不阻断
     event_infos = []
     for ev in events:
         display = ev.platform_id

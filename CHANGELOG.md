@@ -58,6 +58,18 @@
 - `focus_max_tokens` 默认 128 → 384：事件提取常开后单次抽取需同时输出
   事实 / 实体 / 事件三类 JSON
 - 「功能实验室」中「事件驱动主动关怀」「语义记忆检索」两条说明同步上述语义变化
+- **术语与命名体系重构（需执行数据迁移）**：「用户」统一改称「身份」，含义不变。
+  因"身份"一词此前已被三个概念分别占用，按概念分向改名以免同名歧义——
+  使用者主体 `User`/`users`/`user_id` → `Identity`/`identities`/`identity_id`；
+  网页登录凭据 `WebIdentity`/`web_identities` → `WebCredential`/`web_credentials`
+  （会话外键相应改为 `credential_id`）；角色人设 `ProfileIdentity`/`profile.identity`
+  → `ProfilePersona`/`profile.persona`；`identity_description` → `self_description`。
+  外部协议值不受影响（LLM `role:"user"`、QQ `/v2/users/` 与 `user_openid`、
+  微信 `from_user_id`/`to_user_id`、表单 `username`）。
+  对外可见面同步改名并使旧链接失效：`/admin/web-users` → `/admin/web-credentials`、
+  `/admin/accounts/{id}/users/*` → `/identities/*`、API 查询参与响应字段 `user_id` → `identity_id`。
+  升级须先停 app、执行 `tools/migrations/rename_user_to_identity.py`（支持 `--dry-run`
+  与 `--rollback`）再启新版，否则读不到存量数据
 
 ### 修复
 - 角色语言风格的禁用词命中此前**仅记告警日志、不做任何处理**，与人格冲突的词

@@ -34,11 +34,11 @@ async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceI
         创建的临时服务对象，失败返回None
     """
     try:
-        # 获取或创建默认用户（使用系统默认QQ用户）
+        # 获取或创建默认身份（使用系统默认QQ身份）
         identity_repo = IdentityRepository()
         default_identity = await _get_or_create_default_identity(identity_repo, account_id)
         if not default_identity:
-            logger.warning("[TempService] 无法获取默认用户，跳过临时服务创建")
+            logger.warning("[TempService] 无法获取默认身份，跳过临时服务创建")
             return None
 
         # 获取默认角色（使用第一个可用的公共角色）
@@ -74,28 +74,28 @@ async def create_temp_service(bot_id: str, account_id: str) -> Optional[ServiceI
 async def _get_or_create_default_identity(
     identity_repo: IdentityRepository, account_id: str
 ) -> Optional[IdentityInDB]:
-    """获取或创建默认QQ用户用于临时服务。"""
-    # 尝试查找已存在的系统默认用户
+    """获取或创建默认QQ身份用于临时服务。"""
+    # 尝试查找已存在的系统默认身份
     default_platform_id = "system_default_qq_user"
     existing_identity = await identity_repo.find_by_platform("qq", default_platform_id)
     if existing_identity:
         return existing_identity
 
-    # 创建新的默认用户
+    # 创建新的默认身份
     try:
         default_identity = await identity_repo.create(
             IdentityCreate(
                 account_id=account_id,
-                name="系统默认用户",
+                name="系统默认身份",
                 platform_id=default_platform_id,
                 platform="qq",
-                nickname="系统默认用户",
+                nickname="系统默认身份",
             )
         )
-        logger.info("[TempService] 创建系统默认用户: %s", default_identity.id)
+        logger.info("[TempService] 创建系统默认身份: %s", default_identity.id)
         return default_identity
     except Exception as e:
-        logger.error("[TempService] 创建默认用户失败: %s", e)
+        logger.error("[TempService] 创建默认身份失败: %s", e)
         return None
 
 
@@ -161,9 +161,9 @@ async def send_test_message(bot_id: str) -> bool:
             logger.warning("[TempService] Bot客户端不存在: %s", bot_id)
             return False
 
-        # 发送测试消息给系统默认用户
-        # 注意：这里只是验证Bot能正常发送消息，实际不会真的发给用户
-        # 因为临时服务使用的是系统默认用户，不是真实用户
+        # 发送测试消息给系统默认身份
+        # 注意：这里只是验证Bot能正常发送消息，实际不会真的发给身份
+        # 因为临时服务使用的是系统默认身份，不是真实身份
         logger.info("[TempService] Bot验证成功: %s", bot_id)
         return True
 
@@ -210,7 +210,7 @@ async def verify_bot_binding(bot_id: str, account_id: str) -> dict:
         if not temp_service:
             return {
                 "status": "partial",
-                "message": "绑定成功，但无法创建验证服务（无默认用户或角色）",
+                "message": "绑定成功，但无法创建验证服务（无默认身份或角色）",
             }
 
         # 2. 等待Bot启动

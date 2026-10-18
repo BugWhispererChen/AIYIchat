@@ -28,7 +28,11 @@ from app.utils.tasks import spawn
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.image_task import ImageTask
-from app.conversation.sticker_task import StickerTask
+from app.conversation.sticker_task import (
+    IMAGE_TRANSCRIBE_PREFIX,
+    STICKER_TRANSCRIBE_PREFIX,
+    StickerTask,
+)
 from app.services.voice_window import voice_window
 
 if TYPE_CHECKING:
@@ -249,12 +253,12 @@ class QQWebSocketClient:
         # 属平台协议字段，与本项目 identities 的 identity_id 无关，禁止改名。
         if event_type == "C2C_MESSAGE_CREATE":
             user_id = author.get("user_openid", "")
-            nickname = author.get("username", "QQ用户")
+            nickname = author.get("username", "QQ身份")
             is_group = False
             group_id = ""
         else:
             user_id = author.get("member_openid", "")
-            nickname = author.get("username", "QQ用户")
+            nickname = author.get("username", "QQ身份")
             is_group = True
             group_id = data.get("group_openid", "")
             content = re.sub(r"<@!\d+>", "", content).strip()
@@ -312,15 +316,15 @@ class QQWebSocketClient:
                 if img_desc.startswith("[表情包]") or is_likely_sticker:
                     # 强制转写为表情包格式（尺寸预判或 Vision 识别命中）
                     clean_desc = img_desc.replace("[表情包]", "").replace("含义：", "").replace("含义:", "").strip()
-                    prefix = f"[用户发送了一个表情包，含义：{clean_desc}]"
+                    prefix = f"{STICKER_TRANSCRIBE_PREFIX}，含义：{clean_desc}]"
                 else:
-                    prefix = f"[用户发送了一张图片，内容：{img_desc}]"
+                    prefix = f"{IMAGE_TRANSCRIBE_PREFIX}，内容：{img_desc}]"
                 content = f"{prefix} {content}" if content else prefix
                 print(f"{self._label} [图片识别] {img_desc[:60]}")
 
         # 图片兜底：vision 未启用/失败时，仍保留图片提示让 Bot 能回复
         if not content and image_url:
-            content = "[用户发送了一张图片]"
+            content = f"{IMAGE_TRANSCRIBE_PREFIX}]"
 
         if not content:
             return
@@ -361,7 +365,7 @@ class QQWebSocketClient:
             f"{self._label} [回复] {response_text[:80]}..."
         )
 
-        # 语音触发：用户发语音直接触发；或动态窗口内（用户发过语音后的随机
+        # 语音触发：身份发语音直接触发；或动态窗口内（身份发过语音后的随机
         # 固定窗口期）文字消息也以语音回复，窗口按会话独立且不续期
         user_sent_voice = bool(voice_wav_url or voice_asr_text)
         in_voice_window = (
@@ -376,7 +380,7 @@ class QQWebSocketClient:
             and (user_sent_voice or in_voice_window)
         )
         if is_voice_reply and user_sent_voice:
-            # 仅用户发语音触发时开启窗口（固定窗口，窗口内不续期）
+            # 仅身份发语音触发时开启窗口（固定窗口，窗口内不续期）
             voice_window.touch(
                 conv_id,
                 settings.voice_window_min_minutes,
@@ -439,7 +443,7 @@ class QQWebSocketClient:
             )
 
     def _handle_command(self, content: str) -> str:
-        """处理用户指令"""
+        """处理身份指令"""
         cmd = content.replace("\uff0f", "/").strip()
         command = cmd.split(maxsplit=1)[0].lower()
 
@@ -471,7 +475,7 @@ class QQWebSocketClient:
 
         Args:
             is_wakeup: 是否使用互动召回能力（与 msg_id 互斥）。
-                       设置为 True 时不传 msg_id，用于主动触达用户。
+                       设置为 True 时不传 msg_id，用于主动触达身份。
         """
         try:
             token = await self.get_access_token()
@@ -555,7 +559,7 @@ class QQWebSocketClient:
         return self._last_send_error
 
     def _check_rate_limit_error(self, resp: "httpx.Response", user_id: str) -> None:
-        """检测 QQ 限流错误，记录退避时间（1小时内不再向该用户发送主动消息）。"""
+        """检测 QQ 限流错误，记录退避时间（1小时内不再向该身份发送主动消息）。"""
         try:
             error_data = resp.json()
             error_code = error_data.get("code", 0)
@@ -564,13 +568,13 @@ class QQWebSocketClient:
                 expire_at = datetime.now(timezone.utc) + timedelta(hours=1)
                 self._rate_limited_openids[user_id] = expire_at
                 logger.warning(
-                    "QQ 限流，用户 %s 退避至 %s", user_id, expire_at.isoformat()
+                    "QQ 限流，身份 %s 退避至 %s", user_id, expire_at.isoformat()
                 )
         except Exception:
             pass  # 响应体非 JSON 时忽略
 
     def _is_rate_limited(self, user_id: str) -> bool:
-        """检查用户是否在限流退避期内。"""
+        """检查身份是否在限流退避期内。"""
         expire_time = self._rate_limited_openids.get(user_id)
         if expire_time is None:
             return False
@@ -595,13 +599,13 @@ class QQWebSocketClient:
         group_id: str = "",
     ) -> bool:
         """
-        主动发送消息给用户（使用互动召回 is_wakeup 能力）。
+        主动发送消息给身份（使用互动召回 is_wakeup 能力）。
 
-        用于定时关怀、主动触达等场景。不需要前置的用户消息。
-        限制：用户对话后30天内，按周期下发（当天/1-3天/3-7天/7-30天各1条）。
+        用于定时关怀、主动触达等场景。不需要前置的身份消息。
+        限制：身份对话后30天内，按周期下发（当天/1-3天/3-7天/7-30天各1条）。
 
         Args:
-            user_id: 目标用户的 openid
+            user_id: 目标身份的 openid
             content: 消息文本内容
             is_group: 是否群聊（互动召回仅支持C2C，群聊使用普通主动消息）
             group_id: 群ID（仅群聊时需要）
@@ -609,11 +613,11 @@ class QQWebSocketClient:
         Returns:
             发送是否成功
         """
-        # 限流退避检查：处于退避期内的用户跳过发送
+        # 限流退避检查：处于退避期内的身份跳过发送
         if self._is_rate_limited(user_id):
-            logger.warning("用户 %s 处于限流退避期，跳过发送", user_id)
+            logger.warning("身份 %s 处于限流退避期，跳过发送", user_id)
             self._last_send_error = (
-                f"QQ 召回限流退避中，用户 {user_id} 本轮不可发送"
+                f"QQ 召回限流退避中，身份 {user_id} 本轮不可发送"
             )
             return False
 
@@ -665,8 +669,8 @@ class QQWebSocketClient:
             except Exception as e:
                 logger.error("%s dashscope ASR失败: %s", self._label, e)
 
-        # 兜底：让 Bot 知道用户发了语音
-        return "[用户发送了一条语音消息]"
+        # 兜底：让 Bot 知道身份发了语音
+        return "[身份发送了一条语音消息]"
 
     async def _handle_image_input(
         self, image_url: str, image_data: bytes = b""

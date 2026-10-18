@@ -4,7 +4,7 @@
 `/api/auth/*` 与 `/api/conversations/chat/stream`，因此这里只做模板渲染与开关拦截。
 
 `settings.web_auth_enabled` 是唯一硬开关，关闭时：
-- `/web/*` 一律返回 403 提示页，且不渲染任何用户数据；
+- `/web/*` 一律返回 403 提示页，且不渲染任何身份数据；
 - 根路径保持 FastAPI 原有的 404 行为，既不重定向也不新增可见页面。
 后者是"存量部署升级无感知"的产品硬约束：老实例的访问者看不到任何变化。
 """
@@ -47,7 +47,7 @@ _DISABLED_HTML = """<!DOCTYPE html>
 </head>
 <body>
     <div class="notice-card">
-        <h2>网页用户功能未开放</h2>
+        <h2>网页身份功能未开放</h2>
         <p>本实例未开启网页注册与登录，请通过 QQ / 微信机器人与 AI 角色对话。</p>
     </div>
 </body>
@@ -62,7 +62,7 @@ def _render(request: Request, name: str, ctx: dict[str, Any] | None = None) -> R
 
 
 def _disabled_page() -> Response:
-    """开关关闭时的统一响应：403 + 纯静态提示页（不含任何用户数据）。"""
+    """开关关闭时的统一响应：403 + 纯静态提示页（不含任何身份数据）。"""
     return HTMLResponse(content=_DISABLED_HTML, status_code=status.HTTP_403_FORBIDDEN)
 
 

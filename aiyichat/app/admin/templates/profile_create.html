@@ -24,9 +24,9 @@
             <input type="text" name="name" value="{{ name or '' }}" required maxlength="30"
                    placeholder="例如：林小满">
         </label>
-        <label>角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与用户的关系等)</small>
+        <label>角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与身份的关系等)</small>
             <textarea name="description" rows="6" required minlength="10"
-                      placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心用户">{{ description or '' }}</textarea>
+                      placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心身份">{{ description or '' }}</textarea>
         </label>
         {% set vb = verbosity | default('standard', true) %}
         <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>

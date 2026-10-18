@@ -56,7 +56,7 @@ class TestTempService:
                 assert service.name.startswith(TEMP_SERVICE_PREFIX)
                 assert service.bot_id == "bot-1"
                 assert service.account_id == "acc-1"
-                # 临时服务会创建新的默认用户，所以user_id不为空即可
+                # 临时服务会创建新的默认身份，所以user_id不为空即可
                 assert service.identity_id != ""
                 assert service.profile_id == profile.slug
                 assert service.is_active is True
@@ -99,7 +99,7 @@ class TestTempService:
                 identity = await identity_repo.create(
                     IdentityCreate(
                         account_id="acc-1",
-                        name="测试用户",
+                        name="测试身份",
                         platform_id="test_qq_user",
                         platform="qq",
                     )
@@ -154,7 +154,7 @@ class TestTempService:
                 await identity_repo.create(
                     IdentityCreate(
                         account_id="acc-1",
-                        name="测试用户",
+                        name="测试身份",
                         platform_id="test_qq_user",
                         platform="qq",
                     )
@@ -223,7 +223,7 @@ class TestTempService:
                 await identity_repo.create(
                     IdentityCreate(
                         account_id="acc-1",
-                        name="测试用户",
+                        name="测试身份",
                         platform_id="test_qq_user",
                         platform="qq",
                     )

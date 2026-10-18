@@ -4,7 +4,7 @@
 - resolve_tz：service → user → 全局默认偏移，逐级回落
 - 无效时区名 / tzdata 缺失 → 静默回落固定偏移，不抛异常
 - 夏令时（America/New_York）自动处理
-- build_context：idle 只认真实用户消息，naive 时间兼容
+- build_context：idle 只认真实身份消息，naive 时间兼容
 - render_anchor / render_moment / format_gap 渲染正确性
 """
 

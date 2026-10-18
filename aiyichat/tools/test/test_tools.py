@@ -27,8 +27,8 @@ class TestSearchFacts:
 
     def test_keyword_fallback(self) -> None:
         facts = [
-            MemoryFact(content="用户在准备考研"),
-            MemoryFact(content="用户喜欢喝奶茶"),
+            MemoryFact(content="身份在准备考研"),
+            MemoryFact(content="身份喜欢喝奶茶"),
         ]
         hits = search_facts("考研复习", facts)
         assert any("考研" in h for h in hits)

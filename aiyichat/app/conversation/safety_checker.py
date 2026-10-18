@@ -1,6 +1,6 @@
 """内容安全检查器。
 
-对用户输入做轻量规则校验，覆盖两类合规场景：
+对身份输入做轻量规则校验，覆盖两类合规场景：
 1. 心理危机识别（自杀/自伤倾向）→ 返回温暖的心理援助引导，并留痕告警
 2. 违禁内容拦截（政治/暴力/色情等）→ 婉拒回复
 
@@ -30,7 +30,7 @@ class SafetyVerdict:
 
     action: SafetyAction
     matched: str = ""        # 命中的关键词（用于留痕核查）
-    reply: str = ""          # 需直接回复给用户的内容（危机/拦截时非空）
+    reply: str = ""          # 需直接回复给身份的内容（危机/拦截时非空）
 
 
 # 心理危机信号词（自杀/自伤倾向）——命中即触发干预
@@ -111,12 +111,12 @@ class SafetyChecker:
         )
 
     def check_input(self, text: str) -> SafetyVerdict:
-        """检查用户输入，返回处置结论。
+        """检查身份输入，返回处置结论。
 
         优先级：危机 > 违禁 > 放行（生命安全优先于内容合规）。
 
         Args:
-            text: 用户消息文本
+            text: 身份消息文本
 
         Returns:
             SafetyVerdict（action=PASS 时 reply 为空）

@@ -76,7 +76,7 @@ async def login_submit(
         return _render(
             request,
             "login.html",
-            {"error": "用户名或密码错误"},
+            {"error": "登录名或密码错误"},
         )
     response = RedirectResponse(url="/admin/", status_code=status.HTTP_303_SEE_OTHER)
     create_session(response)

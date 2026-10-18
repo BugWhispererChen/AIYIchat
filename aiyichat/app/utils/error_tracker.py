@@ -104,7 +104,7 @@ class ErrorTracker:
 
         Args:
             exc: 异常对象
-            context: 上下文信息（如 user_id、service_id）
+            context: 上下文信息（如 identity_id、service_id）
             force_log: 是否强制记录详细日志（忽略聚合窗口）
 
         Returns:

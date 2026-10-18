@@ -1,6 +1,6 @@
 """对话轮次记录器。
 
-负责将用户消息和 AI 回复持久化到数据库，并更新对话元数据。
+负责将身份消息和 AI 回复持久化到数据库，并更新对话元数据。
 """
 
 from datetime import datetime
@@ -12,7 +12,7 @@ from app.models.message import MessageInDB
 
 
 class TurnRecorder:
-    """记录一轮对话中的用户输入与 AI 输出。"""
+    """记录一轮对话中的身份输入与 AI 输出。"""
 
     def __init__(
         self,
@@ -31,9 +31,9 @@ class TurnRecorder:
         content_type: str = "text",
         created_at: Optional[datetime] = None,
     ) -> MessageInDB:
-        """持久化用户消息。
+        """持久化身份消息。
 
-        created_at 应传入消息接收时刻：用户消息在 LLM 回复后才落库，
+        created_at 应传入消息接收时刻：身份消息在 LLM 回复后才落库，
         若取写入时间会与 AI 回复时间相同甚至更晚，导致历史顺序错乱。
         """
         return await self.message_repo.create(

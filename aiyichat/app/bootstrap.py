@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("预置表情包 seed 失败（不影响启动）: %s", e)
 
-    # 导入预置角色（幂等 upsert；用户已修改的角色跳过覆盖，仅补齐空定妆照）
+    # 导入预置角色（幂等 upsert；身份已修改的角色跳过覆盖，仅补齐空定妆照）
     try:
         from tools.seed_companion_profiles import seed_profiles
 
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     ]
     if not active_profiles:
         logger.warning(
-            "当前无任何可用角色，用户对话将提示创建角色，"
+            "当前无任何可用角色，身份对话将提示创建角色，"
             "请尽快在管理后台「角色管理」中创建角色"
         )
 

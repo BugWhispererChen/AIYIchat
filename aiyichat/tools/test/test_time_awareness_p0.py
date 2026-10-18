@@ -67,8 +67,8 @@ class TestFocusExtractTimeBase:
             _msg("m2", "user", "刚睡醒", datetime(2026, 9, 1, 23, 50, tzinfo=timezone.utc)),
         ]
         _, dialog_text = self._run_extract(history)
-        assert "[2026-09-01 23:00] 用户: 今天上班好累" in dialog_text
-        assert "[2026-09-02 07:50] 用户: 刚睡醒" in dialog_text
+        assert "[2026-09-01 23:00] 对方: 今天上班好累" in dialog_text
+        assert "[2026-09-02 07:50] 对方: 刚睡醒" in dialog_text
 
     def test_date_hint_declares_message_time_base(self) -> None:
         """date_hint 明示当前日期只是执行时刻，相对时间须以消息自身日期为基准。"""
@@ -84,7 +84,7 @@ class TestFocusExtractTimeBase:
         """存量 naive 消息时间按 UTC 归一，抽取不报错。"""
         history = [_msg("m1", "user", "在吗", datetime(2026, 9, 1, 15, 0))]
         _, dialog_text = self._run_extract(history)
-        assert "[2026-09-01 23:00] 用户: 在吗" in dialog_text
+        assert "[2026-09-01 23:00] 对方: 在吗" in dialog_text
 
 
 class TestEventsAddendum:
@@ -194,7 +194,7 @@ class TestPendingEventsInjection:
         with patch("app.conversation.engine.datetime") as mock_dt:
             mock_dt.now.return_value = self.NOW
             text = ConversationEngine._render_pending_events(
-                [self._event("用户8月26日有面试", -7)]
+                [self._event("身份8月26日有面试", -7)]
             )
         assert "【待跟进的事】" in text
         assert "8月26日" in text
@@ -206,7 +206,7 @@ class TestPendingEventsInjection:
         with patch("app.conversation.engine.datetime") as mock_dt:
             mock_dt.now.return_value = self.NOW
             text = ConversationEngine._render_pending_events(
-                [self._event("用户9月10日体检", 8)]
+                [self._event("身份9月10日体检", 8)]
             )
         assert "9月10日" in text
         assert "还有 8 天" in text
@@ -216,8 +216,8 @@ class TestPendingEventsInjection:
         with patch("app.conversation.engine.datetime") as mock_dt:
             mock_dt.now.return_value = self.NOW
             text = ConversationEngine._render_pending_events([
-                self._event("用户8月26日有面试", -7),
-                self._event("用户9月10日体检", 8),
+                self._event("身份8月26日有面试", -7),
+                self._event("身份9月10日体检", 8),
             ])
         assert "已过去 7 天" in text and "还有 8 天" in text
 
@@ -227,10 +227,10 @@ class TestPendingEventsInjection:
         with patch("app.conversation.engine.datetime") as mock_dt:
             mock_dt.now.return_value = self.NOW
             text = ConversationEngine._render_pending_events(
-                [self._event("用户8月26日有面试", -7)]
+                [self._event("身份8月26日有面试", -7)]
             )
         assert "【待跟进的事】" in text
-        assert "- 用户8月26日有面试" in text
+        assert "- 身份8月26日有面试" in text
         assert "已过去" not in text
 
     def test_empty_events_render_nothing(self) -> None:

@@ -193,7 +193,7 @@ class ContextManager:
             date_fmt = "%Y-%m-%d" if need_year else "%m-%d"
 
             def _dialog_line(m: MessageInDB) -> str:
-                speaker = "用户" if m.role == "user" else "AI"
+                speaker = "身份" if m.role == "user" else "AI"
                 if time_tag_enabled:
                     day = _ensure_aware(m.created_at).astimezone(tz).strftime(date_fmt)
                     return f"[{day}] {speaker}: {m.content}"

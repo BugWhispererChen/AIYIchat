@@ -122,7 +122,7 @@ class TestEngineImageFlow:
         """图片额度不足：任务被移除，文本回复不受影响。"""
         engine = _build_engine(profile=self._profile())
 
-        # 仅图片方向额度不足，文本方向（用户输入/AI回复）正常
+        # 仅图片方向额度不足，文本方向（身份输入/AI回复）正常
         async def _deduct(account_id, quota_type, amount):
             if quota_type == "image":
                 return (False, "图片额度已用尽")

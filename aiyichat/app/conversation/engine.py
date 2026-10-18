@@ -26,7 +26,7 @@ from app.conversation.mood_manager import MoodManager
 from app.conversation.reply_jitter import normalize_text
 from app.conversation.response_processor import ResponseProcessor
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
-from app.conversation.sticker_task import StickerTask
+from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX, StickerTask
 from app.conversation.support_strategy import (
     NEGATIVE_EMOTIONS,
     SupportStrategySelector,
@@ -145,7 +145,7 @@ class ConversationEngine:
     对话引擎 - 每轮对话的中央编排器。
 
     流程：
-    1. 接收标准化消息 -> 校验 Bot -> 查找/创建用户
+    1. 接收标准化消息 -> 校验 Bot -> 查找/创建对方
     2. 查找/创建对话服务 -> 确定角色
     3. 查找/创建对话会话 -> 加载上下文
     4. 情绪检测 -> Prompt组装 -> LLM调用
@@ -188,13 +188,13 @@ class ConversationEngine:
         group_id: str = "",
     ) -> EngineResult:
         """
-        处理用户消息，返回AI回复。
+        处理对方消息，返回AI回复。
 
         Args:
             platform: 平台标识 ("qq" / "wechat" / "web")
-            platform_id: 平台用户ID (如QQ的openid)
-            text: 用户消息文本
-            nickname: 用户昵称
+            platform_id: 平台身份ID (如QQ的openid)
+            text: 对方消息文本
+            nickname: 身份昵称
             media_url: 媒体文件 URL（如 /api/media/{id}）
             content_type: 消息类型 ("text" / "image" / "voice")
             is_group: 是否群聊消息
@@ -204,11 +204,11 @@ class ConversationEngine:
             EngineResult 包含回复文本、图片描述、会话ID、账号ID、语音设置
         """
         # 群聊场景：使用 group_id::platform_id 作为联合标识，
-        # 避免与同一用户的 C2C 私聊冲突
+        # 避免与同一对方的 C2C 私聊冲突
         if is_group and group_id:
             platform_id = f"{group_id}::{platform_id}"
 
-        # 用户消息的真实发生时刻（落库发生在 LLM 回复之后，不能取写入时间）
+        # 对方消息的真实发生时刻（落库发生在 LLM 回复之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
 
         # 0. 校验 Bot 并获取所属账号（bot_id 现在存储的是 UUID）
@@ -225,18 +225,18 @@ class ConversationEngine:
                 msg += f"\n原因：{reason}"
             return EngineResult(text=msg)
 
-        # 1. 按平台+openid 查找已绑定的用户
+        # 1. 按平台+openid 查找已绑定的对方
         identity = await self.identity_repo.find_by_platform(platform, platform_id)
 
         if identity is not None:
-            # 1.1 已绑定用户 → 检查禁用状态
+            # 1.1 已绑定对方 → 检查禁用状态
             if identity.is_blocked:
                 msg = "服务异常，请联系管理员！"
                 if identity.block_reason:
                     msg += f"\n原因：{identity.block_reason}"
                 return EngineResult(text=msg)
 
-            # 1.2 查找该用户+Bot 的服务
+            # 1.2 查找该对方+Bot 的服务
             service = await self.service_repo.find_by_identity_and_bot(
                 identity.id, self.bot_id
             )
@@ -256,7 +256,7 @@ class ConversationEngine:
                 identity.id, self.bot_id, platform_id
             )
         else:
-            # 1.3 未找到用户 → 尝试自动绑定 openid 到该 Bot 的服务用户
+            # 1.3 未找到对方 → 尝试自动绑定 openid 到该 Bot 的服务对方
             service = await self.service_repo.find_active_by_bot(self.bot_id)
             if service is None:
                 logger.info(
@@ -265,29 +265,29 @@ class ConversationEngine:
                 )
                 return EngineResult(text=self._no_service_message())
 
-            # 获取服务关联的用户
+            # 获取服务关联的对方
             identity = await self.identity_repo.find_by_id(service.identity_id)
             if identity is None:
                 return EngineResult(text=self._no_service_message())
 
-            # 检查用户是否被禁用
+            # 检查对方是否被禁用
             if identity.is_blocked:
                 msg = "服务异常，请联系管理员！"
                 if identity.block_reason:
                     msg += f"\n原因：{identity.block_reason}"
                 return EngineResult(text=msg)
 
-            # 判断用户是否已绑定其他真实 openid
+            # 判断对方是否已绑定其他真实 openid
             if not self._is_uuid(identity.platform_id):
-                # 已绑定其他真实平台用户，拒绝
+                # 已绑定其他真实平台对方，拒绝
                 logger.info(
                     "Bot=%s service already bound to platform_id=%s, "
                     "rejecting new openid=%s",
                     self.bot_id, identity.platform_id, platform_id,
                 )
-                return EngineResult(text="该Bot的服务已绑定其他用户。")
+                return EngineResult(text="该Bot的服务已绑定其他对方。")
 
-            # 绑定真实 openid 到管理员预创建的用户
+            # 绑定真实 openid 到管理员预创建的对方
             await self.identity_repo.bind_platform_id(
                 identity.id, platform_id, nickname
             )
@@ -301,8 +301,8 @@ class ConversationEngine:
             )
 
         # 3. 确定当前角色 Profile（校验可见性）
-        # 归属基准取服务所属账号而非 Bot 所属账号：C 端网页用户各自独立账号、
-        # 共用同一系统 Bot，按 bot.account_id 判定会让用户自建私有角色永远不可见。
+        # 归属基准取服务所属账号而非 Bot 所属账号：C 端网页身份各自独立账号、
+        # 共用同一系统 Bot，按 bot.account_id 判定会让对方自建私有角色永远不可见。
         profile = await self._resolve_profile(
             service.profile_id, service.account_id
         )
@@ -393,7 +393,7 @@ class ConversationEngine:
             self._retrieve_memories(service.context_key, text, backfill=True, history=history),
         )
         
-        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴用户输入段
+        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴对方输入段
         (
             memory_facts, memory_fact_objs,
             dynamic_memory_facts, dynamic_memory_objs,
@@ -547,7 +547,7 @@ class ConversationEngine:
                         "role": "system",
                         "content": (
                             "你上一条回复与本次即将发送的内容高度雷同。"
-                            "请针对用户最新消息换全新的表达回应，严禁重复之前说过的话。"
+                            "请针对对方最新消息换全新的表达回应，严禁重复之前说过的话。"
                             "请从完全不同的角度回应，提供新的信息或视角。"
                         ),
                     }]
@@ -643,7 +643,7 @@ class ConversationEngine:
         )
 
         # 提取当前 profile 的音色设置；表现力参数（指令/音调/情感标签）
-        # 由用户情绪与角色心情动态生成，语速由指令文案内自然语言描述控制
+        # 由对方情绪与角色心情动态生成，语速由指令文案内自然语言描述控制
         voice_id = profile.voice_id or "longxiaochun"
         voice_instruction = ""
         voice_pitch_rate = 1.0
@@ -686,19 +686,19 @@ class ConversationEngine:
         content_type: str = "text",
         service_id: str = "",
     ):
-        """流式处理用户消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
+        """流式处理对方消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
 
         与 handle_message 共享上下文/记忆/策略组装逻辑，通过 stream_complete
         逐 token 产出；为独立实现，不影响 QQ/微信整段回复主链路。
         流式产出原始增量；完成后持久化清洗后的文本并触发异步记忆任务。
 
-        `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页用户可对多个角色
-        各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (用户, Bot) 查找。
+        `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页身份可对多个角色
+        各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (对方, Bot) 查找。
         """
-        # 用户消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
+        # 对方消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
 
-        # 解析 Bot/用户/服务/角色/会话
+        # 解析 Bot/对方/服务/角色/会话
         bot = await self.bot_repo.find_by_id(self.bot_id)
         if bot is None or getattr(bot, "is_blocked", False):
             yield self._no_service_message()
@@ -785,7 +785,7 @@ class ConversationEngine:
             scored_facts, injected_entities, pending_events,
         ) = await self._retrieve_memories(service.context_key, text, backfill=False, history=history)
 
-        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴用户输入段
+        # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴对方输入段
         (
             memory_facts, memory_fact_objs,
             dynamic_memory_facts, dynamic_memory_objs,
@@ -1181,10 +1181,10 @@ class ConversationEngine:
                 if not matched:
                     continue
 
-                # 渲染实体行：名称（与用户关系，情感）——关系网络；属性
+                # 渲染实体行：名称（与对方关系，情感）——关系网络；属性
                 line = f"{ent.name}"
                 if ent.relation_to_identity:
-                    line += f"（用户的{ent.relation_to_identity}"
+                    line += f"（对方的{ent.relation_to_identity}"
                     if ent.sentiment:
                         line += f"，情感：{ent.sentiment}"
                     line += "）"
@@ -1213,7 +1213,7 @@ class ConversationEngine:
                 )
 
         # 待跟进事件注入：此前 pending_events 仅供主动关怀调度器使用，对话侧完全不知情，
-        # 导致用户说“明天面试”、次日再聊时角色一无所知；注入时区分“已过去/即将发生”
+        # 导致对方说“明天面试”、次日再聊时角色一无所知；注入时区分“已过去/即将发生”
         raw_events = (
             list(getattr(service_memory, "pending_events", []) or [])
             if service_memory else []
@@ -1242,7 +1242,7 @@ class ConversationEngine:
         稳定层 = core 层事实：常驻注入、逐轮基本不变，留在 system 前段可命中
         prompt 前缀缓存；动态层 = 本轮语义 top-k 召回的 episodic/semantic 事实，
         随当前输入变化，若也放前段会使其后全部历史与指令 cache miss，
-        因此改注入到紧贴用户输入的易变段（缓存未命中会让响应从几秒恶化到几十秒）。
+        因此改注入到紧贴对方输入的易变段（缓存未命中会让响应从几秒恶化到几十秒）。
 
         两层各自返回平行的事实对象列表：动态层多为一次性事件，比稳定层更需要
         "记录于 N 天前"后缀，故必须一并传出供渲染对齐。
@@ -1490,7 +1490,7 @@ class ConversationEngine:
                     "一致性自检: user=%s, issues=%s", identity_id, issues
                 )
                 # 禁用词与角色越界同等处理：原先只记日志等于没拦截，
-                # 与人格冲突的词仍会原样发到用户屏幕上
+                # 与人格冲突的词仍会原样发到对方屏幕上
                 if any(issue.startswith("forbidden:") for issue in issues):
                     full_text = self.consistency_checker.scrub_forbidden(
                         full_text, profile.language_style.forbidden_words
@@ -1546,7 +1546,7 @@ class ConversationEngine:
         """组装表情包发送任务：标签语义检索 + 以图回图 + 随机穿插概率触发。
 
         1. LLM 输出 [表情:描述] 标签时逐条检索，条数受 sticker_max_per_turn 限制；
-        2. 用户仅发表情包（无标签命中）时按 sticker_reply_probability
+        2. 对方仅发表情包（无标签命中）时按 sticker_reply_probability
            概率随机回一张，不额外调用 LLM；
         3. 普通文本消息（无标签命中）时按 sticker_casual_probability
            概率随机穿插一张，增强聊天氛围；
@@ -1589,7 +1589,7 @@ class ConversationEngine:
                     content_type=hit.content_type,
                 ))
 
-        # 2. 以图回图：用户仅发表情包且无标签命中时，按概率回一张
+        # 2. 以图回图：对方仅发表情包且无标签命中时，按概率回一张
         if (
             not tasks
             and max_count > 0
@@ -1637,14 +1637,14 @@ class ConversationEngine:
 
         命中两种格式：
         - QQ 内置表情解析产物：仅由 [表情:描述] 标签组成（可多个）；
-        - 微信侧 Vision 识别转写：[用户发送了一个表情包…]。
+        - 微信侧 Vision 识别转写：STICKER_TRANSCRIBE_PREFIX。
         """
         t = (text or "").strip()
         if not t:
             return False
         if _STICKER_ONLY_RE.match(t):
             return True
-        return t.startswith("[用户发送了一个表情包")
+        return t.startswith(STICKER_TRANSCRIBE_PREFIX)
 
     async def _quota_precheck(
         self, account_id: str, required_tokens: int
@@ -1721,7 +1721,7 @@ class ConversationEngine:
         received_at: datetime | None = None,
     ) -> None:
         """回合收尾：持久化双方消息、更新元数据/活跃时间、异步摘要与焦点提取。"""
-        # 持久化用户消息与 AI 回复（保存清理后的纯文本；用户消息按接收时刻落时间戳）
+        # 持久化对方消息与 AI 回复（保存清理后的纯文本；对方消息按接收时刻落时间戳）
         identity_msg = await self.turn_recorder.record_identity_message(
             conversation_id=conversation.id,
             text=text,
@@ -1738,7 +1738,7 @@ class ConversationEngine:
         )
         await self.turn_recorder.update_conversation_meta(conversation.id)
 
-        # 更新用户最后活跃时间（消息持久化成功后刷新）
+        # 更新对方最后活跃时间（消息持久化成功后刷新）
         await self.identity_repo.update_last_active(identity.id)
 
         # 异步触发增量摘要（移出主链路，下一轮生效，带并发限制）
@@ -2092,7 +2092,7 @@ class ConversationEngine:
 
     @staticmethod
     def _is_uuid(value: str) -> bool:
-        """判断字符串是否为 UUID 格式（管理员创建用户时自动生成的占位 platform_id）。"""
+        """判断字符串是否为 UUID 格式（管理员创建对方时自动生成的占位 platform_id）。"""
         import uuid
         try:
             uuid.UUID(value)

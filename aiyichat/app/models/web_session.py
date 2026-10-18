@@ -15,7 +15,7 @@ class WebSessionCreate(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     token: str  # secrets.token_urlsafe(32)
-    credential_id: str  # 关联 web_identities.id
+    credential_id: str  # 关联 web_credentials.id
     expires_at: datetime
     ip: str = ""
     user_agent: str = ""

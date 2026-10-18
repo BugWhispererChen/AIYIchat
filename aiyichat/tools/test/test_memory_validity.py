@@ -36,16 +36,16 @@ class TestIsFactInvalidated:
 
     def test_none_fields_not_invalidated(self) -> None:
         """存量事实（两字段全 None）不被误判为失效。"""
-        fact = _fact("用户喜欢喝咖啡")
+        fact = _fact("身份喜欢喝咖啡")
         assert is_fact_invalidated(fact, _NOW) is False
 
     def test_invalid_at_in_past(self) -> None:
-        fact = _fact("用户8月26日有面试", invalid_at=_NOW - timedelta(days=1))
+        fact = _fact("身份8月26日有面试", invalid_at=_NOW - timedelta(days=1))
         assert is_fact_invalidated(fact, _NOW) is True
 
     def test_invalid_at_in_future(self) -> None:
         """invalid_at 尚未到期时不算失效。"""
-        fact = _fact("用户9月10日体检", invalid_at=_NOW + timedelta(days=8))
+        fact = _fact("身份9月10日体检", invalid_at=_NOW + timedelta(days=8))
         assert is_fact_invalidated(fact, _NOW) is False
 
     def test_expired_at_in_past(self) -> None:
@@ -69,17 +69,17 @@ class TestValidityDownweight:
 
     def test_no_valid_at_no_downweight(self) -> None:
         """长期事实无 valid_at → 恒为 1.0。"""
-        fact = _fact("用户喜欢喝咖啡")
+        fact = _fact("身份喜欢喝咖啡")
         assert validity_downweight(fact, _NOW) == 1.0
 
     def test_future_valid_at_no_downweight(self) -> None:
         """未来才成立的事件不降权。"""
-        fact = _fact("用户9月10日体检", valid_at=_NOW + timedelta(days=8))
+        fact = _fact("身份9月10日体检", valid_at=_NOW + timedelta(days=8))
         assert validity_downweight(fact, _NOW) == 1.0
 
     def test_past_valid_at_downweights(self) -> None:
         """已过去的事件按事件自身日期老化（半衰期 14 天）。"""
-        fact = _fact("用户8月26日有面试", valid_at=_NOW - timedelta(days=7))
+        fact = _fact("身份8月26日有面试", valid_at=_NOW - timedelta(days=7))
         w = validity_downweight(fact, _NOW)
         assert 0.0 < w < 1.0
 
@@ -99,7 +99,7 @@ class TestFromMongoCompat:
             "service_id": "svc1",
             "facts": [
                 {
-                    "content": "用户喜欢喝咖啡",
+                    "content": "身份喜欢喝咖啡",
                     "category": "preference",
                     "created_at": _NOW,
                     "last_referenced_at": _NOW,
@@ -195,9 +195,9 @@ class TestHardFilter:
         engine.topic_manager = MagicMock()
         engine.topic_manager.generate_topic_context = MagicMock(return_value="")
 
-        valid_fact = _fact("用户喜欢喝咖啡", category="preference")
+        valid_fact = _fact("身份喜欢喝咖啡", category="preference")
         expired_fact = _fact(
-            "用户8月26日有面试", category="life_event",
+            "身份8月26日有面试", category="life_event",
             invalid_at=_NOW - timedelta(days=1),
         )
         service_memory = MagicMock()
@@ -223,8 +223,8 @@ class TestHardFilter:
                 engine._retrieve_memories("svc1", "你好", backfill=False)
             )
         memory_facts = result[2]
-        assert "用户喜欢喝咖啡" in memory_facts
-        assert "用户8月26日有面试" not in memory_facts
+        assert "身份喜欢喝咖啡" in memory_facts
+        assert "身份8月26日有面试" not in memory_facts
 
     def test_filter_disabled_keeps_all(self) -> None:
         """memory_expired_filter_enabled=False 时失效事实仍被注入（优雅降级）。"""
@@ -236,7 +236,7 @@ class TestHardFilter:
         engine.topic_manager.generate_topic_context = MagicMock(return_value="")
 
         expired_fact = _fact(
-            "用户8月26日有面试", category="life_event",
+            "身份8月26日有面试", category="life_event",
             invalid_at=_NOW - timedelta(days=1),
         )
         service_memory = MagicMock()
@@ -261,7 +261,7 @@ class TestHardFilter:
             result = asyncio.run(
                 engine._retrieve_memories("svc1", "你好", backfill=False)
             )
-        assert "用户8月26日有面试" in result[2]
+        assert "身份8月26日有面试" in result[2]
 
 
 class TestSelfReinforcementFix:
@@ -315,18 +315,18 @@ class TestParseFactItem:
     def test_string_form_returns_none_valid_at(self) -> None:
         """旧提示词/模型输出偏差（纯字符串）仍照常入库，valid_at 为 None。"""
         content, valid_at = FocusTracker._parse_fact_item(
-            "用户喜欢喝咖啡", self.TZ8, self.NOW
+            "身份喜欢喝咖啡", self.TZ8, self.NOW
         )
-        assert content == "用户喜欢喝咖啡"
+        assert content == "身份喜欢喝咖啡"
         assert valid_at is None
 
     def test_object_form_with_valid_at(self) -> None:
         """对象形态解析出 valid_at（该本地日 00:00 对应的 UTC）。"""
         content, valid_at = FocusTracker._parse_fact_item(
-            {"content": "用户8月26日有面试", "valid_at": "2026-08-26"},
+            {"content": "身份8月26日有面试", "valid_at": "2026-08-26"},
             self.TZ8, self.NOW,
         )
-        assert content == "用户8月26日有面试"
+        assert content == "身份8月26日有面试"
         assert valid_at is not None
         # 北京 2026-08-26 00:00 = UTC 2026-08-25 16:00
         assert valid_at == datetime(2026, 8, 25, 16, 0, tzinfo=timezone.utc)
@@ -334,19 +334,19 @@ class TestParseFactItem:
     def test_object_form_null_valid_at(self) -> None:
         """长期事实 valid_at=null → None。"""
         content, valid_at = FocusTracker._parse_fact_item(
-            {"content": "用户对花生过敏", "valid_at": None},
+            {"content": "身份对花生过敏", "valid_at": None},
             self.TZ8, self.NOW,
         )
-        assert content == "用户对花生过敏"
+        assert content == "身份对花生过敏"
         assert valid_at is None
 
     def test_invalid_valid_at_returns_none(self) -> None:
         """valid_at 格式非法时返回 None，事实照常入库（仅缺时间轴）。"""
         content, valid_at = FocusTracker._parse_fact_item(
-            {"content": "用户有面试", "valid_at": "下周三"},
+            {"content": "身份有面试", "valid_at": "下周三"},
             self.TZ8, self.NOW,
         )
-        assert content == "用户有面试"
+        assert content == "身份有面试"
         assert valid_at is None
 
     def test_empty_content_rejected(self) -> None:

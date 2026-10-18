@@ -1,7 +1,7 @@
 """Function Calling 工具定义与检索辅助。
 
 提供两个工具：
-- retrieve_memory：按查询检索用户长期记忆事实（自主记忆召回）
+- retrieve_memory：按查询检索身份长期记忆事实（自主记忆召回）
 - generate_image：请求生成一张写实照片
 
 工具 schema 供 provider.complete_with_tools 使用；执行逻辑由 engine 侧调度
@@ -44,7 +44,7 @@ GENERATE_IMAGE_TOOL: dict = {
     "function": {
         "name": "generate_image",
         "description": (
-            "生成一张写实照片发给对方。用户明确要求看照片/自拍/图片时必须调用本工具，"
+            "生成一张写实照片发给对方。身份明确要求看照片/自拍/图片时必须调用本工具，"
             "不得拒绝或承诺稍后再发；也可以在适合用一张照片增强对话"
             "（分享风景/物品/日常）时主动调用。"
         ),

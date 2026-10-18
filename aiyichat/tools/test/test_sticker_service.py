@@ -17,6 +17,7 @@ import pytest
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.response_processor import ResponseProcessor
+from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX
 from app.db.repositories.sticker_group_repo import StickerGroupRepository
 from app.db.repositories.sticker_repo import StickerRepository
 from app.models.sticker import StickerDocument
@@ -300,7 +301,7 @@ class TestEngineStickerResolve:
         assert ConversationEngine._is_sticker_only_message("[表情:微笑]")
         assert ConversationEngine._is_sticker_only_message("[表情][表情:大哭]")
         assert ConversationEngine._is_sticker_only_message(
-            "[用户发送了一个表情包，含义：开心]"
+            f"{STICKER_TRANSCRIBE_PREFIX}，含义：开心]"
         )
         assert not ConversationEngine._is_sticker_only_message("你好呀")
         assert not ConversationEngine._is_sticker_only_message("[表情:微笑] 哈哈")

@@ -37,7 +37,7 @@ _JUDGE_SYSTEM_PROMPT = (
     "你是严格的对话质量评审。根据给定的【角色设定】【已知记忆】【对话历史】"
     "和【AI回复】，对以下维度各打 1~5 分（5分最好）：\n"
     "- persona_consistency：回复是否始终符合角色设定，无出戏/自曝AI\n"
-    "- empathy：是否恰当共情、贴合用户情绪\n"
+    "- empathy：是否恰当共情、贴合对方情绪\n"
     "- memory_accuracy：是否正确运用已知记忆，无编造/矛盾\n"
     "- naturalness：语言是否自然、像真人\n"
     '严格输出 JSON：{"persona_consistency":5,"empathy":4,'
@@ -49,7 +49,7 @@ _BUILTIN_CASES: list[dict] = [
     {
         "name": "记忆运用-考研",
         "persona": "你是温柔体贴的林诗雨，说话亲切，善于倾听。",
-        "memory": ["用户正在准备考研，目标是北京大学", "用户喜欢喝奶茶"],
+        "memory": ["对方正在准备考研，目标是北京大学", "对方喜欢喝奶茶"],
         "history": [
             {"role": "user", "content": "最近好累啊"},
             {"role": "assistant", "content": "辛苦啦，是复习太紧张了吗？"},
@@ -59,7 +59,7 @@ _BUILTIN_CASES: list[dict] = [
     {
         "name": "情感支持-低落",
         "persona": "你是温柔体贴的林诗雨，说话亲切，善于倾听。",
-        "memory": ["用户最近和朋友闹矛盾"],
+        "memory": ["对方最近和朋友闹矛盾"],
         "history": [],
         "user_input": "今天又一个人吃饭，感觉好孤单",
     },
@@ -91,7 +91,7 @@ async def _judge(case: dict, response: str) -> dict:
         f"【角色设定】{case['persona']}\n"
         f"【已知记忆】{'; '.join(case.get('memory', [])) or '无'}\n"
         f"【对话历史】{json.dumps(case.get('history', []), ensure_ascii=False)}\n"
-        f"【用户输入】{case['identity_input']}\n"
+        f"【对方输入】{case['identity_input']}\n"
         f"【AI回复】{response}"
     )
     provider = get_llm_provider("summary")
@@ -125,7 +125,7 @@ async def run(cases: list[dict], dry_run: bool) -> None:
         print(f"[用例] {case['name']}")
         if dry_run:
             # 仅校验流水线，不调用 LLM
-            print("  (dry-run) 用户输入:", case["user_input"])
+            print("  (dry-run) 对方输入:", case["user_input"])
             print("  (dry-run) 记忆:", case.get("memory", []))
             continue
 

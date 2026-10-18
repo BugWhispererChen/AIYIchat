@@ -12,14 +12,14 @@ class ProactiveRecord(BaseModel):
     主动消息发送记录。
 
     每条记录代表一次主动消息的发送尝试，用于：
-    - 防止重复发送（同一用户同一阶段不重复）
+    - 防止重复发送（同一身份同一阶段不重复）
     - 追踪配额使用（QQ每月4条限制）
     - 统计发送效果
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    identity_id: str  # 目标用户ID（系统内部ID）
-    platform_openid: str  # 平台用户标识（openid / wechat identity_id）
+    identity_id: str  # 目标身份ID（系统内部ID）
+    platform_openid: str  # 平台身份标识（openid / wechat identity_id）
     platform: Literal["qq", "wechat"] = "qq"
     bot_id: str  # 发送所用的Bot ID
     stage: int  # 发送阶段（1-4）

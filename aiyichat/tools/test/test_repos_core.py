@@ -2,7 +2,7 @@
 
 覆盖：
 - db/mongo：connect_db / get_database / close_db / 索引创建
-- AccountRepository / UserRepository / ServiceRepository / BotConfigRepository
+- AccountRepository / IdentityRepository / ServiceRepository / BotConfigRepository
 - QuotaRepository / QuotaTemplateRepository / OrderRepository
 """
 
@@ -118,7 +118,7 @@ class TestAccountRepository:
         run_with_db(body)
 
     def test_delete_cascade(self) -> None:
-        """级联删除应清理账号下服务、对话、消息、用户、Bot、额度与私有角色。"""
+        """级联删除应清理账号下服务、对话、消息、身份、Bot、额度与私有角色。"""
 
         async def body():
             db = mongo.get_database()
@@ -153,7 +153,7 @@ class TestAccountRepository:
 
 
 class TestIdentityRepository:
-    """用户仓库测试集。"""
+    """身份仓库测试集。"""
 
     def test_crud_and_query(self) -> None:
         async def body():
@@ -202,7 +202,7 @@ class TestIdentityRepository:
             assert await repo.bind_bot_openid(identity.id, "bot-a", "oid-a") is True
             # 幂等：值未变化时不产生写入
             assert await repo.bind_bot_openid(identity.id, "bot-a", "oid-a") is False
-            # 同一用户在不同 Bot 下的 openid 各自独立保存
+            # 同一身份在不同 Bot 下的 openid 各自独立保存
             assert await repo.bind_bot_openid(identity.id, "bot-b", "oid-b") is True
             mapped = await repo.find_by_id(identity.id)
             assert mapped is not None

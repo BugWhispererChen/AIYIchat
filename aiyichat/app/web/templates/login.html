@@ -123,16 +123,16 @@
             <div class="login-header">
                 <div class="brand-icon">AI</div>
                 <h2>爱易聊</h2>
-                <p class="subtitle">网页用户登录</p>
+                <p class="subtitle">网页身份登录</p>
             </div>
 
             <!-- 错误就地渲染，不使用 alert 弹窗 -->
             <div id="form-alert" class="alert-error" hidden></div>
 
             <form id="login-form" autocomplete="on">
-                <label for="username">用户名</label>
+                <label for="username">登录名</label>
                 <input type="text" id="username" name="username" required maxlength="32"
-                       placeholder="请输入用户名" autocomplete="username" autofocus>
+                       placeholder="请输入登录名" autocomplete="username" autofocus>
 
                 <label for="password">密码</label>
                 <input type="password" id="password" name="password" required maxlength="64"
@@ -226,7 +226,7 @@
                         document.getElementById('captcha-answer').value = '';
                         await loadCaptcha();
                     }
-                    showAlert(data.detail || '登录失败，请检查用户名与密码。');
+                    showAlert(data.detail || '登录失败，请检查登录名与密码。');
                     return;
                 }
                 localStorage.setItem(TOKEN_KEY, data.token);

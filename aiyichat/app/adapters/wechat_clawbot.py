@@ -26,7 +26,11 @@ from app.adapters.base import ChannelAdapter, NormalizedMessage
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.image_task import ImageTask
-from app.conversation.sticker_task import StickerTask
+from app.conversation.sticker_task import (
+    IMAGE_TRANSCRIBE_PREFIX,
+    STICKER_TRANSCRIBE_PREFIX,
+    StickerTask,
+)
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.models.bot_config import BotConfigInDB
 from app.services.voice_window import voice_window
@@ -140,7 +144,7 @@ class WeChatClient(ChannelAdapter):
         )
 
     async def send_message(self, user_id: str, content: str, **kwargs) -> bool:
-        """发送文本消息到微信用户。"""
+        """发送文本消息到微信身份。"""
         try:
             await self.send_text(user_id, content)
             return True
@@ -502,7 +506,7 @@ class WeChatClient(ChannelAdapter):
 
             elif item_type == 2:  # IMAGE
                 content_type = "image"
-                text = "[用户发送了一张图片]"
+                text = f"{IMAGE_TRANSCRIBE_PREFIX}]"
                 image_item = item.get("image_item", {})
                 decrypted = await self._download_cdn_media(image_item)
                 if decrypted:
@@ -514,9 +518,9 @@ class WeChatClient(ChannelAdapter):
                             # 识别为表情包时转写为表情包格式（触发以图回图）
                             if desc.startswith("[表情包]") or is_likely_sticker:
                                 clean_desc = desc.replace("[表情包]", "").replace("含义：", "").replace("含义:", "").strip()
-                                text = "[用户发送了一个表情包，含义：%s]" % clean_desc
+                                text = f"{STICKER_TRANSCRIBE_PREFIX}，含义：{clean_desc}]"
                             else:
-                                text = "[用户发送了一张图片，内容：%s]" % desc
+                                text = f"{IMAGE_TRANSCRIBE_PREFIX}，内容：{desc}]"
 
             elif item_type == 3:  # VOICE
                 content_type = "voice"
@@ -534,11 +538,11 @@ class WeChatClient(ChannelAdapter):
                     if decrypted:
                         text = await self._handle_voice_input(decrypted)
                 if not text:
-                    text = "[用户发送了一条语音消息]"
+                    text = "[身份发送了一条语音消息]"
 
             elif item_type == 5:  # VIDEO
                 content_type = "video"
-                text = "[用户发送了一个视频]"
+                text = "[身份发送了一个视频]"
 
         if not text:
             logger.debug("%s 消息无可处理文本", self._label)
@@ -569,7 +573,7 @@ class WeChatClient(ChannelAdapter):
             conv_id = ""
 
         # 6. 回复分发（result 非 None 才允许语音回复，引擎异常时降级为文字）
-        # 语音触发：用户发语音直接触发；或动态窗口内（用户发过语音后的随机
+        # 语音触发：身份发语音直接触发；或动态窗口内（身份发过语音后的随机
         # 固定窗口期）文字消息也以语音回复，窗口按会话独立且不续期
         user_sent_voice = (content_type == "voice")
         in_voice_window = (
@@ -584,7 +588,7 @@ class WeChatClient(ChannelAdapter):
             and (user_sent_voice or in_voice_window)
         )
         if is_voice_reply and user_sent_voice:
-            # 仅用户发语音触发时开启窗口（固定窗口，窗口内不续期）
+            # 仅身份发语音触发时开启窗口（固定窗口，窗口内不续期）
             voice_window.touch(
                 conv_id,
                 settings.voice_window_min_minutes,
@@ -866,13 +870,13 @@ class WeChatClient(ChannelAdapter):
 
     async def send_proactive(self, user_id: str, content: str) -> bool:
         """
-        主动发送消息给用户（基于缓存的 context_token）。
+        主动发送消息给身份（基于缓存的 context_token）。
 
         用于定时关怀、主动触达等场景。
-        前提：用户至少给Bot发送过一条消息（获取初始 context_token）。
+        前提：身份至少给Bot发送过一条消息（获取初始 context_token）。
 
         Args:
-            user_id: 微信用户的 ilink user_id
+            user_id: 微信身份的 ilink user_id
             content: 消息文本内容
 
         Returns:
@@ -881,7 +885,7 @@ class WeChatClient(ChannelAdapter):
         ctx = self._get_context_token(user_id)
         if not ctx:
             logger.warning(
-                "%s 主动消息失败: 用户 %s 无 context_token",
+                "%s 主动消息失败: 身份 %s 无 context_token",
                 self._label, user_id,
             )
             return False
@@ -896,11 +900,11 @@ class WeChatClient(ChannelAdapter):
             return False
 
     def _get_context_token(self, user_id: str) -> str:
-        """获取指定用户的 context_token。"""
+        """获取指定身份的 context_token。"""
         ctx = self._context_tokens.get(user_id, "")
         if not ctx:
             logger.warning(
-                "%s 用户 %s 无缓存的 context_token", self._label, user_id
+                "%s 身份 %s 无缓存的 context_token", self._label, user_id
             )
         return ctx
 

@@ -28,7 +28,7 @@ class TestBuildMigration:
         assert [g["default_model"] for g in groups] == [
             g["default_model"] for g in DEFAULT_MODEL_GROUPS
         ]
-        # api_key 留空，由用户填入；功能引用不额外改写
+        # api_key 留空，由身份填入；功能引用不额外改写
         assert all(g["api_key"] == "" for g in groups)
         assert "focus_config_id" not in u
         for key, config_id in DEFAULT_CONFIG_REFS.items():

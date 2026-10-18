@@ -1,6 +1,6 @@
 """密码哈希工具。
 
-从 `app/admin/auth.py` 抽取，供管理后台与 C 端网页凭据（`web_identities`）共用同一套
+从 `app/admin/auth.py` 抽取，供管理后台与 C 端网页凭据（`web_credentials`）共用同一套
 PBKDF2-HMAC-SHA256 参数（60 万迭代 + 16 字节随机盐，标准库实现，零新增依赖）。
 """
 

@@ -57,7 +57,7 @@ class ConsistencyChecker:
 
         禁用词来自角色设定里「绝对不要使用以下词汇」，与人格直接冲突
         （如软糯女友冒出"老铁""卧槽"）。仅记日志等于没拦截，
-        这类词仍会原样发到用户屏幕上，故与 role_break 做同等处理。
+        这类词仍会原样发到身份屏幕上，故与 role_break 做同等处理。
         """
         if not text or not forbidden_words:
             return text

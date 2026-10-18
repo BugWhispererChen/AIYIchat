@@ -10,16 +10,16 @@ from app.models.web_credential import CredentialStatus, WebCredentialCreate, Web
 
 
 class WebCredentialRepository:
-    """管理网页用户凭据的增删改查与登录失败计数。"""
+    """管理网页身份凭据的增删改查与登录失败计数。"""
 
     def _collection(self):
         """获取 MongoDB 集合。"""
         return get_database().web_credentials
 
     async def insert(self, credential: WebCredentialCreate) -> Optional[WebCredentialInDB]:
-        """写入新身份；用户名已被占用时返回 None。
+        """写入新身份；登录名已被占用时返回 None。
 
-        依赖 `username` 唯一索引做原子占位：并发注册同一用户名时只有一个人成功，
+        依赖 `username` 唯一索引做原子占位：并发注册同一登录名时只有一个人成功，
         另一个在此处得到 None（上层转 409），无需先查后插的竞态判断。
         """
         now = datetime.now(timezone.utc)
@@ -34,7 +34,7 @@ class WebCredentialRepository:
         return WebCredentialInDB.from_mongo(doc)
 
     async def find_by_username(self, username: str) -> Optional[WebCredentialInDB]:
-        """按规范化用户名查询身份。"""
+        """按规范化登录名查询身份。"""
         doc = await self._collection().find_one({"username": username})
         if doc is None:
             return None
@@ -48,14 +48,14 @@ class WebCredentialRepository:
         return WebCredentialInDB.from_mongo(doc)
 
     async def find_by_identity_id(self, identity_id: str) -> Optional[WebCredentialInDB]:
-        """按关联用户 ID 查询身份。"""
+        """按关联身份 ID 查询身份。"""
         doc = await self._collection().find_one({"identity_id": identity_id})
         if doc is None:
             return None
         return WebCredentialInDB.from_mongo(doc)
 
     async def set_identity_id(self, credential_id: str, identity_id: str) -> bool:
-        """注册四件套建齐后回填关联用户 ID。"""
+        """注册四件套建齐后回填关联身份 ID。"""
         result = await self._collection().update_one(
             {"id": credential_id},
             {"$set": {"identity_id": identity_id, "updated_at": datetime.now(timezone.utc)}},
@@ -170,7 +170,7 @@ class WebCredentialRepository:
     async def find_recent_by_username(
         self, username: str, within_hours: int, status: CredentialStatus
     ) -> Optional[WebCredentialInDB]:
-        """查询该用户名在冷却期内是否已被指定状态占用（拒绝后 24h 内不可重注）。"""
+        """查询该登录名在冷却期内是否已被指定状态占用（拒绝后 24h 内不可重注）。"""
         since = datetime.now(timezone.utc) - timedelta(hours=within_hours)
         doc = await self._collection().find_one(
             {"username": username, "status": status, "reviewed_at": {"$gt": since}}

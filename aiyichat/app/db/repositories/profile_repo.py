@@ -123,7 +123,7 @@ class ProfileRepository:
     async def hard_delete(self, slug: str) -> bool:
         """物理删除角色。
 
-        与 delete 的软删除（仅置 is_active=False）不同：用户自助清理自建私有角色时
+        与 delete 的软删除（仅置 is_active=False）不同：身份自助清理自建私有角色时
         需要真正释放文档与配额名额，调用方必须先校验归属与服务引用。
         """
         result = await self._collection().delete_one({"slug": slug})

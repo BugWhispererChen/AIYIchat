@@ -1,10 +1,10 @@
-"""C 端网页用户自助对话服务管理 API。
+"""C 端网页身份自助对话服务管理 API。
 
-服务是"用户 × Bot × 角色"的对话装配单元，决定聊天时扮演谁、记忆与额度归属。
+服务是"身份 × Bot × 角色"的对话装配单元，决定聊天时扮演谁、记忆与额度归属。
 
 安全边界：
-- 归属字段（account_id / user_id / bot_id）一律由会话令牌与服务端配置写入，
-  客户端只能选择角色与名称：网页用户统一使用系统 web Bot（`settings.web_bot_id`），
+- 归属字段（account_id / identity_id / bot_id）一律由会话令牌与服务端配置写入，
+  客户端只能选择角色与名称：网页身份统一使用系统 web Bot（`settings.web_bot_id`），
   自选 Bot 会把平台凭据托管问题暴露给 C 端，故不开放；
 - 角色必须对该账号可见（公共角色或本人私有角色）且处于启用状态；
 - 数量受 `settings.web_max_services` 约束；
@@ -59,7 +59,7 @@ def _bad(code: str, detail: str, status_code: int = 400) -> JSONResponse:
 
 
 def _timezone_error(tz_name: str) -> str:
-    """校验 IANA 时区名，非法时返回给用户的原因。"""
+    """校验 IANA 时区名，非法时返回给身份的原因。"""
     if not tz_name:
         return ""
     try:
@@ -218,8 +218,8 @@ async def create_web_service(
     if tz_err:
         return _bad("invalid_timezone", tz_err)
 
-    # 同用户同 Bot 允许多个服务：聊天接口显式携带 service_id 选择服务，
-    # 不依赖 (用户, Bot) 的唯一性
+    # 同身份同 Bot 允许多个服务：聊天接口显式携带 service_id 选择服务，
+    # 不依赖 (身份, Bot) 的唯一性
     svc = await _service_repo.create(
         ServiceCreate(
             name=name,
@@ -231,7 +231,7 @@ async def create_web_service(
         )
     )
     logger.info(
-        "网页用户 %s 创建服务 %s（角色=%s，当前 %d/%d）",
+        "网页身份 %s 创建服务 %s（角色=%s，当前 %d/%d）",
         principal.username,
         svc.name,
         profile.name,
@@ -323,5 +323,5 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
 
     if not await _service_repo.delete(svc.id):
         return _bad("not_found", "服务不存在", 404)
-    logger.info("网页用户 %s 删除服务 %s", principal.username, svc.name)
+    logger.info("网页身份 %s 删除服务 %s", principal.username, svc.name)
     return JSONResponse(status_code=200, content={"id": svc.id, "deleted": True})

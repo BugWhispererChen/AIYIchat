@@ -1,6 +1,6 @@
 """自定义角色创建：LLM 角色档案生成服务。
 
-根据用户输入的角色名称与概述，调用 LLM 生成符合系统档案 schema 的
+根据对方输入的角色名称与概述，调用 LLM 生成符合系统档案 schema 的
 角色信息（草稿态），供管理后台自定义创建向导第一步使用。
 """
 
@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 # LLM 生成失败时的重试次数（含首次）
 _MAX_ATTEMPTS = 2
 
-CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根据用户提供的角色名称与描述，为情感陪伴聊天系统创作一份完整、立体、可直接投入使用的虚拟角色档案。
+CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根据对方提供的角色名称与描述，为情感陪伴聊天系统创作一份完整、立体、可直接投入使用的虚拟角色档案。
 
 请严格按照以下JSON schema输出：
 
 {{
   "identity": {{
-    "background": "角色背景故事（3-5句话，交代身份、经历与来到用户身边的缘由）",
+    "background": "角色背景故事（3-5句话，交代身份、经历与来到对方身边的缘由）",
     "era": "时代背景（如：现代）",
     "age_appearance": "年龄外观描述（中文，如：25岁左右的都市女性）",
     "appearance": "英文外貌描述，用于AI生成肖像照片：必须包含性别、年龄外观、发型发色、五官气质、着装风格，一句话自然描述，不要中文",
@@ -55,8 +55,8 @@ CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根�
   }},
   "dialogue_strategy": {{
     "greeting": "角色的开场白（第一人称，符合人设）",
-    "on_negative_emotion": "用户情绪低落时的应对策略",
-    "on_positive_emotion": "用户开心时的回应方式",
+    "on_negative_emotion": "对方情绪低落时的应对策略",
+    "on_positive_emotion": "对方开心时的回应方式",
     "on_silence": "对话沉默时的行为",
     "boundaries": ["3-5条角色行为边界规则"],
     "safety_guardrails": "保持友善，不涉及敏感话题，不提供专业医疗/法律建议"
@@ -65,7 +65,7 @@ CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根�
 }}
 
 注意：
-- 角色设定必须完全贴合用户描述；描述简略时合理补充细节，使角色立体饱满
+- 角色设定必须完全贴合对方描述；描述简略时合理补充细节，使角色立体饱满
 - identity.appearance 必须输出英文（将直接用于AI生成角色肖像照）
 - traits 的浮点数保留2位小数，评分贴合人设，不要默认中间值
 - example_utterances 要充分体现语言风格，像角色本人说的话
@@ -98,7 +98,7 @@ async def generate_profile(name: str, description: str) -> PromptProfileCreate:
 
     Args:
         name: 角色名称
-        description: 用户对角色的概述描述
+        description: 对方对角色的概述描述
 
     Returns:
         草稿态 PromptProfileCreate（is_draft=True, is_active=False）

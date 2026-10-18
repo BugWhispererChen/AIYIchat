@@ -1,7 +1,7 @@
 """Admin 账号管理路由测试（mongomock + ASGI 内存客户端）。
 
 覆盖 accounts.py 的列表/创建/详情/编辑/删除、额度更新、
-用户管理、Bot 管理与服务管理（含共享组校验与级联删除保护）。
+身份管理、Bot 管理与服务管理（含共享组校验与级联删除保护）。
 """
 
 import asyncio
@@ -126,7 +126,7 @@ class TestAccountsCrud:
 
 
 class TestAccountIdentities:
-    """账号下用户管理。"""
+    """账号下身份管理。"""
 
     def test_user_create_delete_toggle(self) -> None:
         async def flow() -> None:
@@ -135,10 +135,10 @@ class TestAccountIdentities:
                 acc_id = await _seed_account()
                 identity_repo = IdentityRepository()
                 async with _client(app) as client:
-                    # 创建用户
+                    # 创建身份
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/identities/create",
-                        data={"name": "用户甲", "platform": "qq", "is_minor": "on"},
+                        data={"name": "身份甲", "platform": "qq", "is_minor": "on"},
                     )
                     assert resp.status_code == 303
                     identities = await identity_repo.list_by_account(acc_id)
@@ -178,7 +178,7 @@ class TestAccountIdentities:
                     )
                     assert resp.status_code == 303
 
-                    # 不存在的用户 toggle 直接重定向
+                    # 不存在的身份 toggle 直接重定向
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/identities/no-such/toggle-block"
                     )
@@ -286,7 +286,7 @@ class TestAccountServices:
     """账号下服务管理（含共享组）。"""
 
     async def _seed_entities(self, acc_id: str) -> tuple[str, str, str]:
-        """创建可用的用户、Bot、角色，返回 (user_id, bot_id, profile_slug)。"""
+        """创建可用的身份、Bot、角色，返回 (user_id, bot_id, profile_slug)。"""
         identity = await IdentityRepository().create(IdentityCreate(account_id=acc_id, name="甲"))
         bot = await BotConfigRepository().create(
             BotConfigCreate(account_id=acc_id, name="机器人")
@@ -325,7 +325,7 @@ class TestAccountServices:
                     assert resp.status_code == 200
                     assert "一个 Bot 只允许创建一个服务" in resp.text
 
-                    # 已绑定真实平台账号的用户不能再建服务
+                    # 已绑定真实平台账号的身份不能再建服务
                     uid2, bid2, slug2 = await self._seed_entities(acc_id)
                     await IdentityRepository().update(
                         uid2, IdentityUpdate(platform_id="real-openid")
@@ -337,7 +337,7 @@ class TestAccountServices:
                     assert resp.status_code == 200
                     assert "已绑定真实平台账号" in resp.text
 
-                    # 被禁用的用户
+                    # 被禁用的身份
                     uid3, bid3, slug3 = await self._seed_entities(acc_id)
                     await IdentityRepository().set_blocked(uid3, True, "违规")
                     resp = await client.post(
@@ -345,7 +345,7 @@ class TestAccountServices:
                         data={"identity_id": uid3, "bot_id": bid3, "profile_id": slug3},
                     )
                     assert resp.status_code == 200
-                    assert "该用户已被禁用" in resp.text
+                    assert "该身份已被禁用" in resp.text
 
                     # 被禁用的 Bot
                     uid4, bid4, slug4 = await self._seed_entities(acc_id)
@@ -447,7 +447,7 @@ class TestAccountServices:
                     assert resp.status_code == 303
                     assert await conv_repo.list_by_service("grp-2") == []
 
-                    # 删除后用户绑定被释放（platform_id 重置为 UUID）
+                    # 删除后身份绑定被释放（platform_id 重置为 UUID）
                     released = await IdentityRepository().find_by_id(uid)
                     assert released is not None
                     uuid.UUID(released.platform_id)  # 不抛异常即为 UUID

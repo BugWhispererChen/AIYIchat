@@ -1,7 +1,7 @@
 """ConversationEngine.handle_message 核心编排路径行为测试。
 
 用 mock 隔离数据库/网络（模式同 test_bugfixes.py），聚焦主链路不变量：
-- 正常路径：Bot 校验→用户/服务解析→额度预检→prompt 组装→LLM→usage 结算→持久化
+- 正常路径：Bot 校验→身份/服务解析→额度预检→prompt 组装→LLM→usage 结算→持久化
 - 拒绝/降级路径：Bot 不存在、余额不足预检拦截、危机干预拦截、LLM 失败不扣费
 - Token 计费：结算金额=API usage 总量、预检仅查不扣、usage 缺失跳过结算
 
@@ -372,7 +372,7 @@ class TestGapTopicIntegration:
     def test_topic_reset_and_stall_gate(
         self, stream: bool, hours: int, enabled: bool, mode: str,
     ) -> None:
-        """近期 assistant 不重置用户空闲时间，短间隔仍保留既有停滞行为。"""
+        """近期 assistant 不重置身份空闲时间，短间隔仍保留既有停滞行为。"""
         engine = _build_engine()
         received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
         last_identity_at = received_at - timedelta(hours=hours)
@@ -424,7 +424,7 @@ class TestGapTopicIntegration:
         assert kwargs["gap_mode"] == mode
         assert "电影→旅行" in kwargs["topic_context"]
         # 长间隔只重置话题前缀，后续实体和待跟进事件必须继续注入。
-        assert "【提到的人物/事物】\n小红（用户的朋友）；爱好=摄影" in kwargs["topic_context"]
+        assert "【提到的人物/事物】\n小红（对方的朋友）；爱好=摄影" in kwargs["topic_context"]
         assert "【待跟进的事】" in kwargs["topic_context"]
         assert "参加面试" in kwargs["topic_context"]
         if mode == "none":
@@ -462,7 +462,7 @@ class TestGapTopicIntegration:
         old_prefix = engine.topic_manager.generate_topic_context(topic_history, current_topic)
         new_prefix = engine.topic_manager.generate_topic_context(topic_history, "")
         suffix = (
-            "【提到的人物/事物】\n小红（用户的朋友）；备注="
+            "【提到的人物/事物】\n小红（对方的朋友）；备注="
             f"{old_prefix or '记录原文'}\n\n【待跟进的事】\n- 参加面试"
         )
         context = f"{old_prefix}\n\n{suffix}" if old_prefix else suffix
@@ -513,7 +513,7 @@ class TestGapTopicIntegration:
             async def get_context(
                 conversation_id: str, summary: str, emotion_intensity: float,
             ) -> tuple[list[MessageInDB], str]:
-                """每轮重读真实消息，第二轮间隔必须来自首轮已保存的用户消息。"""
+                """每轮重读真实消息，第二轮间隔必须来自首轮已保存的身份消息。"""
                 return await recorder.message_repo.get_recent(conversation_id), summary
 
             engine.context_manager.get_context.side_effect = get_context
@@ -566,7 +566,7 @@ class TestGapTopicIntegration:
     def test_missing_identity_time_does_not_invent_gap(
         self, stream: bool, history_kind: str,
     ) -> None:
-        """无真实用户时间时不能凭 assistant 时间或当前时间推断久别。"""
+        """无真实身份时间时不能凭 assistant 时间或当前时间推断久别。"""
         engine = _build_engine()
         history: list[Any] = []
         if history_kind == "assistant":
@@ -584,7 +584,7 @@ class TestGapTopicIntegration:
 
 
 class TestRecentProactiveContext:
-    """主动消息仅在最后用户消息之后、当前接收时间之前参与长间隔上下文。"""
+    """主动消息仅在最后身份消息之后、当前接收时间之前参与长间隔上下文。"""
 
     @pytest.mark.parametrize("mode", ["session", "reunion"])
     @pytest.mark.parametrize("naive", [False, True], ids=["aware", "mongo-naive"])
@@ -615,7 +615,7 @@ class TestRecentProactiveContext:
         ("none", True), ("session", False), ("reunion", False),
     ])
     def test_unneeded_query_is_skipped(self, mode: str, has_identity_time: bool) -> None:
-        """无分档或无用户时间不查主动记录，避免多余查询与错误注入。"""
+        """无分档或无身份时间不查主动记录，避免多余查询与错误注入。"""
         engine = _build_engine()
         now = datetime(2026, 10, 15, tzinfo=timezone.utc)
         result = asyncio.run(engine._recent_proactive_context(
@@ -625,13 +625,13 @@ class TestRecentProactiveContext:
         engine.proactive_repo.get_latest_sent.assert_not_awaited()
 
     def test_only_current_identity_and_bot_sent_record_is_used(self) -> None:
-        """用真实主动消息仓库验证用户、Bot、发送状态的隔离。"""
+        """用真实主动消息仓库验证身份、Bot、发送状态的隔离。"""
         from app.conversation.engine import ConversationEngine
         from app.models.proactive_record import ProactiveRecord
         from tools.test.db_test_utils import run_with_db
 
         async def body() -> None:
-            """其他 Bot、其他用户或失败记录即使更新也不能覆盖有效问候。"""
+            """其他 Bot、其他身份或失败记录即使更新也不能覆盖有效问候。"""
             engine = ConversationEngine("bot-1")
             received_at = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
             last_identity_at = received_at - timedelta(hours=8)
@@ -641,7 +641,7 @@ class TestRecentProactiveContext:
             records: list[tuple[str, str, Literal["sent", "failed"], str]] = [
                 ("user-1", "bot-1", "sent", "本轮有效问候"),
                 ("user-1", "bot-2", "sent", "其他机器人"),
-                ("user-2", "bot-1", "sent", "其他用户"),
+                ("user-2", "bot-1", "sent", "其他身份"),
                 ("user-1", "bot-1", "failed", "失败不能注入"),
             ]
             for index, (identity_id, bot_id, status, content) in enumerate(records):
@@ -696,7 +696,7 @@ class TestHappyPath:
         assert assistant_kwargs["clean_text"] == reply
         assert assistant_kwargs["llm_model"] == "test-model"
 
-        # 会话元数据与用户活跃时间已刷新
+        # 会话元数据与身份活跃时间已刷新
         engine.turn_recorder.update_conversation_meta.assert_awaited_once_with(
             "conv-1"
         )
@@ -709,11 +709,11 @@ class TestHappyPath:
 
 
 class TestAutoBindOpenid:
-    """未绑定用户自动绑定分支：platform_id 与 Bot 维度映射同步写入。"""
+    """未绑定身份自动绑定分支：platform_id 与 Bot 维度映射同步写入。"""
 
     def test_bind_platform_id_and_bot_openid(self) -> None:
         engine = _build_engine(identity=None)
-        # 预创建用户（platform_id 为 UUID = 未绑定），服务按 Bot 反查
+        # 预创建身份（platform_id 为 UUID = 未绑定），服务按 Bot 反查
         engine.identity_repo.find_by_id = AsyncMock(
             return_value=_make_identity(
                 platform_id="12345678-1234-1234-1234-123456789abc"
@@ -858,7 +858,7 @@ def _make_history(*assistant_texts: str):
     history = []
     for t in assistant_texts:
         history.append(SimpleNamespace(
-            role="user", content="用户消息", emotion_tag=None,
+            role="user", content="身份消息", emotion_tag=None,
         ))
         history.append(SimpleNamespace(
             role="assistant", content=t, emotion_tag=None,

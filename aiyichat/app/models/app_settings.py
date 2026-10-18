@@ -19,7 +19,7 @@ PLACEHOLDER_API_KEY = "sk-your-api-key-here"
 # 默认基础配置组的 OpenAI 兼容端点（阿里云百炼）
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-# 默认基础配置组：未配置任何 AI 模型时按此生成（api_key 留空，由用户填入）
+# 默认基础配置组：未配置任何 AI 模型时按此生成（api_key 留空，由身份填入）
 DEFAULT_MODEL_GROUPS: tuple[dict[str, str], ...] = (
     {
         "id": TEXT_DEFAULT_CONFIG_ID,
@@ -146,7 +146,7 @@ class AppSettingsDocument(BaseModel):
     tts_config_id: str = DASHSCOPE_DEFAULT_CONFIG_ID
     # TTS 表现力：情感指令/情感标签/音调联动开关（语速内嵌于指令文案）
     tts_expression_enabled: bool = True
-    # 语音动态触发窗口：用户发语音触发语音回复后，该会话在随机时长的
+    # 语音动态触发窗口：身份发语音触发语音回复后，该会话在随机时长的
     # 固定窗口内文字消息也以语音回复（按会话独立，窗口内不续期）
     voice_dynamic_enabled: bool = True
     voice_window_min_minutes: int = 5
@@ -197,7 +197,7 @@ class AppSettingsDocument(BaseModel):
     default_timezone_offset: int = 8
     # 时间感知子开关（各自独立生效，互不依赖；总开关关闭时全部不注入）
     time_anchor_enabled: bool = True  # 日期锚点：system prompt 开头声明"今天是几号"
-    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条用户消息已过去多久
+    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条身份消息已过去多久
     time_day_separator_enabled: bool = True  # 跨天分隔符：自然日变化处插入独立 system 消息
     message_time_tag_year_enabled: bool = True  # 跨年标签带年份（[2025-12-31 23:45]）
     memory_inject_time_suffix: bool = True  # 记忆注入追加"（记录于 N 天前）"后缀
@@ -220,9 +220,9 @@ class AppSettingsDocument(BaseModel):
     # 主动关怀总开关与安全阈值
     proactive_enabled: bool = True  # 主动关怀总开关，异常时可一键停用
     proactive_max_retries: int = 2  # 单阶段失败重试上限，达到后不再触发（防额度耗尽）
-    proactive_monthly_limit: int = 4  # 每用户每月主动消息上限（QQ 官方约束为4条）
+    proactive_monthly_limit: int = 4  # 每身份每月主动消息上限（QQ 官方约束为4条）
 
-    # 主动关怀免打扰时段（用户本地时区，跨午夜：start~24 与 0~end）
+    # 主动关怀免打扰时段（身份本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22
     proactive_quiet_hour_end: int = 8
 
@@ -245,15 +245,15 @@ class AppSettingsDocument(BaseModel):
     safety_crisis_extra: list[str] = Field(default_factory=list)
     safety_forbidden_extra: list[str] = Field(default_factory=list)
 
-    # 表情包（AI 主动发送/理解用户表情/以图回图；语义检索 + 关键词兜底）
+    # 表情包（AI 主动发送/理解身份表情/以图回图；语义检索 + 关键词兜底）
     sticker_enabled: bool = False  # 表情包发送总开关（需表情库非空）
     sticker_seed_enabled: bool = True  # 启动时自动 seed 随包预置的表情包资源
     sticker_max_per_turn: int = 1  # 每轮回复最多发送的表情包数量
     sticker_similarity_threshold: float = 0.28  # 语义检索相似度门槛（低于视为未命中）
-    sticker_reply_probability: float = 0.5  # 用户仅发表情包时以图回图的概率（0~1）
+    sticker_reply_probability: float = 0.5  # 身份仅发表情包时以图回图的概率（0~1）
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
 
-    # C 端网页用户（自助注册 / 登录 / 会话）
+    # C 端网页身份（自助注册 / 登录 / 会话）
     # 注意：存量 DB 的 app_settings 文档不会重新 seed，缺失字段由 from_mongo 用此处
     # 模型默认值补齐，故"默认关闭"的开关必须与 _RuntimeSettings 保持一致地写 False，
     # 否则老库一启动就变成开启。

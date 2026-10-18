@@ -26,7 +26,7 @@ _warned_tz_names: set[str] = set()
 # 星期名（weekday() 索引 0~6）
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
-# 常用 IANA 时区（供后台用户详情页下拉；手动输入仍允许任意合法名）
+# 常用 IANA 时区（供后台身份详情页下拉；手动输入仍允许任意合法名）
 COMMON_TIMEZONES: tuple[str, ...] = (
     "Asia/Shanghai",
     "Asia/Taipei",
@@ -71,7 +71,7 @@ def resolve_tz(
 
     Args:
         service_timezone: 服务级 IANA 时区名（空串表示未设置）
-        user_timezone: 用户级 IANA 时区名（空串表示未设置）
+        user_timezone: 对方级 IANA 时区名（空串表示未设置）
 
     Returns:
         (tzinfo, 展示名)。IANA 解析成功时展示名为原名（如 "Asia/Shanghai"），
@@ -155,7 +155,7 @@ class TimeContext:
     weekday_cn: str            # "星期三"
     time_hm: str               # "14:30"      分钟粒度，用于易变位置
     day_phase: str             # "凌晨/清晨/上午/中午/下午/晚上/深夜"
-    idle_seconds: float | None  # 距上一条真实用户消息（秒），无历史时为 None
+    idle_seconds: float | None  # 距上一条真实对方消息（秒），无历史时为 None
     idle_phrase: str           # "3 天 2 小时" / "20 分钟" / ""
 
     @property
@@ -172,9 +172,9 @@ def build_context(
     """构建单轮时间上下文。
 
     Args:
-        service_timezone: 服务级 IANA 时区名（空串回落用户级）
-        user_timezone: 用户级 IANA 时区名（空串回落全局默认偏移）
-        last_user_msg_at: 上一条真实用户消息时间（用于 idle 计算；None 表示无历史）
+        service_timezone: 服务级 IANA 时区名（空串回落对方级）
+        user_timezone: 对方级 IANA 时区名（空串回落全局默认偏移）
+        last_user_msg_at: 上一条真实对方消息时间（用于 idle 计算；None 表示无历史）
 
     Returns:
         TimeContext（idle_seconds 为 None 时 idle_phrase 为空串）
@@ -209,7 +209,7 @@ def render_anchor(ctx: TimeContext) -> str:
     """渲染日期锚点段落（日粒度，置于 system prompt 最前，位置即锚点）。
 
     锚点必须早于任何带时间的记忆/事件注入：否则模型在第二段就读到
-    「用户8月26日有面试」却还不知道今天几号，只能自行做日期减法而算错。
+    「对方8月26日有面试」却还不知道今天几号，只能自行做日期减法而算错。
     同时显式定义相对时间术语，避免模型按训练先验理解「最近」。
     """
     return (

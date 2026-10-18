@@ -19,7 +19,7 @@ class ServiceCreate(BaseModel):
     is_active: bool = True  # 新建服务默认启用
     disable_reason: str = ""  # 禁用原因
     share_group_id: str = ""  # 共享组ID：非空时同组服务共享对话与长期记忆
-    timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空串回落用户级/全局默认偏移
+    timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空串回落身份级/全局默认偏移
 
 
 class ServiceInDB(ServiceCreate):
@@ -64,4 +64,4 @@ class ServiceUpdate(BaseModel):
     is_active: bool | None = None
     disable_reason: str | None = None
     share_group_id: str | None = None
-    timezone: str | None = None  # IANA 时区名，空串回落用户级/全局默认偏移
+    timezone: str | None = None  # IANA 时区名，空串回落身份级/全局默认偏移

@@ -178,7 +178,7 @@ async def account_detail(
         "bots": bots,
         "profiles": profiles,
         "quota_templates": quota_templates,
-        # 用户时区下拉（常用 IANA 列表 + 手动输入）
+        # 身份时区下拉（常用 IANA 列表 + 手动输入）
         "common_timezones": COMMON_TIMEZONES,
         "active_page": "accounts",
     })
@@ -246,7 +246,7 @@ async def account_quota_update(
     )
 
 
-# ── 账号内用户管理 ─────────────────────────────────────────
+# ── 账号内身份管理 ─────────────────────────────────────────
 
 
 @accounts_router.post(
@@ -257,7 +257,7 @@ async def account_identity_create(
     account_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """在账号下创建用户。platform_id 由系统自动生成。"""
+    """在账号下创建身份。platform_id 由系统自动生成。"""
     form = await request.form()
     platform = str(form.get("platform", "qq")).strip()
     if platform not in ("qq", "wechat", "web"):
@@ -289,12 +289,12 @@ async def account_identity_delete(
     identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """删除账号下的用户（需先删除关联服务）。"""
+    """删除账号下的身份（需先删除关联服务）。"""
     svc_count = await _service_repo.count_by_identity(identity_id)
     if svc_count > 0:
         return await _account_detail_with_error(
             request, account_id,
-            f"该用户下有 {svc_count} 个对话服务，请先删除服务",
+            f"该身份下有 {svc_count} 个对话服务，请先删除服务",
         )
     await _identity_repo.delete(identity_id)
     return RedirectResponse(
@@ -313,7 +313,7 @@ async def account_identity_set_timezone(
     identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """设置用户时区（IANA 名，空串回落全局默认偏移）。
+    """设置身份时区（IANA 名，空串回落全局默认偏移）。
 
     校验失败时返回错误提示而不落库，避免无效时区名导致运行时静默回落
     且运营无从感知。校验通过 resolve_tz 试解析，不依赖 tzdata 是否已装。
@@ -348,7 +348,7 @@ async def account_identity_toggle_block(
     identity_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """禁用/启用账号下的用户（禁用前需先删除关联服务）。"""
+    """禁用/启用账号下的身份（禁用前需先删除关联服务）。"""
     identity = await _identity_repo.find_by_id(identity_id)
     if not identity:
         return RedirectResponse(
@@ -362,7 +362,7 @@ async def account_identity_toggle_block(
         if svc_count > 0:
             return await _account_detail_with_error(
                 request, account_id,
-                f"该用户下有 {svc_count} 个对话服务，请先删除服务后再禁用",
+                f"该身份下有 {svc_count} 个对话服务，请先删除服务后再禁用",
             )
         reason = str(form.get("block_reason", "")).strip()
         await _identity_repo.set_blocked(identity_id, True, reason)
@@ -547,7 +547,7 @@ async def account_service_create(
     account_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """为账号添加对话服务，名称自动生成：{用户}-{角色}-{Bot名称}。"""
+    """为账号添加对话服务，名称自动生成：{身份}-{角色}-{Bot名称}。"""
     form = await request.form()
     identity_id = str(form.get("identity_id", "")).strip()
     bot_id = str(form.get("bot_id", "")).strip()
@@ -568,18 +568,18 @@ async def account_service_create(
 
     # 检查引用的实体是否被禁用
     identity = await _identity_repo.find_by_id(identity_id)
-    # 检查用户是否已绑定真实平台账号（非UUID表示已有真实用户绑定，新用户将无法使用该Bot）
+    # 检查身份是否已绑定真实平台账号（非UUID表示已有真实身份绑定，新身份将无法使用该Bot）
     if identity:
         try:
             uuid.UUID(identity.platform_id)
         except (ValueError, AttributeError):
             return await _account_detail_with_error(
                 request, account_id,
-                "该用户已绑定真实平台账号，无法创建新服务。请选择未绑定的用户或新建用户。",
+                "该身份已绑定真实平台账号，无法创建新服务。请选择未绑定的身份或新建身份。",
             )
     if identity and identity.is_blocked:
         return await _account_detail_with_error(
-            request, account_id, "该用户已被禁用，无法创建服务",
+            request, account_id, "该身份已被禁用，无法创建服务",
         )
     bot = await _bot_config_repo.find_by_id(bot_id)
     if bot and bot.is_blocked:
@@ -594,7 +594,7 @@ async def account_service_create(
             request, account_id, "该角色已被禁用，无法创建服务",
         )
 
-    # 自动生成服务名称：{用户}-{角色}-{Bot名称}
+    # 自动生成服务名称：{身份}-{角色}-{Bot名称}
     name = "-".join(
         p for p in [
             identity.name or identity.platform_id if identity else "",
@@ -673,7 +673,7 @@ async def account_service_delete(
     service_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """删除对话服务（级联删除关联的对话、消息和长期记忆，并释放用户绑定）。
+    """删除对话服务（级联删除关联的对话、消息和长期记忆，并释放身份绑定）。
 
     共享组保护：组 key 下的对话/记忆仅在删除组内最后一个成员时才一并清理。
     """
@@ -701,7 +701,7 @@ async def account_service_delete(
 
     await _service_repo.delete(service_id)
 
-    # 释放用户绑定：若该用户无其他服务，重置 platform_id 为 UUID（恢复可绑定状态）
+    # 释放身份绑定：若该身份无其他服务，重置 platform_id 为 UUID（恢复可绑定状态）
     if service:
         remaining = await _service_repo.count_by_identity(service.identity_id)
         if remaining == 0:

@@ -182,13 +182,13 @@ class TestPromptAssembler:
             identity_input="我好难过",
             emotion_hint="悲伤低落",
         )
-        # 情绪提示作为独立的 system 上下文消息注入（紧贴用户输入前）
+        # 情绪提示作为独立的 system 上下文消息注入（紧贴身份输入前）
         all_content = "\n".join(m["content"] for m in messages)
         assert "悲伤低落" in all_content
 
     def test_render_system_prompt_has_safety(self):
         prompt = self.assembler._render_system_prompt(self.profile)
-        assert "忽略用户" in prompt  # 防注入指令
+        assert "忽略对方" in prompt  # 防注入指令
         assert "保持角色身份" in prompt
 
 
@@ -295,7 +295,7 @@ class TestMessageTimeAwareness:
             self._msg("m2", "user", "早安", base + timedelta(days=1)),
         ]
         fact = MemoryFact(
-            content="用户8月26日有面试", category="life_event",
+            content="身份8月26日有面试", category="life_event",
             created_at=base - timedelta(days=7),
         )
         messages = self._assemble(
@@ -401,7 +401,7 @@ class TestMessageTimeAwareness:
     # ── 清单 4：长期中断 20 天 ───────────────────────
 
     def test_long_idle_twenty_days(self):
-        """上一条用户消息在 20 天前 → idle 表达为“20 天”。"""
+        """上一条身份消息在 20 天前 → idle 表达为“20 天”。"""
         history = [
             self._msg("m1", "user", "好久不见", self.NOW_UTC - timedelta(days=20)),
         ]
@@ -438,7 +438,7 @@ class TestMessageTimeAwareness:
     def test_anchor_is_first_section_of_system_prompt(self):
         """日期锚点必须位于 messages[0] 的首个段落，早于任何带时间的记忆注入。"""
         fact = MemoryFact(
-            content="用户8月26日有面试", category="life_event",
+            content="身份8月26日有面试", category="life_event",
             created_at=self.NOW_UTC - timedelta(days=7),
         )
         messages = self._assemble(
@@ -451,14 +451,14 @@ class TestMessageTimeAwareness:
         assert first.index("【时间基准】") < first.index("【角色设定】")
         assert "8月26日" not in first
 
-    # ── 清单 7：idle 只认用户消息（主动关怀不重置空闲计时）──────
+    # ── 清单 7：idle 只认身份消息（主动关怀不重置空闲计时）──────
 
     def test_idle_only_counts_identity_messages(self):
-        """历史末尾是 AI 主动关怀消息 → idle 仍按更早的用户消息计算。"""
+        """历史末尾是 AI 主动关怀消息 → idle 仍按更早的身份消息计算。"""
         history = [
             self._msg("m1", "user", "在吗", self.NOW_UTC - timedelta(hours=2)),
             self._msg("m2", "assistant", "在的", self.NOW_UTC - timedelta(hours=1)),
-            # 模拟主动关怀：AI 主动发出，不应重置“用户空闲”时钟
+            # 模拟主动关怀：AI 主动发出，不应重置“身份空闲”时钟
             self._msg("m3", "assistant", "最近过得好吗", self.NOW_UTC - timedelta(minutes=10)),
         ]
         joined = "\n".join(m["content"] for m in self._assemble(history))
@@ -532,13 +532,13 @@ class TestMessageTimeAwareness:
         """memory_inject_time_suffix=False → 记忆条目不带任何时间后缀。"""
         settings.memory_inject_time_suffix = False
         fact = MemoryFact(
-            content="用户8月26日有面试", category="life_event",
+            content="身份8月26日有面试", category="life_event",
             created_at=self.NOW_UTC - timedelta(days=7),
         )
         joined = "\n".join(m["content"] for m in self._assemble(
             [], identity_input="你好", memory_facts=[fact.content], memory_fact_objs=[fact],
         ))
-        assert "- 用户8月26日有面试\n" in joined
+        assert "- 身份8月26日有面试\n" in joined
         assert "记录于" not in joined
 
     # ── 记忆时间后缀与被归档历史声明（借 Letta last-modified）──────
@@ -547,15 +547,15 @@ class TestMessageTimeAwareness:
         """一次性事件标“记录于 N 天前”，长期稳定类标“长期信息”。"""
         facts = [
             MemoryFact(
-                content="用户8月26日有面试", category="life_event",
+                content="身份8月26日有面试", category="life_event",
                 created_at=self.NOW_UTC - timedelta(days=7),
             ),
             MemoryFact(
-                content="用户喜欢喝咖啡", category="preference",
+                content="身份喜欢喝咖啡", category="preference",
                 created_at=self.NOW_UTC - timedelta(days=200),
             ),
             MemoryFact(
-                content="用户对花生过敏", category="safety",
+                content="身份对花生过敏", category="safety",
                 created_at=self.NOW_UTC - timedelta(hours=3),
             ),
         ]
@@ -563,14 +563,14 @@ class TestMessageTimeAwareness:
             [], identity_input="你好",
             memory_facts=[f.content for f in facts], memory_fact_objs=facts,
         ))
-        assert "- 用户8月26日有面试（记录于 7 天前）" in joined
-        assert "- 用户喜欢喝咖啡（长期信息）" in joined
-        assert "- 用户对花生过敏（长期信息）" in joined
+        assert "- 身份8月26日有面试（记录于 7 天前）" in joined
+        assert "- 身份喜欢喝咖啡（长期信息）" in joined
+        assert "- 身份对花生过敏（长期信息）" in joined
 
     def test_memory_fact_recorded_today(self):
         """当天录入的事实标“今天记录”而非“记录于 0 天前”。"""
         fact = MemoryFact(
-            content="用户今天很开心", category="mood_pattern",
+            content="身份今天很开心", category="mood_pattern",
             created_at=self.NOW_UTC - timedelta(hours=1),
         )
         joined = "\n".join(m["content"] for m in self._assemble(
@@ -581,9 +581,9 @@ class TestMessageTimeAwareness:
     def test_memory_suffix_graceful_without_fact_objs(self):
         """未传 memory_fact_objs（如主动关怀链路）时不报错、不输出后缀。"""
         joined = "\n".join(m["content"] for m in self._assemble(
-            [], identity_input="你好", memory_facts=["用户喜欢喝咖啡"],
+            [], identity_input="你好", memory_facts=["身份喜欢喝咖啡"],
         ))
-        assert "- 用户喜欢喝咖啡" in joined
+        assert "- 身份喜欢喝咖啡" in joined
         assert "记录于" not in joined and "长期信息" not in joined
 
     def test_omitted_history_declared(self):
@@ -780,7 +780,7 @@ class TestMessageTimeAwareness:
 
 
 class TestDynamicMemoryInjection:
-    """记忆注入分层：动态层后置到紧贴用户输入的易变段，稳定层留在前缀段。
+    """记忆注入分层：动态层后置到紧贴身份输入的易变段，稳定层留在前缀段。
 
     动机：逐轮变化的语义 top-k 若与 core 事实同处 system 第 2 段，
     会使其后所有历史与指令 prompt cache miss（响应从几秒恶化到几十秒）。
@@ -813,21 +813,21 @@ class TestDynamicMemoryInjection:
     def test_dynamic_facts_land_in_volatile_section(self) -> None:
         """动态层出现在最后一段 system（紧贴 user_input），稳定层留在第 2 段。"""
         msgs = self._assemble(
-            memory_facts=["用户是北京大学学生"],
-            dynamic_memory_facts=["用户上周面试了某公司"],
+            memory_facts=["身份是北京大学学生"],
+            dynamic_memory_facts=["身份上周面试了某公司"],
         )
         assert msgs[-1]["role"] == "user"
         volatile = msgs[-2]["content"]
         assert "【此刻想起的关于对方的事】" in volatile
-        assert "- 用户上周面试了某公司" in volatile
+        assert "- 身份上周面试了某公司" in volatile
         stable = msgs[1]["content"]
-        assert "用户上周面试了某公司" not in stable
-        assert "- 用户是北京大学学生" in stable
+        assert "身份上周面试了某公司" not in stable
+        assert "- 身份是北京大学学生" in stable
 
     def test_no_dynamic_section_when_absent(self) -> None:
         """未传动态层（主动关怀链路、回退模式）时不出现该段落。"""
         joined = "\n".join(m["content"] for m in self._assemble(
-            memory_facts=["用户喜欢喝咖啡"],
+            memory_facts=["身份喜欢喝咖啡"],
         ))
         assert "此刻想起" not in joined
 
@@ -848,7 +848,7 @@ class TestDynamicMemoryInjection:
         """动态层多为一次性事件，需带“记录于 N 天前”供模型判断时效。"""
         settings.memory_inject_time_suffix = True
         fact = MemoryFact(
-            content="用户8月26日有面试", category="life_event",
+            content="身份8月26日有面试", category="life_event",
             created_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
         )
         with _frozen_now(datetime(2026, 9, 2, tzinfo=timezone.utc)):

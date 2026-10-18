@@ -1,4 +1,4 @@
-"""C 端网页用户凭据的数据库模型。
+"""C 端网页身份凭据的数据库模型。
 
 凭据独立成集合（不放进 `users`）：`user` 对象会被 prompt 组装与记忆提取全量消费，
 密码哈希不应进入 LLM 上下文。
@@ -19,7 +19,7 @@ PRIVACY_VERSION = "v1.0"
 
 
 def normalize_username(username: str) -> str:
-    """用户名规范化：去空白并转小写。
+    """登录名规范化：去空白并转小写。
 
     集合内 `username` 存规范化值并建唯一索引，使大小写不同的同名注册在数据库层
     直接被拒绝（而不是靠应用层先查后插的竞态判断）。
@@ -34,7 +34,7 @@ class WebConsent(BaseModel):
     terms_accepted_at: Optional[datetime] = None
     privacy_version: str = PRIVACY_VERSION
     privacy_accepted_at: Optional[datetime] = None
-    age_confirmed: bool = False  # 用户勾选"我已满 14 周岁"
+    age_confirmed: bool = False  # 身份勾选"我已满 14 周岁"
     age_confirmed_at: Optional[datetime] = None
 
 
@@ -42,13 +42,13 @@ class WebCredentialCreate(BaseModel):
     """创建网页身份。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    identity_id: str = ""  # 关联 users.id；注册先占用户名，四件套建齐后回填
+    identity_id: str = ""  # 关联 identities.id；注册先占登录名，四件套建齐后回填
     username: str
     password_hash: str
     status: CredentialStatus = "pending"
     failed_count: int = 0  # 连续登录失败次数（成功后清零）
     locked_until: Optional[datetime] = None  # 登录锁定到期时间
-    reviewed_by: str = ""  # 审核操作人（管理员用户名）
+    reviewed_by: str = ""  # 审核操作人（管理员登录名）
     reviewed_at: Optional[datetime] = None  # 审核时间（也用于拒绝冷却判定）
     review_note: str = ""  # 审核备注/拒绝理由
     created_ip: str = ""

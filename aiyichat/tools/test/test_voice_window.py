@@ -58,7 +58,7 @@ class TestVoiceWindowManager:
         assert "conv-1" not in mgr._windows
 
     def test_reactivate_after_expiry(self, monkeypatch):
-        """窗口过期后可被用户再次发语音重新激活。"""
+        """窗口过期后可被身份再次发语音重新激活。"""
         mgr = VoiceWindowManager()
         now = 1_000_000.0
         monkeypatch.setattr(vw.time, "time", lambda: now)

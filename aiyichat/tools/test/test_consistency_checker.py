@@ -44,7 +44,7 @@ class TestConsistencyChecker:
         assert scrubbed == text
 
     def test_scrub_forbidden_removes_hit_sentence(self) -> None:
-        """禁用词命中做整句剔除（原先仅记日志等于没拦截，词仍会发到用户屏幕）。"""
+        """禁用词命中做整句剔除（原先仅记日志等于没拦截，词仍会发到身份屏幕）。"""
         text = "老铁你今天怎么样呀。我等你好久了呢。"
         scrubbed = self.checker.scrub_forbidden(text, ["老铁", "卧槽"])
         assert "老铁" not in scrubbed

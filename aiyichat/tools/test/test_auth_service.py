@@ -2,9 +2,9 @@
 
 覆盖计划 P1：
 - app/utils/password_hashing：哈希生成/验算/格式判定，以及 app/admin/auth 的 re-export 不断链
-- WebIdentityRepository：用户名唯一占位、状态流转、登录失败锁定、拒绝冷却查询
+- WebCredentialRepository：登录名唯一占位、状态流转、登录失败锁定、拒绝冷却查询
 - WebSessionRepository：令牌校验、滑动过期、并发上限踢出、按身份清理
-- 索引：web_identities.username 唯一、web_sessions.token 唯一 + expires_at TTL
+- 索引：web_credentials.username 唯一、web_sessions.token 唯一 + expires_at TTL
 """
 
 from datetime import datetime, timedelta, timezone
@@ -90,7 +90,7 @@ class TestPasswordHashing:
 
 
 class TestUsernameNormalization:
-    """用户名规范化测试集。"""
+    """登录名规范化测试集。"""
 
     def test_normalize(self) -> None:
         """去空白并转小写。"""
@@ -104,7 +104,7 @@ class TestWebCredentialRepository:
     """网页凭据仓库测试集。"""
 
     def test_indexes_created(self) -> None:
-        """web_identities 与 web_sessions 索引随 connect_db 建齐。
+        """web_credentials 与 web_sessions 索引随 connect_db 建齐。
 
         注意：MongoDB 返回的 datetime 一律为 naive UTC，mongomock 亦按 TTL 索引
         立即回收 `expires_at` 已过期的文档，故本用例只校验索引规格本身。
@@ -130,7 +130,7 @@ class TestWebCredentialRepository:
         run_with_db(body)
 
     def test_insert_and_find(self) -> None:
-        """写入后可按用户名/ID/user_id 查询，默认状态为 pending。"""
+        """写入后可按登录名/ID/user_id 查询，默认状态为 pending。"""
 
         async def body():
             repo = WebCredentialRepository()
@@ -212,7 +212,7 @@ class TestWebCredentialRepository:
         run_with_db(body)
 
     def test_find_recent_rejected(self) -> None:
-        """拒绝冷却期内可按用户名命中，超期或不符状态则放行。"""
+        """拒绝冷却期内可按登录名命中，超期或不符状态则放行。"""
 
         async def body():
             repo = WebCredentialRepository()
@@ -513,7 +513,7 @@ class TestExperienceQuotaCoversFirstTurn:
             engine = ConversationEngine(bot_id=settings.web_bot_id)
             required = estimate_tokens("你好，请陪我聊聊天，说说你今天过得怎么样") + settings.chat_max_tokens
             ok, reason = await engine._quota_precheck(identity.account_id, required)
-            assert ok is True, f"新用户体验额度不足以发起首条消息: {reason}"
+            assert ok is True, f"新身份体验额度不足以发起首条消息: {reason}"
             quota = await QuotaRepository().find_by_account(identity.account_id)
             assert quota.text_quota.limit >= 10 * required, "体验额度应至少支撑约 10 轮对话"
 
@@ -521,11 +521,11 @@ class TestExperienceQuotaCoversFirstTurn:
 
 
 class TestValidationRules:
-    """用户名与密码策略测试集（不依赖数据库）。"""
+    """登录名与密码策略测试集（不依赖数据库）。"""
 
     @pytest.mark.parametrize("raw", ["ab", "a" * 33, "has space", "admin", "root", "_lead"])
     def test_bad_usernames(self, raw: str) -> None:
-        """非法用户名：长度越界、含空格、保留名、下划线开头。"""
+        """非法登录名：长度越界、含空格、保留名、下划线开头。"""
         with pytest.raises(AuthError) as err:
             auth_service.validate_username(raw)
         assert err.value.code == "invalid_username"
@@ -533,7 +533,7 @@ class TestValidationRules:
 
     @pytest.mark.parametrize("raw", ["Alice01 ", " BOB_2 ", "user_123"])
     def test_good_usernames(self, raw: str) -> None:
-        """合法用户名返回规范化小写值。"""
+        """合法登录名返回规范化小写值。"""
         assert auth_service.validate_username(raw) == raw.strip().lower()
 
     @pytest.mark.parametrize(
@@ -544,7 +544,7 @@ class TestValidationRules:
             "12345678",         # 无字母（且在黑名单）
             "password123",      # 黑名单
             "iloveyou",         # 黑名单
-            "xiaochen123",      # 与用户名相同
+            "xiaochen123",      # 与登录名相同
         ],
     )
     def test_weak_passwords(self, pwd: str) -> None:
@@ -575,7 +575,7 @@ class TestRegistration:
 
             identity = await IdentityRepository().find_by_id(ident.identity_id)
             assert identity.platform == "web"
-            assert identity.platform_id == "xiaochen"  # 用户名而非 openid：_is_uuid 判定自洽拒绝绑 QQ
+            assert identity.platform_id == "xiaochen"  # 登录名而非 openid：_is_uuid 判定自洽拒绝绑 QQ
             service = await ServiceRepository().find_by_identity_and_bot(identity.id, bot_id)
             assert service is not None
             assert service.profile_id == "lin-yu"
@@ -591,7 +591,7 @@ class TestRegistration:
         run_with_db(body)
 
     def test_password_hash_not_in_user(self) -> None:
-        """密码哈希只落 web_identities，绝不进入被 prompt 消费的 user 对象。"""
+        """密码哈希只落 web_credentials，绝不进入被 prompt 消费的 user 对象。"""
 
         async def body():
             await _seed_web_env()
@@ -603,7 +603,7 @@ class TestRegistration:
         run_with_db(body)
 
     def test_duplicate_username(self) -> None:
-        """重复用户名（含大小写变体）返回 409。"""
+        """重复登录名（含大小写变体）返回 409。"""
 
         async def body():
             await _seed_web_env()
@@ -639,7 +639,7 @@ class TestRegistration:
         run_with_db(body)
 
     def test_rollback_when_bot_missing(self) -> None:
-        """依赖配置缺失 → 回滚删除已占用户名，配置修复后可重新注册。"""
+        """依赖配置缺失 → 回滚删除已占登录名，配置修复后可重新注册。"""
 
         async def body():
             await _seed_web_env()
@@ -819,7 +819,7 @@ class TestReviewAndGovernance:
         run_with_db(body)
 
     def test_disable_kicks_sessions(self) -> None:
-        """禁用用户：会话立即清空，正在使用的 token 失效。"""
+        """禁用身份：会话立即清空，正在使用的 token 失效。"""
 
         async def body():
             await _seed_web_env()
@@ -864,7 +864,7 @@ class TestLoginProtection:
     """登录防暴力破解与会话并发测试集。"""
 
     def test_unknown_user_and_wrong_password(self) -> None:
-        """未知用户名与错误密码返回同一提示，避免账号枚举。"""
+        """未知登录名与错误密码返回同一提示，避免账号枚举。"""
 
         async def body():
             await _seed_web_env()
@@ -874,7 +874,7 @@ class TestLoginProtection:
                 await _login("nobody-here")
             with pytest.raises(AuthError) as wrong:
                 await _login("enumtest", "wrongpass123")
-            assert missing.value.message == wrong.value.message == "用户名或密码错误"
+            assert missing.value.message == wrong.value.message == "登录名或密码错误"
 
         run_with_db(body)
 

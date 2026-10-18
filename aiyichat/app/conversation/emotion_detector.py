@@ -165,7 +165,7 @@ def _compute_intensity(text: str, match_count: int) -> float:
     - 最终 clamp 到 [0.1, 1.0]
 
     Args:
-        text: 用户消息文本
+        text: 对方消息文本
         match_count: 关键词匹配数量
 
     Returns:
@@ -276,7 +276,7 @@ def _detect_core(text: str) -> tuple[str, float] | None:
     """内部核心检测逻辑：关键词匹配 + 否定词过滤 + 强度计算
 
     Args:
-        text: 用户消息文本
+        text: 对方消息文本
 
     Returns:
         (emotion, intensity) 元组，未检测到返回 None
@@ -316,7 +316,7 @@ def detect_emotion(text: str) -> str | None:
     """基于关键词匹配的轻量情绪检测（只返回标签，不含强度与演变提示）
 
     Args:
-        text: 用户消息文本
+        text: 对方消息文本
 
     Returns:
         检测到的情绪标签，如 "sad"、"happy" 等，未检测到返回 None
@@ -337,7 +337,7 @@ def detect_emotion_with_history(
     生成包含演变信息的提示。
 
     Args:
-        text: 当前用户消息
+        text: 当前对方消息
         recent_emotions: 最近3-5条消息的emotion_tag列表（从旧到新）
 
     Returns:
@@ -388,23 +388,23 @@ def _analyze_evolution(
             and last_three[0] in _NEGATIVE_EMOTIONS
             and current_emotion == last_three[0]
         ):
-            return "，用户情绪持续低落"
+            return "，对方情绪持续低落"
 
     # 检查：之前是负面情绪，现在是 happy → 情绪好转
     recent_valid = valid_history[-1] if valid_history else None
     if recent_valid in _NEGATIVE_EMOTIONS and current_emotion == "happy":
-        return "，用户情绪正在好转"
+        return "，对方情绪正在好转"
 
     # 检查：之前是 happy，现在是负面 → 情绪突然变差
     if recent_valid == "happy" and current_emotion in _NEGATIVE_EMOTIONS:
-        return "，用户情绪突然变差"
+        return "，对方情绪突然变差"
 
     return ""
 
 
 # LLM 情绪识别提示词（关键词未命中时的降级路径，可识别隐含情绪）
 _LLM_EMOTION_SYSTEM_PROMPT = (
-    "你是情绪分析助手。分析用户这句话的情绪（可能是隐含的，如'又加班到十点'暗含疲惫）。\n"
+    "你是情绪分析助手。分析对方这句话的情绪（可能是隐含的，如'又加班到十点'暗含疲惫）。\n"
     "emotion 只能取：sad/angry/anxious/happy/lonely/tired/excited/confused/nostalgic/grateful/shy/neutral 之一。\n"
     "intensity 为 0~1 的小数。hint 用一句中文描述情绪状态与关怀重点。\n"
     '严格输出 JSON：{"emotion": "tired", "intensity": 0.7, "hint": "疲惫不堪，需要被理解和关心"}'
@@ -423,7 +423,7 @@ async def detect_emotion_llm(text: str) -> EmotionResult | None:
     由调用方通过 emotion_llm_fallback_enabled 开关控制是否启用。
 
     Args:
-        text: 用户消息文本
+        text: 对方消息文本
 
     Returns:
         EmotionResult 或 None

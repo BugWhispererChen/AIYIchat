@@ -91,8 +91,8 @@ async def run_analysis(
     Args:
         task_id: 任务ID
         messages: 解析后的聊天消息列表
-        role_name: 用户指定的角色名称（可选）
-        extra_description: 用户补充的额外描述信息
+        role_name: 对方指定的角色名称（可选）
+        extra_description: 对方补充的额外描述信息
     """
     task = await get_task(task_id)
     if task is None:
@@ -265,7 +265,7 @@ async def _merge_analyses(
         provider: LLM Provider实例
         chunk_results: 所有分块的分析结果
         target_name: 目标联系人名称
-        role_name: 用户指定的角色名称
+        role_name: 对方指定的角色名称
         extra_description: 额外描述信息
 
     Returns:
@@ -283,7 +283,7 @@ async def _merge_analyses(
     # 构建额外描述提示
     extra_hint = ""
     if extra_description:
-        extra_hint = f"\n用户提供的额外描述信息（请融入角色设定中）:\n{extra_description}\n"
+        extra_hint = f"\n对方提供的额外描述信息（请融入角色设定中）:\n{extra_description}\n"
 
     display_name = role_name if role_name else target_name
     system_prompt = MERGE_ANALYSIS_PROMPT.format(extra_description=extra_hint)

@@ -62,7 +62,7 @@ class TestMemoriesPage:
                     repo = ServiceMemoryRepository()
                     await repo.upsert_topic("svc-1", "考研复习")
                     await repo.add_facts("svc-1", [
-                        MemoryFact(content="用户在准备考研", category="event"),
+                        MemoryFact(content="身份在准备考研", category="event"),
                     ])
                     await repo.add_pending_events("svc-1", [
                         PendingEvent(
@@ -79,13 +79,13 @@ class TestMemoriesPage:
                     # 详情展示事实与事件
                     resp = await client.get("/admin/memories/svc-1")
                     assert resp.status_code == 200
-                    assert "用户在准备考研" in resp.text
+                    assert "身份在准备考研" in resp.text
                     assert "下周一有面试" in resp.text
 
                     # 删除单条事实
                     resp = await client.post(
                         "/admin/memories/svc-1/delete-fact",
-                        data={"content": "用户在准备考研"},
+                        data={"content": "身份在准备考研"},
                     )
                     assert resp.status_code == 303
                     memory = await repo.find_by_service("svc-1")

@@ -18,7 +18,7 @@ class ProactiveStage:
     """主动消息阶段定义。"""
 
     stage: int  # 阶段编号（1-4）
-    delay_hours: float  # 用户最后活跃后多少小时触发
+    delay_hours: float  # 对方最后活跃后多少小时触发
     content_hint: str  # 内容生成提示词
     emotion_hints: dict[str, str] | None = None  # 按情绪调整的内容提示
 
@@ -91,10 +91,10 @@ def get_pending_stage(
     platform: str = "qq",
 ) -> ProactiveStage | None:
     """
-    根据用户最后活跃时间和已发送阶段，判断当前应发送的阶段。
+    根据对方最后活跃时间和已发送阶段，判断当前应发送的阶段。
 
     Args:
-        last_active_at: 用户最后活跃时间（UTC）
+        last_active_at: 对方最后活跃时间（UTC）
         sent_stages: 已成功发送的阶段编号列表
         platform: 平台标识
 

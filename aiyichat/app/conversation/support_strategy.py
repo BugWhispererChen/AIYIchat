@@ -1,7 +1,7 @@
 """情感支持策略层。
 
 基于 ESConv / Hill 助人三阶段（探索 → 安慰 → 行动）与支持策略理念，
-根据用户情绪、情绪演变（连续负面轮次）与求助信号，动态选择当前应采用的
+根据对方情绪、情绪演变（连续负面轮次）与求助信号，动态选择当前应采用的
 情感支持策略，并生成注入到 Prompt 的策略指令。
 
 纯规则实现，不依赖 LLM，零额外延迟；由 support_strategy_enabled 开关控制启用。
@@ -101,7 +101,7 @@ class SupportStrategySelector:
             emotion: 当前情绪标签（可能为 None）
             intensity: 情绪强度 0.0~1.0
             negative_streak: 连续负面情绪轮次（含当前轮）
-            user_input: 当前用户消息
+            user_input: 当前对方消息
 
         Returns:
             SupportPlan；无需特殊策略（如平静/愉快且未求助）时返回 None

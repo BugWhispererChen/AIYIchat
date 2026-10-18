@@ -7,7 +7,7 @@
 - 解析抛 ValueError 一律静默降级返回 None，交 LLM 兜底
 - 不支持的表达（"前两天"/"昨晚1点"/"二十几天"）原样保留，不归一化、不报错
 
-time_base 约定：传「用户本地 naive wall-clock」（jionlp 输出无时区的本地时间串），
+time_base 约定：传「身份本地 naive wall-clock」（jionlp 输出无时区的本地时间串），
 解析结果再按 ctx.tz 转 aware UTC 落库。
 """
 
@@ -45,7 +45,7 @@ def _load_jionlp() -> bool:
 def _to_naive_local(base: datetime, tz: timezone) -> datetime:
     """将 aware UTC 时间转为指定时区的 naive 本地时间（jionlp 的 time_base 要求）。
 
-    jionlp 输出无时区的本地时间串，因此 time_base 必须是用户本地 naive wall-clock，
+    jionlp 输出无时区的本地时间串，因此 time_base 必须是身份本地 naive wall-clock，
     否则解析结果会整体偏移。
     """
     if base.tzinfo is None:
@@ -61,7 +61,7 @@ def extract_time_spans(
     Args:
         text: 待抽取文本
         base: 时间基点（aware UTC），内部转为 tz 对应的 naive 本地时间
-        tz: 用户本地时区
+        tz: 身份本地时区
 
     Returns:
         时间实体列表，每项含 text/offset/type/detail；失败或不可用时返回空列表
@@ -91,7 +91,7 @@ def normalize_relative(
     Args:
         text: 待归一化文本（如"下周三"）
         base: 时间基点（aware UTC）
-        tz: 用户本地时区
+        tz: 身份本地时区
 
     Returns:
         绝对日期串（YYYY-MM-DD），无法归一化时返回 None
@@ -128,7 +128,7 @@ def parse_time_point(
     Args:
         text: 待解析文本
         base: 时间基点（aware UTC）
-        tz: 用户本地时区
+        tz: 身份本地时区
 
     Returns:
         aware UTC 时间点，解析失败/不可用时返回 None
@@ -169,7 +169,7 @@ def verify_llm_date(
         claim: LLM 给出的日期串（YYYY-MM-DD）
         source_text: 原始对话文本
         base: 时间基点（aware UTC）
-        tz: 用户本地时区
+        tz: 身份本地时区
 
     Returns:
         True 表示可信（或无法证伪），False 表示证伪

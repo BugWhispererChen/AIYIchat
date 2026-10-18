@@ -1,6 +1,6 @@
 """服务级长期记忆的数据模型。
 
-每个 Service（用户+Bot+角色 的绑定）拥有独立的长期记忆文档，
+每个 Service（身份+Bot+角色 的绑定）拥有独立的长期记忆文档，
 包含当前话题焦点和结构化的记忆事实列表。
 记忆随 Service 生命周期管理，Service 删除时级联清理。
 """
@@ -29,7 +29,7 @@ class MemoryFact(BaseModel):
     事实被纠正时只标记失效不删除，保留可回溯的时间线。
     """
 
-    content: str  # 记忆内容，如 "用户正在准备考研，目标是北大"
+    content: str  # 记忆内容，如 "身份正在准备考研，目标是北大"
     category: str = "general"  # 分类：life_event / preference / relationship / mood_pattern / general
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -72,7 +72,7 @@ def is_fact_invalidated(fact: MemoryFact, now: datetime | None = None) -> bool:
 
 
 class PendingEvent(BaseModel):
-    """用户提及的、值得在未来某时机主动跟进的事件。"""
+    """身份提及的、值得在未来某时机主动跟进的事件。"""
 
     content: str  # 事件描述，如 "明天有面试"
     due_at: datetime  # 预期跟进时间（UTC）
@@ -98,7 +98,7 @@ class EntityRelation(BaseModel):
 
 
 class MemoryEntity(BaseModel):
-    """轻量实体关系：对话中出现的与用户提供相关的人物/事物。
+    """轻量实体关系：对话中出现的与身份提供相关的人物/事物。
 
     不引入图数据库，以数组形式挂在 service_memories 文档上，
     支持"小红是谁"类关系查询与命中注入。
@@ -106,7 +106,7 @@ class MemoryEntity(BaseModel):
     """
 
     name: str  # 实体名，如 "小红"
-    relation_to_identity: str = ""  # 与用户关系，如 "女朋友"
+    relation_to_identity: str = ""  # 与身份关系，如 "女朋友"
     attributes: dict[str, str] = Field(default_factory=dict)  # 属性，如 {"生日": "下周三"}
     last_mentioned_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -115,13 +115,13 @@ class MemoryEntity(BaseModel):
     entity_type: Literal["person", "pet", "thing"] = "person"
     # 别名/昵称列表，如 ["老王", "王哥"]，用于消歧与命中匹配
     aliases: list[str] = Field(default_factory=list)
-    # 用户对该实体的情感倾向，如 "亲近" / "有矛盾"
+    # 身份对该实体的情感倾向，如 "亲近" / "有矛盾"
     sentiment: str = ""
     # 实体间关系边（如"小红的哥哥是小明"）
     relations: list[EntityRelation] = Field(default_factory=list)
     # 被提及次数（用于淘汰排序：活跃度越高的实体越不易被淘汰）
     mention_count: int = 0
-    # 消歧用向量（"名称+别名+与用户关系"拼接的 embedding，空则降级精确匹配）
+    # 消歧用向量（"名称+别名+与身份关系"拼接的 embedding，空则降级精确匹配）
     embedding: list[float] = Field(default_factory=list)
 
 

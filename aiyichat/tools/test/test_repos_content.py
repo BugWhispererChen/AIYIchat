@@ -427,7 +427,7 @@ class TestAppSettingsRepository:
         assert all(g["api_key"] == "sk-ds" for g in updates["model_configs"])
 
     def test_build_model_configs_migration_default(self) -> None:
-        """无有效 key 时生成默认分组（api_key 留空，由用户填入）。"""
+        """无有效 key 时生成默认分组（api_key 留空，由身份填入）。"""
         doc = AppSettingsDocument()
         updates = build_model_configs_migration(doc)
         assert len(updates["model_configs"]) == 5

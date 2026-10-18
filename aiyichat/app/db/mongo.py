@@ -146,7 +146,7 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     Args:
         db: 数据库对象
     """
-    # 用户：按 platform + platform_id 唯一，按 account_id 索引
+    # 身份：按 platform + platform_id 唯一，按 account_id 索引
     await _safe_create_index(
         db.identities,
         [("platform", 1), ("platform_id", 1)],
@@ -190,7 +190,7 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("event_type", 1), ("created_at", -1)],
     )
     await _safe_create_index(db.safety_events, "created_at")
-    # C 端网页凭据：用户名唯一（注册原子占位），按 identity_id 与 status+created_at 索引
+    # C 端网页凭据：登录名唯一（注册原子占位），按 identity_id 与 status+created_at 索引
     await _safe_create_index(db.web_credentials, "username", unique=True)
     await _safe_create_index(db.web_credentials, "identity_id")
     await _safe_create_index(

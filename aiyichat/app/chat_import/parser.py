@@ -21,7 +21,7 @@ CHAT_IMPORTS_DIR = Path(__file__).parent.parent.parent / "data" / "chat_imports"
 def _import_tz() -> timezone:
     """按导入时区配置构造 tzinfo（clamp 到 -12~14，避免非法配置抛异常）。
 
-    导出文件中的时间戳是用户本地墙钟时间（无时区），必须按该偏移转 aware UTC，
+    导出文件中的时间戳是身份本地墙钟时间（无时区），必须按该偏移转 aware UTC，
     否则落库后被当作 UTC 再按对话时区渲染，整体错位 8 小时。
     """
     offset = max(-12, min(14, int(settings.chat_import_timezone_offset)))
@@ -162,7 +162,7 @@ def _parse_message(item: dict) -> ChatMessage | None:
 def _parse_timestamp(ts_str: str) -> datetime:
     """尝试多种格式解析时间戳字符串，按导入时区转 aware UTC。
 
-    导出文件中的时间戳是用户本地墙钟时间（无时区），按 chat_import_timezone_offset
+    导出文件中的时间戳是身份本地墙钟时间（无时区），按 chat_import_timezone_offset
     解释为本地时间后转 UTC 落库，避免被当作 UTC 再渲染时整体错位 8 小时。
 
     Args:

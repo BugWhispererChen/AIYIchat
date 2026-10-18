@@ -50,7 +50,7 @@ class AccountRepository:
         return result.deleted_count > 0
 
     async def delete_cascade(self, account_id: str) -> dict[str, int]:
-        """级联删除账号及其关联数据（服务→对话→消息→用户→Bot→额度→角色→账号）。"""
+        """级联删除账号及其关联数据（服务→对话→消息→身份→Bot→额度→角色→账号）。"""
         db = get_database()
         stats: dict[str, int] = {}
 
@@ -85,7 +85,7 @@ class AccountRepository:
 
         # 2. 删除服务
         stats["services"] = (await db.services.delete_many({"account_id": account_id})).deleted_count
-        # 3. 删除用户
+        # 3. 删除身份
         stats["identities"] = (await db.identities.delete_many({"account_id": account_id})).deleted_count
         # 4. 删除 Bot
         stats["bots"] = (await db.bot_configs.delete_many({"account_id": account_id})).deleted_count

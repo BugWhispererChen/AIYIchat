@@ -1,8 +1,8 @@
-"""C 端网页用户自助角色管理 API。
+"""C 端网页身份自助角色管理 API。
 
 安全边界：
-- 全部端点先经 `require_web_user` 解析会话身份，客户端不能指定归属账号；
-- 用户只能创建/读写 `visibility="private"` 且 `account_id=本人账号` 的角色，
+- 全部端点先经 `require_current_identity` 解析会话身份，客户端不能指定归属账号；
+- 身份只能创建/读写 `visibility="private"` 且 `account_id=本人账号` 的角色，
   公共角色只读，他人的私有角色不可见（列表按可见性过滤）；
 - 数量受 `settings.web_max_profiles` 约束，创建文本先过内容安全检查；
 - slug 由服务端生成，避免占用公共命名空间与保留名。
@@ -56,7 +56,7 @@ _HIDDEN_PUBLIC_FIELDS = (
 
 
 class WebProfilePayload(BaseModel):
-    """网页用户自建/编辑角色的请求体。
+    """网页身份自建/编辑角色的请求体。
 
     不含 slug、visibility、account_id、声音与定妆照等字段：这些一律由服务端
     判定或由管理员在后台维护，接受客户端入参会打开越权与伪造面。
@@ -99,7 +99,7 @@ def _feature_closed() -> Optional[JSONResponse]:
 
 
 def _text_violation(payload: WebProfilePayload) -> str:
-    """对整份角色文本做内容安全检查，命中则返回给用户的原因。"""
+    """对整份角色文本做内容安全检查，命中则返回给身份的原因。"""
     verdict = get_safety_checker().check_input(payload.model_dump_json())
     if verdict.action == SafetyAction.PASS:
         return ""
@@ -160,7 +160,7 @@ def _build_create(payload: WebProfilePayload, account_id: str, slug: str) -> Pro
 
 
 def _gen_slug(username: str) -> str:
-    """生成私有角色的 slug：用户名可读前缀 + 随机后缀，与公共命名空间隔离。"""
+    """生成私有角色的 slug：登录名可读前缀 + 随机后缀，与公共命名空间隔离。"""
     base = re.sub(r"[^a-z0-9]", "", username.lower())[:12] or "user"
     return f"w-{base}-{uuid4().hex[:8]}"
 
@@ -278,7 +278,7 @@ async def create_web_profile(request: Request, payload: WebProfilePayload) -> JS
     slug = await _find_unique_slug(principal.username)
     profile = await _profile_repo.create(_build_create(payload, principal.account_id, slug))
     logger.info(
-        "网页用户 %s 创建私有角色 %s（slug=%s，当前 %d/%d）",
+        "网页身份 %s 创建私有角色 %s（slug=%s，当前 %d/%d）",
         principal.username,
         profile.name,
         profile.slug,
@@ -332,7 +332,7 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
     """启停本人私有角色。
 
     停用一个正被自己服务使用的角色是允许的（该服务会暂时提示未绑定角色），
-    但用户可随时启用回来；因此这里不做服务引用拦截，拦截放在删除路径。
+    但身份可随时启用回来；因此这里不做服务引用拦截，拦截放在删除路径。
     """
     try:
         principal = await require_current_identity(request)
@@ -348,7 +348,7 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
         profile.slug,
         PromptProfileUpdate(
             is_active=not turning_off,
-            disable_reason="用户自行停用" if turning_off else "",
+            disable_reason="身份自行停用" if turning_off else "",
         ),
     )
     if saved is None:
@@ -380,6 +380,6 @@ async def delete_web_profile(request: Request, profile_id: str) -> JSONResponse:
     if not await _profile_repo.hard_delete(profile.slug):
         return _bad("not_found", "角色不存在", 404)
     logger.info(
-        "网页用户 %s 删除私有角色 %s（slug=%s）", principal.username, profile.name, profile.slug
+        "网页身份 %s 删除私有角色 %s（slug=%s）", principal.username, profile.name, profile.slug
     )
     return JSONResponse(status_code=200, content={"id": profile.id, "deleted": True})

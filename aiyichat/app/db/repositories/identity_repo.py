@@ -1,4 +1,4 @@
-"""用户的数据库访问层。"""
+"""身份的数据库访问层。"""
 
 from datetime import datetime, timezone
 from typing import Literal, Optional
@@ -8,7 +8,7 @@ from app.models.identity import IdentityCreate, IdentityInDB, IdentityUpdate
 
 
 class IdentityRepository:
-    """管理用户的增删改查。"""
+    """管理身份的增删改查。"""
 
     def _collection(self):
         """获取 MongoDB 集合。"""
@@ -19,7 +19,7 @@ class IdentityRepository:
         platform: str,
         platform_id: str,
     ) -> Optional[IdentityInDB]:
-        """根据平台和平台 ID 查询用户。"""
+        """根据平台和平台 ID 查询身份。"""
         doc = await self._collection().find_one({
             "platform": platform,
             "platform_id": platform_id,
@@ -29,14 +29,14 @@ class IdentityRepository:
         return IdentityInDB.from_mongo(doc)
 
     async def find_by_id(self, identity_id: str) -> Optional[IdentityInDB]:
-        """根据 ID 查询用户。"""
+        """根据 ID 查询身份。"""
         doc = await self._collection().find_one({"id": identity_id})
         if doc is None:
             return None
         return IdentityInDB.from_mongo(doc)
 
     async def create(self, identity: IdentityCreate) -> IdentityInDB:
-        """创建新用户。"""
+        """创建新身份。"""
         now = datetime.now(timezone.utc)
         doc = identity.model_dump()
         doc["created_at"] = now
@@ -52,7 +52,7 @@ class IdentityRepository:
         account_id: str,
         nickname: str = "",
     ) -> IdentityInDB:
-        """查找或创建用户。"""
+        """查找或创建身份。"""
         identity = await self.find_by_platform(platform, platform_id)
         if identity is not None:
             await self._collection().update_one(
@@ -74,7 +74,7 @@ class IdentityRepository:
     async def update(
         self, identity_id: str, update: IdentityUpdate
     ) -> Optional[IdentityInDB]:
-        """更新用户信息。"""
+        """更新身份信息。"""
         update_data = update.model_dump(exclude_none=True)
         if not update_data:
             return await self.find_by_id(identity_id)
@@ -84,19 +84,19 @@ class IdentityRepository:
         return await self.find_by_id(identity_id)
 
     async def delete(self, identity_id: str) -> bool:
-        """删除用户。"""
+        """删除身份。"""
         result = await self._collection().delete_one({"id": identity_id})
         return result.deleted_count > 0
 
     async def delete_by_account(self, account_id: str) -> int:
-        """删除账号下的所有用户。"""
+        """删除账号下的所有身份。"""
         result = await self._collection().delete_many({"account_id": account_id})
         return result.deleted_count
 
     async def list_by_account(
         self, account_id: str, skip: int = 0, limit: int = 50
     ) -> list[IdentityInDB]:
-        """查询账号下的用户列表。"""
+        """查询账号下的身份列表。"""
         cursor = (
             self._collection()
             .find({"account_id": account_id})
@@ -109,7 +109,7 @@ class IdentityRepository:
     async def list_all(
         self, skip: int = 0, limit: int = 50
     ) -> list[IdentityInDB]:
-        """分页查询用户列表。"""
+        """分页查询身份列表。"""
         cursor = (
             self._collection()
             .find()
@@ -120,11 +120,11 @@ class IdentityRepository:
         return [IdentityInDB.from_mongo(doc) async for doc in cursor]
 
     async def count(self) -> int:
-        """统计用户总数。"""
+        """统计身份总数。"""
         return await self._collection().count_documents({})
 
     async def search(self, q: str, limit: int = 50) -> list[IdentityInDB]:
-        """按名称、昵称、平台ID或平台搜索用户。"""
+        """按名称、昵称、平台ID或平台搜索身份。"""
         regex = {"$regex": q, "$options": "i"}
         cursor = (
             self._collection()
@@ -135,13 +135,13 @@ class IdentityRepository:
         return [IdentityInDB.from_mongo(doc) async for doc in cursor]
 
     async def count_by_account(self, account_id: str) -> int:
-        """统计账号下用户数量。"""
+        """统计账号下身份数量。"""
         return await self._collection().count_documents({"account_id": account_id})
 
     async def set_blocked(
         self, identity_id: str, blocked: bool, reason: str = ""
     ) -> bool:
-        """设置用户禁用/启用状态。"""
+        """设置身份禁用/启用状态。"""
         result = await self._collection().update_one(
             {"id": identity_id},
             {"$set": {
@@ -152,7 +152,7 @@ class IdentityRepository:
         return result.modified_count > 0
 
     async def update_last_active(self, identity_id: str) -> bool:
-        """更新用户最后活跃时间为当前 UTC 时间。
+        """更新身份最后活跃时间为当前 UTC 时间。
 
         专用于在每轮对话处理完成后刷新 `last_active_at`，
         因 `UserUpdate` 模型不包含该字段，故走独立通道。
@@ -169,7 +169,7 @@ class IdentityRepository:
         platform_id: str,
         nickname: str = "",
     ) -> None:
-        """将真实平台 openid 绑定到管理员预创建的用户上。
+        """将真实平台 openid 绑定到管理员预创建的身份上。
 
         同时更新 last_active_at 和 nickname（如果提供）。
         """
@@ -187,9 +187,9 @@ class IdentityRepository:
     async def bind_bot_openid(
         self, identity_id: str, bot_id: str, platform_id: str
     ) -> bool:
-        """记录用户在指定 Bot（appid）下的 openid 映射。
+        """记录身份在指定 Bot（appid）下的 openid 映射。
 
-        QQ 的 openid 按 appid 生成，同一用户在不同 Bot 下并不相同；
+        QQ 的 openid 按 appid 生成，同一身份在不同 Bot 下并不相同；
         主动消息发送时需按 Bot 路由到对应 openid，否则会因目标无效被平台拒绝。
         采用 `$ne` 过滤实现幂等写入（值未变化时不产生写操作）。
 

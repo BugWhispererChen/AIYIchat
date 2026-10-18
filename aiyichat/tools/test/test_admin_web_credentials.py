@@ -1,4 +1,4 @@
-"""Admin 网页用户治理路由测试（mongomock + ASGI 内存客户端）。
+"""Admin 网页身份治理路由测试（mongomock + ASGI 内存客户端）。
 
 覆盖 `/admin/web-credentials` 列表、审核（通过/拒绝）、禁用/启用、重置密码、额度调整与能力配置保存。
 """
@@ -111,7 +111,7 @@ class TestWebCredentialsPage:
                     assert "待审核（1）" in resp.text
                     assert "pendingone" in resp.text
                     assert "203.0.113.9" in resp.text
-                    # 已拒绝/已禁用筛选下不出现该用户
+                    # 已拒绝/已禁用筛选下不出现该身份
                     resp = await client.get("/admin/web-credentials?status_filter=rejected")
                     assert "pendingone" not in resp.text
                     assert ident_id
@@ -238,7 +238,7 @@ class TestReviewActions:
         asyncio.run(flow())
 
     def test_disable_kicks_sessions(self) -> None:
-        """后台禁用后：会话清空、令牌立即失效、用户名不可重注。"""
+        """后台禁用后：会话清空、令牌立即失效、登录名不可重注。"""
 
         async def flow() -> None:
             app = await _seed_env()

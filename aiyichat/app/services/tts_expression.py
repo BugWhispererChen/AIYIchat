@@ -1,6 +1,6 @@
 """TTS 语音表现力映射模块。
 
-将对话链路的既有情绪信号（用户情绪检测结果、角色心情）转换为大模型
+将对话链路的既有情绪信号（对方情绪检测结果、角色心情）转换为大模型
 TTS 接口的表现力参数，使语音在情感、语气、语调、语速上趋近真人：
 - 自然语言指令（instruction）：动态控制语气/情感/语速，语速描述内嵌于指令文案
 - 情感标签（如 [empathetic]）：拼入合成文本头部，仅 qwen-audio-3.0 系列支持
@@ -27,7 +27,7 @@ _PITCH_TRIGGER_VALENCE = 0.3
 _PITCH_DOWN = 0.95
 _PITCH_UP = 1.05
 
-# 用户情绪 → 指令文案（回复是对用户情绪的回应，以安抚/共情语气优先；
+# 对方情绪 → 指令文案（回复是对对方情绪的回应，以安抚/共情语气优先；
 # 语速通过文案内的自然语言描述控制）
 _INSTRUCTION_BY_EMOTION: dict[str, str] = {
     "sad": "用温柔共情的语气轻声安慰，语速稍慢",
@@ -43,7 +43,7 @@ _INSTRUCTION_BY_EMOTION: dict[str, str] = {
     "shy": "用温柔鼓励的语气，语速放缓，带一点宠溺",
 }
 
-# 用户情绪 → 情感标签（作用于其后全部文本，仅 qwen-audio-3.0 系列支持）
+# 对方情绪 → 情感标签（作用于其后全部文本，仅 qwen-audio-3.0 系列支持）
 _EMOTION_TAG_BY_EMOTION: dict[str, str] = {
     "sad": "[empathetic]",
     "lonely": "[empathetic]",
@@ -92,12 +92,12 @@ def mood_rate_modifier(mood: CharacterMood | None) -> str:
 def build_tts_instruction(
     mood: CharacterMood | None, identity_emotion: str | None
 ) -> str:
-    """根据用户情绪与角色心情生成自然语言指令文案。
+    """根据对方情绪与角色心情生成自然语言指令文案。
 
-    优先级：用户情绪（回复是对用户情绪的回应）> 角色心情微调；
+    优先级：对方情绪（回复是对对方情绪的回应）> 角色心情微调；
     均无显著信号时返回空串（不传指令，走自然音色）。
     """
-    # 用户情绪优先：直接使用映射的安抚/共情语气文案（已含语速描述）
+    # 对方情绪优先：直接使用映射的安抚/共情语气文案（已含语速描述）
     if identity_emotion:
         instruction = _INSTRUCTION_BY_EMOTION.get(identity_emotion)
         if instruction:
@@ -119,7 +119,7 @@ def build_tts_instruction(
 def pick_emotion_tag(
     mood: CharacterMood | None, identity_emotion: str | None
 ) -> str:
-    """根据用户情绪选取文本头部情感标签（如 [empathetic]）。
+    """根据对方情绪选取文本头部情感标签（如 [empathetic]）。
 
     标签由模型族能力决定是否实际生效（见 tts_service）；无匹配返回空串。
     """

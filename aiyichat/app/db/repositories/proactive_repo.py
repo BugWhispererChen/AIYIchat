@@ -43,7 +43,7 @@ class ProactiveRecordRepository:
     async def find_latest_by_identity(
         self, identity_id: str, bot_id: str, limit: int = 10
     ) -> list[ProactiveRecordInDB]:
-        """查询某用户最近的主动消息记录。"""
+        """查询某身份最近的主动消息记录。"""
         cursor = (
             self._collection()
             .find({"identity_id": identity_id, "bot_id": bot_id})

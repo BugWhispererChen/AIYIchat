@@ -17,7 +17,7 @@ class ConversationRepository:
     async def find_active(
         self, identity_id: str, profile_id: str, service_id: str
     ) -> Optional[ConversationInDB]:
-        """按用户ID、角色ID和服务ID查询活跃对话。"""
+        """按身份ID、角色ID和服务ID查询活跃对话。"""
         doc = await self._collection().find_one({
             "identity_id": identity_id,
             "profile_id": profile_id,
@@ -68,7 +68,7 @@ class ConversationRepository:
     async def find_active_by_key(
         self, context_key: str
     ) -> Optional[ConversationInDB]:
-        """按归属 key 查询活跃对话（共享组场景不限定用户，跨服务复用同一会话）。"""
+        """按归属 key 查询活跃对话（共享组场景不限定身份，跨服务复用同一会话）。"""
         doc = await self._collection().find_one({
             "service_id": context_key,
             "status": "active",
@@ -80,7 +80,7 @@ class ConversationRepository:
     async def find_or_create_by_key(
         self, identity_id: str, profile_id: str, context_key: str
     ) -> ConversationInDB:
-        """按归属 key 查找活跃对话，不存在时以当前用户与角色创建。"""
+        """按归属 key 查找活跃对话，不存在时以当前身份与角色创建。"""
         conv = await self.find_active_by_key(context_key)
         if conv is not None:
             return conv
@@ -126,7 +126,7 @@ class ConversationRepository:
         )
 
     async def list_by_identity(self, identity_id: str) -> list[ConversationInDB]:
-        """按用户ID查询对话列表。"""
+        """按身份ID查询对话列表。"""
         cursor = self._collection().find(
             {"identity_id": identity_id}
         ).sort("last_message_at", -1)
@@ -158,7 +158,7 @@ class ConversationRepository:
         return result.deleted_count > 0
 
     async def search(self, q: str, limit: int = 50) -> list[ConversationInDB]:
-        """按标题、摘要或用户ID搜索对话。"""
+        """按标题、摘要或身份ID搜索对话。"""
         regex = {"$regex": q, "$options": "i"}
         cursor = (
             self._collection()

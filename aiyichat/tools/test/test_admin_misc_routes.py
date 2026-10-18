@@ -73,7 +73,7 @@ class TestAuthFlow:
                         "/admin/login",
                         data={"username": "admin", "password": "wrong"},
                     )
-                    assert resp.status_code == 200 and "用户名或密码错误" in resp.text
+                    assert resp.status_code == 200 and "登录名或密码错误" in resp.text
 
                     # 登录成功 → 303 + 会话 Cookie
                     resp = await client.post(
@@ -187,7 +187,7 @@ class TestPasswordChange:
                         "/admin/login",
                         data={"username": "admin", "password": "old-password-1"},
                     )
-                    assert resp.status_code == 200 and "用户名或密码错误" in resp.text
+                    assert resp.status_code == 200 and "登录名或密码错误" in resp.text
                     resp = await client.post(
                         "/admin/login",
                         data={"username": "admin", "password": "new-password-1"},
@@ -686,7 +686,7 @@ class TestPublicApi:
                     # 无过滤 → 空
                     resp = await client.get("/api/conversations")
                     assert resp.status_code == 200 and resp.json() == []
-                    # 按用户
+                    # 按身份
                     resp = await client.get(
                         "/api/conversations", params={"identity_id": "u-1"}
                     )
@@ -747,7 +747,7 @@ class TestProactiveApi:
                 scheduler._send_message = AsyncMock(return_value=True)
 
                 async with _client(app) as client:
-                    # 用户不存在 → 404
+                    # 身份不存在 → 404
                     resp = await client.post("/api/proactive/trigger", json={
                         "identity_id": "no-user", "bot_id": "b-1",
                     })

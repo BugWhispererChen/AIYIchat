@@ -14,7 +14,7 @@ class TestTopicStallDetection:
     """话题停滞检测。"""
 
     def test_stall_detected(self) -> None:
-        """连续多轮高度相似的用户输入判定为停滞。"""
+        """连续多轮高度相似的身份输入判定为停滞。"""
         tm = TopicManager()
         # 4 轮高度相似的输入（围绕同一话题，仅少量字差异）
         msgs = [

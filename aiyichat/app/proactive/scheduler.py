@@ -1,7 +1,7 @@
 """
 主动消息调度器。
 
-基于 asyncio 定时任务，周期性检查需要主动触达的用户，
+基于 asyncio 定时任务，周期性检查需要主动触达的对方，
 根据策略生成关怀消息并通过对应平台 adapter 发送。
 """
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # 检查间隔（秒）：每15分钟扫描一次（更精细的触发判定，配合免打扰时段）
 CHECK_INTERVAL_SECONDS = 900
 
-# 同 Bot 服务级冷却（秒）：同一 (用户, Bot) 一小时内只发一条主动消息，
+# 同 Bot 服务级冷却（秒）：同一 (对方, Bot) 一小时内只发一条主动消息，
 # 避免同 Bot 下多个服务在同轮扫描中秒级连发而撞上 QQ 召回区间上限；
 # 阶段策略最小间隔为 4h，冷却不会阻断正常的阶段推进
 SEND_COOLDOWN_SECONDS = 3600
@@ -38,7 +38,7 @@ SEND_COOLDOWN_SECONDS = 3600
 # 分享型"创作趣事"的主题类别池（随机抽取提升多样性；严禁涉及时事/新闻）
 _SHARE_TRIVIA_CATEGORIES = ("冷知识", "生活小发现", "有趣见闻", "脑洞想法")
 
-# 免打扰时段与用户时区改为运行时配置（settings.proactive_quiet_hour_* /
+# 免打扰时段与对方时区改为运行时配置（settings.proactive_quiet_hour_* /
 # default_timezone_offset），后台修改后热生效，无需重启；
 # 时区与对话时间感知共用单一配置源，避免两者静默分叉
 
@@ -47,7 +47,7 @@ class ProactiveScheduler:
     """
     主动消息调度器。
 
-    周期性扫描所有活跃服务的用户，根据 last_active_at 和已发送记录
+    周期性扫描所有活跃服务的对方，根据 last_active_at 和已发送记录
     判断是否需要发送主动消息，并调用对应平台 adapter 执行发送。
     """
 
@@ -130,7 +130,7 @@ class ProactiveScheduler:
 
     async def _scan_and_send(self) -> None:
         """
-        扫描所有活跃服务，检查每个用户是否需要主动消息。
+        扫描所有活跃服务，检查每个对方是否需要主动消息。
         """
         # 主动关怀总开关：关闭时直接跳过整轮扫描（异常时可一键停用）
         if not settings.proactive_enabled:
@@ -143,7 +143,7 @@ class ProactiveScheduler:
             return
 
         now = datetime.now(timezone.utc)
-        # 只关注30天内活跃过的用户（超过30天不再发送）
+        # 只关注30天内活跃过的对方（超过30天不再发送）
         cutoff = now - timedelta(days=30)
 
         logger.debug(
@@ -162,33 +162,33 @@ class ProactiveScheduler:
 
     async def _process_service(self, service, cutoff: datetime) -> None:
         """处理单个服务的主动消息逻辑。"""
-        # 获取用户信息
+        # 获取对方信息
         identity = await self._identity_repo.find_by_id(service.identity_id)
         if identity is None:
-            logger.debug("跳过：用户不存在 service_id=%s, user_id=%s", service.id, service.identity_id)
+            logger.debug("跳过：对方不存在 service_id=%s, identity_id=%s", service.id, service.identity_id)
             return
-        # 跳过被禁用的用户
+        # 跳过被禁用的对方
         if identity.is_blocked:
-            logger.debug("跳过被禁用用户: user_id=%s", identity.id)
+            logger.debug("跳过被禁用对方: identity_id=%s", identity.id)
             return
-        # 跳过没有绑定真实平台ID的用户（UUID格式 = 未绑定）
+        # 跳过没有绑定真实平台ID的对方（UUID格式 = 未绑定）
         if self._is_uuid(identity.platform_id):
-            logger.debug("跳过未绑定用户: user_id=%s", identity.id)
+            logger.debug("跳过未绑定对方: identity_id=%s", identity.id)
             return
 
         # 主动消息仅支持 QQ/微信平台（web 等无主动推送通道，ProactiveRecord 亦不接受）
         if identity.platform not in ("qq", "wechat"):
             logger.debug(
-                "跳过非推送平台用户: user_id=%s, platform=%s",
+                "跳过非推送平台对方: identity_id=%s, platform=%s",
                 identity.id, identity.platform,
             )
             return
 
-        # 发送目标按 Bot 路由：QQ openid 按 appid 生成，同一用户在不同 Bot 下不同，
+        # 发送目标按 Bot 路由：QQ openid 按 appid 生成，同一对方在不同 Bot 下不同，
         # 直接用 user.platform_id（随最近互动的 Bot 被覆盖）会导致其他 Bot 发送被平台拒绝
         target_id = self._resolve_platform_id(identity, service.bot_id)
 
-        # 同 Bot 服务级冷却：一小时内该 (用户, Bot) 已发过主动消息则本轮跳过，
+        # 同 Bot 服务级冷却：一小时内该 (对方, Bot) 已发过主动消息则本轮跳过，
         # 防止同 Bot 下多个服务秒级连发；不同 Bot 的服务互不影响，均可独立触达
         last_sent = await self._proactive_repo.get_latest_sent(
             identity_id=identity.id, bot_id=service.bot_id
@@ -200,7 +200,7 @@ class ProactiveScheduler:
             ).total_seconds()
             if since_sent < SEND_COOLDOWN_SECONDS:
                 logger.debug(
-                    "跳过：同 Bot 冷却期内 user_id=%s, bot_id=%s, elapsed=%.0fs",
+                    "跳过：同 Bot 冷却期内 identity_id=%s, bot_id=%s, elapsed=%.0fs",
                     identity.id, service.bot_id, since_sent,
                 )
                 return
@@ -218,30 +218,30 @@ class ProactiveScheduler:
                 return dt.replace(tzinfo=timezone.utc)
             return dt
 
-        # 计时基准：取用户维度和服务维度的最后活跃时间的较大值
-        # 防止「用户在另一个服务里刚刚活跃，本服务却被误判为长时间未活跃」的情况
+        # 计时基准：取对方维度和服务维度的最后活跃时间的较大值
+        # 防止「对方在另一个服务里刚刚活跃，本服务却被误判为长时间未活跃」的情况
         identity_last_active = _to_aware(identity.last_active_at)
         service_last_message = _to_aware(getattr(service, "last_message_at", None))
         last_active = max(identity_last_active, service_last_message)
 
-        # 跳过超过30天未活跃的用户
+        # 跳过超过30天未活跃的对方
         if last_active < cutoff:
             logger.debug(
-                "跳过超期用户: user_id=%s, last_active=%s, cutoff=%s",
+                "跳过超期对方: identity_id=%s, last_active=%s, cutoff=%s",
                 identity.id, last_active.isoformat(), cutoff.isoformat(),
             )
             return
-        # 跳过最近刚活跃的用户（至少1小时后才发第一条，匹配QQ召回消息当天周期）
+        # 跳过最近刚活跃的对方（至少1小时后才发第一条，匹配QQ召回消息当天周期）
         now = datetime.now(timezone.utc)
         if (now - last_active).total_seconds() < 1 * 3600:
             logger.debug(
-                "跳过刚活跃用户: user_id=%s, last_active=%s, elapsed=%.2fh",
+                "跳过刚活跃对方: identity_id=%s, last_active=%s, elapsed=%.2fh",
                 identity.id, last_active.isoformat(),
                 (now - last_active).total_seconds() / 3600,
             )
             return
 
-        # 查询该用户已尝试的阶段（成功发送 或 失败次数达上限）
+        # 查询该对方已尝试的阶段（成功发送 或 失败次数达上限）
         # 失败达上限即抑制后续重试，避免每轮扫描都重新调用 LLM 生成内容而耗尽额度
         attempted_stages = await self._proactive_repo.get_attempted_stages(
             identity_id=identity.id,
@@ -264,7 +264,7 @@ class ProactiveScheduler:
         )
         if stage is None:
             logger.debug(
-                "跳过：无待发送阶段 user_id=%s, attempted_stages=%s",
+                "跳过：无待发送阶段 identity_id=%s, attempted_stages=%s",
                 identity.id, attempted_stages,
             )
             return
@@ -275,7 +275,7 @@ class ProactiveScheduler:
         )
         if monthly_sent >= settings.proactive_monthly_limit:
             logger.info(
-                "跳过：已达每月主动消息上限 user_id=%s, sent=%d, limit=%d",
+                "跳过：已达每月主动消息上限 identity_id=%s, sent=%d, limit=%d",
                 identity.id, monthly_sent, settings.proactive_monthly_limit,
             )
             return
@@ -284,7 +284,7 @@ class ProactiveScheduler:
         # 通道不可用（QQ限流退避 / 微信无context_token）时直接跳过，不消耗额度
         if not self._can_send(identity.platform, service.bot_id, target_id):
             logger.info(
-                "跳过：发送通道不可用（预检未通过）user_id=%s, platform=%s, stage=%d",
+                "跳过：发送通道不可用（预检未通过）identity_id=%s, platform=%s, stage=%d",
                 identity.id, identity.platform, stage.stage,
             )
             return
@@ -329,7 +329,7 @@ class ProactiveScheduler:
             )
         if not content:
             logger.debug(
-                "跳过：消息内容生成为空 user_id=%s, stage=%d",
+                "跳过：消息内容生成为空 identity_id=%s, stage=%d",
                 identity.id, stage.stage,
             )
             await self._proactive_repo.mark_failed(record.id, "内容生成为空")
@@ -366,7 +366,7 @@ class ProactiveScheduler:
         """
         通过 LLM 生成主动消息内容。
 
-        使用对话引擎的 Prompt 组装能力，结合角色设定、用户上下文和情绪感知；
+        使用对话引擎的 Prompt 组装能力，结合角色设定、对方上下文和情绪感知；
         存在未跟进的待办事件时优先追问（"你上次说的 X 后来怎么样了"），
         提升陪伴真实感。
 
@@ -413,7 +413,7 @@ class ProactiveScheduler:
                 history, _ = await ctx_mgr.get_context(
                     conversation.id, conversation.summary
                 )
-                # 推断用户近期情绪趋势
+                # 推断对方近期情绪趋势
                 recent_emotion = await self._infer_recent_emotion(conversation.id)
 
             # 获取长期记忆
@@ -439,7 +439,7 @@ class ProactiveScheduler:
                 if pending:
                     referenced_event = pending[-1].content
 
-            # 根据用户情绪调整内容提示
+            # 根据对方情绪调整内容提示
             content_hint = stage.content_hint
             if recent_emotion and stage.emotion_hints:
                 content_hint = stage.emotion_hints.get(recent_emotion, stage.content_hint)
@@ -450,7 +450,7 @@ class ProactiveScheduler:
             )
             last_content = last_record.content if last_record else ""
 
-            # 获取用户本地时间与时间感知提示（用于生成与时间匹配的内容）
+            # 获取对方本地时间与时间感知提示（用于生成与时间匹配的内容）
             identity_now, time_context, time_hint = self._time_hint(service, identity)
 
             # 组装提示词：指示 LLM 生成主动关怀消息（注入时间感知）
@@ -875,9 +875,9 @@ class ProactiveScheduler:
 
     @staticmethod
     def _resolve_platform_id(identity, bot_id: str) -> str:
-        """解析用户在指定 Bot 下的发送目标 openid。
+        """解析对方在指定 Bot 下的发送目标 openid。
 
-        QQ 的 openid 按 appid 生成，同一用户在不同 Bot 下并不相同；
+        QQ 的 openid 按 appid 生成，同一对方在不同 Bot 下并不相同；
         优先取 bot_openids 中该 Bot 的映射，缺失时回退 user.platform_id
         （存量数据与单 Bot 场景兜底）。
         """
@@ -910,7 +910,7 @@ class ProactiveScheduler:
             checker = getattr(client, "can_send_proactive", None)
             if checker is None:
                 return True
-            # 群聊用户：platform_id 格式为 group_id::member_openid，
+            # 群聊对方：platform_id 格式为 group_id::member_openid，
             # 限流预检使用 member_openid 部分
             check_id = platform_id
             if "::" in platform_id:
@@ -921,7 +921,7 @@ class ProactiveScheduler:
             return True
 
     async def _infer_recent_emotion(self, conversation_id: str) -> str | None:
-        """从最近消息中推断用户情绪趋势。
+        """从最近消息中推断对方情绪趋势。
 
         Args:
             conversation_id: 对话ID
@@ -942,7 +942,7 @@ class ProactiveScheduler:
     ) -> bool:
         """通过QQ Bot发送互动召回消息。
 
-        群聊用户的 platform_id 格式为 group_id::member_openid，
+        群聊对方的 platform_id 格式为 group_id::member_openid，
         需要拆分后走群聊主动消息通道（非 is_wakeup）。
         """
         if self._qq_manager is None:
@@ -955,7 +955,7 @@ class ProactiveScheduler:
             self._last_send_detail = f"QQ Bot 客户端未找到（未连接或已下线）: {bot_id}"
             return False
 
-        # 群聊用户：platform_id 格式为 group_id::member_openid
+        # 群聊对方：platform_id 格式为 group_id::member_openid
         if "::" in user_openid:
             group_id, member_openid = user_openid.split("::", 1)
             ok = await client.send_proactive(
@@ -995,7 +995,7 @@ class ProactiveScheduler:
 
     @staticmethod
     def _is_uuid(value: str) -> bool:
-        """判断字符串是否为UUID格式（未绑定的预创建用户使用UUID作为platform_id）。"""
+        """判断字符串是否为UUID格式（未绑定的预创建对方使用UUID作为platform_id）。"""
         import re
         return bool(
             re.match(

@@ -70,14 +70,14 @@ chmod +x deploy.sh
 | `VISION_ENABLED` | 是否启用视觉理解 | `false`（模板设为 `true`） |
 | `TTS_ENABLED` | 是否启用语音合成 | `false`（模板设为 `true`） |
 | `IMAGEGEN_ENABLED` | 是否启用文生图 | `false`（模板设为 `true`） |
-| `VOICE_DYNAMIC_ENABLED` | 用户发语音后，窗口内文字消息也以语音回复 | `true` |
+| `VOICE_DYNAMIC_ENABLED` | 对方发语音后，窗口内文字消息也以语音回复 | `true` |
 | `VOICE_WINDOW_MIN_MINUTES` | 上述窗口时长下限（分钟） | `5` |
 | `VOICE_WINDOW_MAX_MINUTES` | 上述窗口时长上限（分钟） | `30` |
 | **对话配置** |||
 | `CONTEXT_WINDOW_SIZE` | 上下文窗口大小 | `20` |
 | `SUMMARY_TRIGGER_COUNT` | 摘要触发消息数 | `40` |
 | **管理后台** |||
-| `ADMIN_USERNAME` | 管理员用户名 | `admin` |
+| `ADMIN_USERNAME` | 管理员登录名 | `admin` |
 | `ADMIN_PASSWORD` | 管理员密码 | 空，**必填** |
 | `ADMIN_SESSION_HOURS` | 会话有效期（小时） | `24` |
 | **主动关怀分享** |||
@@ -87,7 +87,7 @@ chmod +x deploy.sh
 | **人际关系网络** |||
 | `MEMORY_GRAPH_ENABLED` | Kuzu 图数据库增强（未启用时降级 MongoDB 一跳查询） | `false` |
 | `MEMORY_GRAPH_PATH` | Kuzu 数据文件路径（需挂卷持久化） | `./data/entity_graph` |
-| **C 端网页用户**（默认全部关闭，QQ / 微信链路不受影响） |||
+| **C 端网页身份**（默认全部关闭，QQ / 微信链路不受影响） |||
 | `WEB_AUTH_ENABLED` | 网页登录总开关；关闭时 `/api/auth/*` 与 `/web/*` 一律 403 | `false` |
 | `WEB_REGISTER_ENABLED` | 开放自助注册（需先打开总开关） | `false` |
 | `WEB_REGISTER_REQUIRE_REVIEW` | 注册需管理员审核后才可登录 | `true` |
@@ -96,14 +96,14 @@ chmod +x deploy.sh
 | `WEB_DEFAULT_PROFILE_SLUG` | 新会话默认角色 slug（留空自动取任一在用公共角色） | 空 |
 | `WEB_FREE_QUOTA_TEMPLATE_ID` | 注册赠送额度模板 id（留空/不存在回落内置体验额度） | 空 |
 | `WEB_SESSION_HOURS` | 会话有效期（小时，滑动过期） | `24` |
-| `WEB_SESSION_MAX_CONCURRENT` | 同一用户并发有效会话上限（超出踢最旧） | `3` |
+| `WEB_SESSION_MAX_CONCURRENT` | 同一身份并发有效会话上限（超出踢最旧） | `3` |
 | `WEB_LOGIN_MAX_FAIL` / `WEB_LOGIN_LOCKOUT_MINUTES` | 连续登录失败上限 / 锁定时长（分钟） | `5` / `15` |
 | `WEB_RATE_LIMIT_REGISTER` / `WEB_RATE_LIMIT_LOGIN` | 单 IP 每 10 分钟请求上限（`0`=不限流） | `5` / `20` |
 
 > **限流与验证码为单实例内存实现**：容器重启即清空，多实例水平扩展时各实例独立计数会失效，
 > 需改为 Redis（`INCR` + `EXPIRE`，key 形如 `rate_limit:register:{ip}`）。
 > 反向代理必须以 `$remote_addr` **覆写** `X-Forwarded-For`（而非追加），否则客户端可自造头绕过限流。
-> 这些项同样支持在管理后台「网页用户」页热调；**一旦在后台保存过，数据库值会覆盖 `.env`**。
+> 这些项同样支持在管理后台「网页身份」页热调；**一旦在后台保存过，数据库值会覆盖 `.env`**。
 
 > 模型名称、接口地址、API Key 分组等 AI 模型配置**不在 `.env` 里维护**：首次启动时按
 > `DASHSCOPE_API_KEY` 自动生成 5 组默认配置（文本/文生图/语音生成/向量/图片修改），

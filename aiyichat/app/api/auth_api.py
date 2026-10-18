@@ -1,9 +1,9 @@
-"""C 端网页鉴权 API：验证码、注册、登录、注销、当前用户。
+"""C 端网页鉴权 API：验证码、注册、登录、注销、当前身份。
 
 安全边界：
 - 所有写操作先按 IP 滑动窗口限流，再校验一次性图形验证码；
 - 业务规则全部收敛在 `app/services/auth_service.py`，本层只做 HTTP ↔ 服务层转换；
-- `require_web_user` 是网页会话的唯一出口，`platform_id`/`bot_id` 一律由令牌反查，
+- `require_current_identity` 是网页会话的唯一出口，`platform_id`/`bot_id` 一律由令牌反查，
   绝不信任客户端入参。
 """
 
@@ -34,7 +34,7 @@ _XFF_HEADER = "x-forwarded-for"
 
 @dataclass
 class WebPrincipal:
-    """由会话令牌解析出的当前网页用户（后续接口只认这个对象）。"""
+    """由会话令牌解析出的当前网页身份（后续接口只认这个对象）。"""
 
     credential: WebCredentialInDB
     identity_id: str
@@ -61,7 +61,7 @@ def bearer_token(request: Request) -> str:
 
 
 async def require_current_identity(request: Request) -> WebPrincipal:
-    """网页会话依赖：令牌有效则返回当前用户，否则 401/403。
+    """网页会话依赖：令牌有效则返回当前身份，否则 401/403。
 
     Raises:
         AuthError: 总开关关闭、缺/错令牌、会话过期、身份被禁用或业务服务缺失
@@ -85,7 +85,7 @@ async def require_current_identity(request: Request) -> WebPrincipal:
 
 
 async def _resolve_service(identity: IdentityInDB) -> ServiceInDB:
-    """反查该网页用户的对话服务：优先配置的系统 Bot，回落其名下任一活跃服务。"""
+    """反查该网页身份的对话服务：优先配置的系统 Bot，回落其名下任一活跃服务。"""
     repo = ServiceRepository()
     bot_id = settings.web_bot_id.strip()
     if bot_id:
@@ -218,7 +218,7 @@ async def logout(request: Request) -> JSONResponse:
 
 @auth_router.get("/me")
 async def me(request: Request) -> JSONResponse:
-    """当前登录用户信息：网页聊天页据此渲染身份与额度余量。"""
+    """当前登录身份信息：网页聊天页据此渲染身份与额度余量。"""
     try:
         identity = await require_current_identity(request)
     except AuthError as exc:

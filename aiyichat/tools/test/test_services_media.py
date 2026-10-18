@@ -576,7 +576,7 @@ class TestTTSExpression:
     def test_instruction_by_identity_emotion(self) -> None:
         from app.services.tts_expression import build_tts_instruction
 
-        # 用户情绪优先，且语速描述内嵌文案（替代数值语速参数）
+        # 身份情绪优先，且语速描述内嵌文案（替代数值语速参数）
         assert "安慰" in build_tts_instruction(None, "sad")
         assert "语速" in build_tts_instruction(None, "sad")
         assert "笑意" in build_tts_instruction(None, "happy")

@@ -136,7 +136,7 @@ class TestAdminAuth:
             try:
                 assert await auth.verify_credentials("admin", "hashed-pw") is True
                 assert await auth.verify_credentials("admin", "nope") is False
-                # 用户名不匹配直接拒绝
+                # 登录名不匹配直接拒绝
                 assert await auth.verify_credentials("root", "hashed-pw") is False
                 # 哈希存储不会被迁移改写
                 assert settings.admin_password.startswith("pbkdf2$")

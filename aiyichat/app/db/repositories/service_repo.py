@@ -24,7 +24,7 @@ class ServiceRepository:
     async def find_by_identity_and_bot(
         self, identity_id: str, bot_id: str
     ) -> Optional[ServiceInDB]:
-        """根据用户 ID 和 Bot ID 查询激活的对话服务。"""
+        """根据身份 ID 和 Bot ID 查询激活的对话服务。"""
         doc = await self._collection().find_one(
             {"identity_id": identity_id, "bot_id": bot_id, "is_active": True}
         )
@@ -44,7 +44,7 @@ class ServiceRepository:
         return [ServiceInDB.from_mongo(doc) async for doc in cursor]
 
     async def list_by_identity(self, identity_id: str) -> list[ServiceInDB]:
-        """查询用户参与的所有对话服务。"""
+        """查询身份参与的所有对话服务。"""
         cursor = (
             self._collection()
             .find({"identity_id": identity_id})
@@ -95,7 +95,7 @@ class ServiceRepository:
         return result.deleted_count
 
     async def count_by_identity(self, identity_id: str) -> int:
-        """统计引用该用户的服务数量（用于删除/禁用前的引用检查）。"""
+        """统计引用该身份的服务数量（用于删除/禁用前的引用检查）。"""
         return await self._collection().count_documents({"identity_id": identity_id})
 
     async def count(self) -> int:
@@ -130,7 +130,7 @@ class ServiceRepository:
     async def find_disabled_by_identity_and_bot(
         self, identity_id: str, bot_id: str
     ) -> Optional[ServiceInDB]:
-        """查找被禁用的服务（按用户+Bot），用于引擎返回禁用提示。"""
+        """查找被禁用的服务（按身份+Bot），用于引擎返回禁用提示。"""
         doc = await self._collection().find_one(
             {"identity_id": identity_id, "bot_id": bot_id, "is_active": False}
         )

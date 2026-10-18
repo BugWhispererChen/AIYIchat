@@ -109,7 +109,7 @@
             border-radius: var(--radius);
             font-size: .92rem;
             line-height: 1.65;
-            /* 用户与模型输出的文本一律按纯文本呈现（含换行），不做 HTML/markdown 解析 */
+            /* 身份与模型输出的文本一律按纯文本呈现（含换行），不做 HTML/markdown 解析 */
             white-space: pre-wrap;
             overflow-wrap: anywhere;
             box-shadow: var(--shadow);
@@ -245,7 +245,7 @@
             return token ? { Authorization: 'Bearer ' + token } : {};
         }
 
-        /* 气泡一律走 textContent：模型输出与用户输入都不能被当作 HTML 解析 */
+        /* 气泡一律走 textContent：模型输出与身份输入都不能被当作 HTML 解析 */
         function addBubble(role, text, extraClass) {
             const div = document.createElement('div');
             div.className = 'bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-assistant')
@@ -283,7 +283,7 @@
             return data;
         }
 
-        /* 伙伴（对话服务）列表：只有一个时锁死选择器，多个时供用户切换角色 */
+        /* 伙伴（对话服务）列表：只有一个时锁死选择器，多个时供身份切换角色 */
         async function loadServices() {
             const resp = await fetch('/api/web/services', { headers: authHeader() });
             if (!resp.ok) {
@@ -420,7 +420,7 @@
             const token = localStorage.getItem(TOKEN_KEY);
             if (token) {
                 try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeader() }); }
-                catch (e) { /* 注销失败也要清本地令牌，否则用户会被过期令牌反复打回 */ }
+                catch (e) { /* 注销失败也要清本地令牌，否则身份会被过期令牌反复打回 */ }
             }
             localStorage.removeItem(TOKEN_KEY);
             toLogin();

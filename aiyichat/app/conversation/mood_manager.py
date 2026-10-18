@@ -1,7 +1,7 @@
 """角色心情管理模块。
 
 为角色引入有状态的情绪系统（效价-唤醒二维模型），使角色具备"自己的心情"：
-- 每轮对话后由 LLM 异步更新心情（考虑用户情绪、对话事件、角色性格）
+- 每轮对话后由 LLM 异步更新心情（考虑对方情绪、对话事件、角色性格）
 - 读取时按时间衰减向基线回归（模拟"睡一觉气消了"）
 - 渲染为 Prompt 指令注入对话，并联动 TTS 音调与图片情绪修饰（语速改由 TTS 指令文案控制）
 
@@ -190,8 +190,8 @@ class MoodManager:
             identity_msg = (
                 f"{prev_desc}\n"
                 f"{personality_desc}\n"
-                f"本轮用户情绪：{user_emotion_desc}\n"
-                f"用户说：{identity_text[:200]}"
+                f"本轮对方情绪：{user_emotion_desc}\n"
+                f"对方说：{identity_text[:200]}"
             )
 
             provider = get_llm_provider("emotion")

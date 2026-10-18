@@ -1,7 +1,7 @@
 """Admin 记忆管理路由。
 
 展示各对话服务的长期记忆（话题焦点、记忆事实、待跟进事件），
-支持删除单条事实与清空服务记忆，用于运营排查与用户隐私删除诉求。
+支持删除单条事实与清空服务记忆，用于运营排查与身份隐私删除诉求。
 只读 + 删除，不提供编辑（记忆由焦点提取链路自动维护）。
 另提供记忆注入观测与质量评估指标（命中率 / 有效率）。
 """
@@ -104,7 +104,7 @@ async def delete_fact(
     content: str = Form(...),
     _s: str = Depends(require_admin),
 ) -> RedirectResponse:
-    """删除指定内容的记忆事实（运营纠错 / 用户隐私删除诉求）。"""
+    """删除指定内容的记忆事实（运营纠错 / 身份隐私删除诉求）。"""
     await _memory_repo.delete_fact(service_id, content)
     logger.info("后台删除记忆事实: service=%s, content=%s", service_id, content[:30])
     return RedirectResponse(

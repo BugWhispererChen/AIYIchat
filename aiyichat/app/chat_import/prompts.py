@@ -91,8 +91,8 @@ MERGE_ANALYSIS_PROMPT = """你是一位虚拟角色设计专家。请根据以�
   }},
   "dialogue_strategy": {{
     "greeting": "基于分析的打招呼方式，设计角色的开场白",
-    "on_negative_emotion": "基于分析，设计角色在用户情绪低落时的应对策略",
-    "on_positive_emotion": "基于分析，设计角色在用户开心时的回应方式",
+    "on_negative_emotion": "基于分析，设计角色在对方情绪低落时的应对策略",
+    "on_positive_emotion": "基于分析，设计角色在对方开心时的回应方式",
     "on_silence": "基于分析，设计角色在对话沉默时的行为",
     "boundaries": ["设计3-5条角色的行为边界规则"],
     "safety_guardrails": "安全守则：保持友善、不涉及敏感话题、不提供专业医疗/法律建议"

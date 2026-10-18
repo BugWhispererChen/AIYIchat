@@ -11,7 +11,7 @@ EXE 安装包，由本机 tools/windows_service/ 工具链构建，不走本脚�
 
 环境变量：
     AIYICHAT_GIT_BARE_DIR  Git 仓库路径（裸仓库或工作仓库均可，`--from-git` 必填）
-    AIYICHAT_GIT_BRANCH    打包分支（默认 main）
+    AIYICHAT_GIT_BRANCH    打包分支（默认 developing）
 """
 
 import argparse
@@ -26,7 +26,7 @@ from pathlib import Path
 
 # Git 仓库（版本历史权威来源，`--from-git` 模式下打包内容必须与之一致）
 GIT_BARE_DIR = os.environ.get("AIYICHAT_GIT_BARE_DIR", "")
-GIT_BRANCH = os.environ.get("AIYICHAT_GIT_BRANCH", "main")
+GIT_BRANCH = os.environ.get("AIYICHAT_GIT_BRANCH", "developing")
 
 
 def run_command(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:

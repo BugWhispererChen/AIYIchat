@@ -28,7 +28,7 @@
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `AIYICHAT_GIT_BARE_DIR` | 需自行指向本地仓库/裸仓库路径 | Git 仓库路径 |
-| `AIYICHAT_GIT_BRANCH` | `main` | 打包分支 |
+| `AIYICHAT_GIT_BRANCH` | `developing` | 打包分支 |
 
 流程：
 

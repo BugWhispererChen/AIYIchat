@@ -148,6 +148,24 @@ class TestTemplateConsistency:
         ]
         assert not hits, f"模板仍读 users 上下文变量（已改名 identities）: {hits}"
 
+    def test_form_names_match_backend_keys(self) -> None:
+        """模板提交的 name 必须与后端读取的键一致。
+
+        这类错不会报错、ruff/mypy 查不出、没有断言该字段的测试也测不到，
+        症状是"用户填了但没保存"。本次改名中 account_detail.html 就漏改过
+        name="identity_description"（后端已读 self_description）。
+        """
+        stale = ["identity_description", 'name="user_id"', "profile.identity"]
+        hits: list[str] = []
+        for tpl in list(TEMPLATES.rglob("*.html")) + list(
+            (APP / "web" / "templates").rglob("*.html")
+        ):
+            text = tpl.read_text(encoding="utf-8")
+            for s in stale:
+                if s in text:
+                    hits.append(f"{tpl.name}: {s}")
+        assert not hits, "模板残留改名前的字段名:\n" + "\n".join(hits)
+
     def test_badge_role_user_class_kept(self) -> None:
         """badge-role-user 是后台通用蓝色徽标，与"用户"语义无关，保留不改。"""
         assert "badge-role-user" in (TEMPLATES / "web_credentials.html").read_text(

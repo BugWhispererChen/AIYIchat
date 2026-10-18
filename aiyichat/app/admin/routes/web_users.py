@@ -158,6 +158,8 @@ async def save_settings(
             "web_rate_limit_register", settings.web_rate_limit_register, 0, 1000
         ),
         "web_rate_limit_login": _int("web_rate_limit_login", settings.web_rate_limit_login, 0, 1000),
+        "web_max_profiles": _int("web_max_profiles", settings.web_max_profiles, 0, 100),
+        "web_max_services": _int("web_max_services", settings.web_max_services, 0, 100),
     }
     await AppSettingsRepository().upsert(updates)
     await settings.reload()

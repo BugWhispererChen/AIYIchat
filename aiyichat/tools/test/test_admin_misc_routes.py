@@ -474,11 +474,24 @@ class TestAdminProfiles:
                 profile = await repo.create(
                     PromptProfileCreate(slug="hero", name="主角")
                 )
+                await repo.create(
+                    PromptProfileCreate(
+                        slug="w-alice-1", name="阿禾自建", visibility="private", account_id="acc-1"
+                    )
+                )
                 async with _client(app) as client:
                     resp = await client.get("/admin/profiles")
                     assert resp.status_code == 200 and "主角" in resp.text
                     resp = await client.get("/admin/profiles", params={"q": "主角"})
                     assert resp.status_code == 200
+
+                    # 可见范围筛选：C 端自建角色的事后审核巡查入口
+                    priv = await client.get("/admin/profiles", params={"vis": "private"})
+                    assert priv.status_code == 200
+                    assert "阿禾自建" in priv.text and "主角" not in priv.text
+                    pub = await client.get("/admin/profiles", params={"vis": "public"})
+                    assert pub.status_code == 200
+                    assert "主角" in pub.text and "阿禾自建" not in pub.text
 
                     resp = await client.get("/admin/profiles/hero")
                     assert resp.status_code == 200
@@ -602,6 +615,20 @@ class TestPublicApi:
                     resp = await client.get("/api/health")
                     assert resp.status_code == 200
 
+                    # 角色全量接口已收归管理员：未登录不放行
+                    # （require_admin 在未配置密码时返回 503，故两种拒绝码都算通过）
+                    resp = await client.get("/api/profiles")
+                    assert resp.status_code in (401, 503)
+                    resp = await client.post(
+                        "/api/profiles", json={"slug": "x", "name": "x"}
+                    )
+                    assert resp.status_code in (401, 503)
+
+                app.dependency_overrides.clear()
+                from app.admin.auth import require_admin
+
+                app.dependency_overrides[require_admin] = lambda: "admin"
+                async with _client(app) as client:
                     # 列表 / 详情 / 创建 / 更新 / 删除
                     resp = await client.get("/api/profiles")
                     assert resp.status_code == 200 and len(resp.json()) == 1

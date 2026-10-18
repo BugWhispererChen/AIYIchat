@@ -6,6 +6,10 @@
     <td>
         {% if p.visibility == 'private' %}
         <span class="badge badge-role-assistant">私有</span>
+        {% if p.account_id and accounts is defined and accounts.get(p.account_id) %}
+        <div style="font-size:.72rem;color:var(--text-3);margin-top:.15rem;"
+             title="归属账号">{{ accounts[p.account_id].name }}</div>
+        {% endif %}
         {% else %}
         <span class="badge badge-role-user">公共</span>
         {% endif %}

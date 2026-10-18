@@ -264,6 +264,9 @@ class _RuntimeSettings:
     web_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
     web_rate_limit_register: int = 5  # 单 IP 注册请求频率上限（10 分钟滑动窗口）
     web_rate_limit_login: int = 20  # 单 IP 登录请求频率上限（10 分钟滑动窗口）
+    # C 端自助管理配额：每账号可自建的角色/服务数量上限（0 表示关闭该能力）
+    web_max_profiles: int = 5  # 私有角色数量上限
+    web_max_services: int = 3  # 对话服务数量上限
 
     def __init__(self) -> None:
         # 基础设施字段不可热重载，直接从 _bootstrap 同步
@@ -398,6 +401,7 @@ class _RuntimeSettings:
             "web_session_hours", "web_session_max_concurrent",
             "web_login_max_fail", "web_login_lockout_minutes",
             "web_rate_limit_register", "web_rate_limit_login",
+            "web_max_profiles", "web_max_services",
         }
 
 
@@ -542,6 +546,8 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         web_login_lockout_minutes: int = Field(default=15)
         web_rate_limit_register: int = Field(default=5)
         web_rate_limit_login: int = Field(default=20)
+        web_max_profiles: int = Field(default=5)
+        web_max_services: int = Field(default=3)
         # 忽略 .env 中未声明的键（如 DEPLOY_* 部署凭据），与 _BootstrapSettings 保持一致
         model_config = {
             "env_file": ".env",

@@ -138,6 +138,7 @@ class _FakeEngine:
         text: str,
         nickname: str = "",
         content_type: str = "text",
+        service_id: str = "",
     ) -> AsyncIterator[str]:
         _FakeEngine.calls.append(
             {
@@ -147,6 +148,7 @@ class _FakeEngine:
                 "text": text,
                 "nickname": nickname,
                 "content_type": content_type,
+                "service_id": service_id,
             }
         )
         yield f"echo|{platform}|{platform_id}|{self.bot_id}"

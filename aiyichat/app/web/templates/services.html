@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的伙伴 - 爱易聊</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    {% include "partials/_design_tokens.html" %}
+    {% set active_page = "services" %}
+    {% include "partials/_web_shell.html" %}
+</head>
+<body>
+    {% include "partials/_web_topbar.html" %}
+
+    <div class="page">
+        <h1>我的伙伴</h1>
+        <p class="lede">一个"伙伴"就是你在对话页可以选择的一个角色。想同时拥有多个聊天对象，就在这里各建一个。</p>
+
+        <div id="banner" class="notice" hidden></div>
+
+        <section class="card">
+            <h2>我的伙伴列表</h2>
+            <div class="meta" id="quota-line" style="margin-bottom:.5rem"></div>
+            <div class="actions" style="margin-top:0">
+                <button type="button" id="new-btn">+ 新建伙伴</button>
+            </div>
+            <div id="service-list"><div class="empty">正在读取伙伴列表…</div></div>
+        </section>
+
+        <section class="card" id="editor-card" hidden>
+            <h2 id="editor-title">新建伙伴</h2>
+            <div class="grid">
+                <div>
+                    <label for="f-name">伙伴名称</label>
+                    <input id="f-name" maxlength="60" placeholder="留空自动按角色命名">
+                </div>
+                <div>
+                    <label for="f-profile">扮演的角色 *</label>
+                    <select id="f-profile"></select>
+                </div>
+                <div>
+                    <label for="f-tz">时区（选填）</label>
+                    <input id="f-tz" placeholder="例如 Asia/Shanghai">
+                    <div class="hint">影响主动问候与作息判断，留空用系统默认。</div>
+                </div>
+            </div>
+            <div class="actions">
+                <button type="button" id="save-btn">保存</button>
+                <button type="button" class="btn-ghost" id="cancel-btn">取消</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>使用说明</h2>
+            <p class="hint" style="margin-top:0">
+                新建或修改后，回到「对话」页顶部的角色下拉框选择要聊的伙伴即可；每个伙伴各自保留自己的对话与记忆。<br>
+                至少需要保留一个启用中的伙伴，否则无法继续聊天。
+            </p>
+        </section>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        const listEl = document.getElementById('service-list');
+        const quotaEl = document.getElementById('quota-line');
+        const bannerEl = document.getElementById('banner');
+        const editorEl = document.getElementById('editor-card');
+        const titleEl = document.getElementById('editor-title');
+        const saveBtn = document.getElementById('save-btn');
+        const nameEl = document.getElementById('f-name');
+        const profileEl = document.getElementById('f-profile');
+        const tzEl = document.getElementById('f-tz');
+
+        let services = [];
+        let profiles = [];
+        let editingId = null;
+
+        function show(kind, text) {
+            bannerEl.hidden = false;
+            bannerEl.className = 'notice' + (kind === 'err' ? ' notice-err' : kind === 'ok' ? ' notice-ok' : '');
+            bannerEl.textContent = text;
+        }
+
+        function mkBtn(text, handler) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn-ghost';
+            b.textContent = text;
+            b.addEventListener('click', handler);
+            return b;
+        }
+
+        /* 下拉可选项：启用中的角色才能作为伙伴（含公共与自建） */
+        function fillProfileSelect(selectedId) {
+            profileEl.textContent = '';
+            const usable = profiles.filter(function (p) { return p.is_active; });
+            usable.forEach(function (p) {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name + (p.owned ? '（自建）' : '（公共）');
+                profileEl.appendChild(opt);
+            });
+            if (!usable.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '暂无可用角色，请先到「我的角色」创建';
+                profileEl.appendChild(opt);
+                return;
+            }
+            if (selectedId) {
+                profileEl.value = selectedId;
+                // 角色已停用或不可见时 select 无该项：回到第一项并提示
+                if (profileEl.selectedIndex === -1) profileEl.selectedIndex = 0;
+            }
+        }
+
+        function renderList() {
+            listEl.textContent = '';
+            if (!services.length) {
+                const e = document.createElement('div');
+                e.className = 'empty';
+                e.textContent = '还没有伙伴。新建一个即可开始与指定角色对话。';
+                listEl.appendChild(e);
+                return;
+            }
+            services.forEach(function (sv) {
+                const row = document.createElement('div');
+                row.className = 'item';
+
+                const grow = document.createElement('div');
+                grow.className = 'grow';
+                const t = document.createElement('div');
+                t.className = 'title';
+                t.textContent = sv.name;
+                const m = document.createElement('div');
+                m.className = 'meta';
+                m.textContent = '扮演：' + sv.profile_name + (sv.timezone ? ' · ' + sv.timezone : '');
+                grow.appendChild(t);
+                grow.appendChild(m);
+                row.appendChild(grow);
+
+                if (sv.current) {
+                    const cur = document.createElement('span');
+                    cur.className = 'tag tag-own';
+                    cur.textContent = '当前对话';
+                    row.appendChild(cur);
+                }
+                const tag = document.createElement('span');
+                tag.className = 'tag ' + (sv.is_active ? 'tag-on' : 'tag-off');
+                tag.textContent = sv.is_active ? '启用中' : '已停用';
+                row.appendChild(tag);
+
+                const acts = document.createElement('div');
+                acts.className = 'row-actions';
+                acts.appendChild(mkBtn('编辑', function () { openEditor(sv); }));
+                acts.appendChild(mkBtn(sv.is_active ? '停用' : '启用', function () { toggle(sv); }));
+                acts.appendChild(mkBtn('删除', function () { remove(sv); }));
+                row.appendChild(acts);
+
+                listEl.appendChild(row);
+            });
+        }
+
+        function renderQuota(data) {
+            const q = data.quota || {};
+            quotaEl.textContent = data.can_create
+                ? '伙伴数量 ' + (q.used || 0) + ' / ' + (q.limit || 0)
+                : '管理员未开放新建伙伴，可编辑现有的角色与时区';
+            document.getElementById('new-btn').hidden = !data.can_create;
+        }
+
+        async function load() {
+            const [svc, prof] = await Promise.all([
+                WebAuth.call('/api/web/services'),
+                WebAuth.call('/api/web/profiles')
+            ]);
+            if (!svc.ok) { show('err', svc.detail || '伙伴列表读取失败'); return; }
+            services = svc.data.items || [];
+            renderQuota(svc.data);
+            profiles = prof.ok ? (prof.data.items || []) : [];
+            renderList();
+        }
+
+        function openEditor(sv) {
+            editingId = sv ? sv.id : null;
+            fillProfileSelect(sv ? sv.profile_id : '');
+            nameEl.value = sv ? sv.name : '';
+            tzEl.value = sv ? (sv.timezone || '') : '';
+            titleEl.textContent = sv ? '编辑伙伴：' + sv.name : '新建伙伴';
+            editorEl.hidden = false;
+            editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (!profiles.length) show('还没有可用角色，请先到「我的角色」创建或启用一个。');
+        }
+
+        async function save() {
+            if (!editingId && !profileEl.value) { show('err', '请选择要扮演的角色'); return; }
+            const body = { name: nameEl.value.trim(), timezone: tzEl.value.trim() };
+            if (profileEl.value) body.profile_id = profileEl.value;
+
+            let r;
+            if (editingId) {
+                r = await WebAuth.call('/api/web/services/' + encodeURIComponent(editingId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } else {
+                r = await WebAuth.call('/api/web/services', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
+            if (!r.ok) { show('err', r.detail || '保存失败'); return; }
+            show('ok', '已保存。回到「对话」页选择这个伙伴即可开聊。');
+            closeEditor();
+            await load();
+        }
+
+        async function toggle(sv) {
+            const r = await WebAuth.call('/api/web/services/' + encodeURIComponent(sv.id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: !sv.is_active })
+            });
+            if (!r.ok) { show('err', r.detail || '操作失败'); return; }
+            await load();
+        }
+
+        async function remove(sv) {
+            if (!window.confirm('确定删除伙伴「' + sv.name + '」？其对话历史仍会保留在账号里。')) return;
+            const r = await WebAuth.call('/api/web/services/' + encodeURIComponent(sv.id), { method: 'DELETE' });
+            if (!r.ok) { show('err', r.detail || '删除失败'); return; }
+            show('ok', '伙伴已删除。');
+            await load();
+        }
+
+        function closeEditor() {
+            editorEl.hidden = true;
+            editingId = null;
+        }
+
+        document.getElementById('cancel-btn').addEventListener('click', closeEditor);
+        saveBtn.addEventListener('click', save);
+        document.getElementById('new-btn').addEventListener('click', function () { openEditor(null); });
+        load().catch(function () { show('err', '伙伴列表读取失败，请稍后重试'); });
+    })();
+    </script>
+</body>
+</html>

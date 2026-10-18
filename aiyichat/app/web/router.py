@@ -101,6 +101,22 @@ async def chat_page(request: Request) -> Response:
     return _render(request, "chat.html")
 
 
+@web_router.get("/web/profiles", response_class=HTMLResponse)
+async def profiles_page(request: Request) -> Response:
+    """角色自助管理页：列表与编辑表单都在前端直连 `/api/web/profiles` 完成。"""
+    if not settings.web_auth_enabled:
+        return _disabled_page()
+    return _render(request, "profiles.html")
+
+
+@web_router.get("/web/services", response_class=HTMLResponse)
+async def services_page(request: Request) -> Response:
+    """伙伴（对话服务）自助管理页：把角色装配成可选的对话对象。"""
+    if not settings.web_auth_enabled:
+        return _disabled_page()
+    return _render(request, "services.html")
+
+
 @web_router.get("/", include_in_schema=False)
 async def index() -> Response:
     """根路径入口：开启网页功能时引导到登录页，关闭时维持原有 404。"""

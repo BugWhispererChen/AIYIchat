@@ -120,6 +120,15 @@ class ProfileRepository:
         )
         return result.modified_count > 0
 
+    async def hard_delete(self, slug: str) -> bool:
+        """物理删除角色。
+
+        与 delete 的软删除（仅置 is_active=False）不同：用户自助清理自建私有角色时
+        需要真正释放文档与配额名额，调用方必须先校验归属与服务引用。
+        """
+        result = await self._collection().delete_one({"slug": slug})
+        return result.deleted_count > 0
+
     async def search(self, q: str, limit: int = 50) -> list[PromptProfileInDB]:
         """按名称、slug 或分类搜索角色（排除草稿）。"""
         regex = {"$regex": q, "$options": "i"}

@@ -301,8 +301,10 @@ class ConversationEngine:
             )
 
         # 3. 确定当前角色 Profile（校验可见性）
+        # 归属基准取服务所属账号而非 Bot 所属账号：C 端网页用户各自独立账号、
+        # 共用同一系统 Bot，按 bot.account_id 判定会让用户自建私有角色永远不可见。
         profile = await self._resolve_profile(
-            service.profile_id, bot.account_id
+            service.profile_id, service.account_id
         )
         if profile is None:
             return EngineResult(text=self._no_profile_message())
@@ -682,12 +684,16 @@ class ConversationEngine:
         text: str,
         nickname: str = "",
         content_type: str = "text",
+        service_id: str = "",
     ):
         """流式处理用户消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
 
         与 handle_message 共享上下文/记忆/策略组装逻辑，通过 stream_complete
         逐 token 产出；为独立实现，不影响 QQ/微信整段回复主链路。
         流式产出原始增量；完成后持久化清洗后的文本并触发异步记忆任务。
+
+        `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页用户可对多个角色
+        各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (用户, Bot) 查找。
         """
         # 用户消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
@@ -701,11 +707,24 @@ class ConversationEngine:
         if user is None or user.is_blocked:
             yield self._no_service_message()
             return
-        service = await self.service_repo.find_by_user_and_bot(user.id, self.bot_id)
+        service = None
+        if service_id:
+            candidate = await self.service_repo.find_by_id(service_id)
+            # 只接受归属本人的服务：越权指定他人服务时静默回落，不泄露存在性
+            if (
+                candidate is not None
+                and candidate.user_id == user.id
+                and candidate.bot_id == self.bot_id
+            ):
+                service = candidate
+        if service is None:
+            service = await self.service_repo.find_by_user_and_bot(user.id, self.bot_id)
         if service is None:
             yield self._no_service_message()
             return
-        profile = await self._resolve_profile(service.profile_id, bot.account_id)
+        profile = await self._resolve_profile(
+            service.profile_id, service.account_id
+        )
         if profile is None:
             yield self._no_profile_message()
             return
@@ -954,8 +973,8 @@ class ConversationEngine:
         if profile is None or not profile.is_active:
             return None
 
-        # 校验角色对该账号是否可见
-        if profile.visibility == "private" and profile.account_id != bot.account_id:
+        # 校验角色对该账号是否可见（基准同 _resolve_profile：服务所属账号）
+        if profile.visibility == "private" and profile.account_id != service.account_id:
             return None
 
         await self.service_repo.update(

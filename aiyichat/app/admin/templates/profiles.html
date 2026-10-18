@@ -16,8 +16,13 @@
     <div class="search-bar">
         <form method="get" action="/admin/profiles" style="display:flex;gap:0.5rem;flex:1;">
             <input type="search" name="q" value="{{ request.query_params.get('q', '') }}" placeholder="搜索角色名称、来源或分类...">
+            <select name="vis" style="width:auto;margin:0;" title="按可见范围筛选">
+                <option value="">全部可见范围</option>
+                <option value="private" {% if vis == 'private' %}selected{% endif %}>仅私有（含用户自建）</option>
+                <option value="public" {% if vis == 'public' %}selected{% endif %}>仅公共</option>
+            </select>
             <button type="submit">搜索</button>
-            {% if request.query_params.get('q') %}
+            {% if request.query_params.get('q') or vis %}
             <a href="/admin/profiles" role="button" class="ghost">重置</a>
             {% endif %}
         </form>

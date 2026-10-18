@@ -37,12 +37,22 @@ REF_PORTRAIT_PROMPT = (
 async def profiles_list(
     request: Request,
     q: str = "",
+    vis: str = "",
     _s: str = Depends(require_admin),
 ) -> HTMLResponse:
-    """展示所有角色列表，支持搜索。"""
+    """展示所有角色列表，支持搜索与可见范围筛选。
+
+    `vis=private` 用于巡查网页用户自建的角色：自助创建走内容安全前置校验，
+    后台按此筛选做事后复核与禁用，是 C 端开放自建能力的合规兜底入口。
+    """
     profiles = await _profile_repo.search(q, limit=100) if q.strip() else await _profile_repo.list_all()
+    if vis in ("private", "public"):
+        profiles = [p for p in profiles if (p.visibility or "public") == vis]
     accounts = {a.id: a for a in await _account_repo.list_all()}
-    return _render(request, "profiles.html", {"profiles": profiles, "accounts": accounts, "q": q})
+    return _render(
+        request, "profiles.html",
+        {"profiles": profiles, "accounts": accounts, "q": q, "vis": vis},
+    )
 
 
 @profiles_router.get("/profiles/{slug}", response_class=HTMLResponse)
@@ -76,7 +86,9 @@ async def profile_toggle(
         updated = await _profile_service.toggle_active(profile, disable_reason)
     except ProfileInUseError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return _render(request, "partials/profile_row.html", {"p": updated})
+    # 行内 partial 会展示私有角色的归属账号，局部更新时同样需要账号表
+    accounts = {a.id: a for a in await _account_repo.list_all()}
+    return _render(request, "partials/profile_row.html", {"p": updated, "accounts": accounts})
 
 
 @profiles_router.post("/profiles/{slug}/edit", response_class=HTMLResponse)

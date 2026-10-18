@@ -1,0 +1,196 @@
+{#
+  C 端管理页共用外壳：主题首帧恢复 + 顶栏导航 + 与后端约定的鉴权请求封装。
+  使用方式：页面在 <head> 里 include 本文件，并在 include 前 {% set active_page = "..." %}；
+  在 <body> 起始处 include "partials/_web_topbar.html"。
+  令牌键与登录页/聊天页保持一致（aiyichat_web_token），改动需同步 login.html、chat.html。
+#}
+<style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--pico-font-family);
+        overflow-x: hidden;   /* 375px 视口下任何元素都不得撑出横向滚动 */
+    }
+    .web-topbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .4rem .6rem;
+        padding: .6rem .85rem;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    .web-topbar .brand { font-weight: 700; font-size: .95rem; color: var(--text); white-space: nowrap; }
+    .web-topbar nav { display: flex; gap: .3rem; flex-wrap: wrap; }
+    .web-topbar nav a {
+        font-size: .8rem;
+        padding: .3rem .6rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-strong);
+        color: var(--text-2);
+        text-decoration: none;
+        background: var(--surface);
+    }
+    .web-topbar nav a[aria-current="page"] {
+        background: var(--primary-soft);
+        color: var(--text);
+        border-color: var(--primary);
+    }
+    .web-topbar .spacer { margin-left: auto; }
+    .icon-btn {
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--text-2);
+        border-radius: var(--radius-sm);
+        padding: .3rem .6rem;
+        font-size: .78rem;
+        cursor: pointer;
+        margin: 0;
+        line-height: 1.4;
+        width: auto;
+    }
+    .theme-btn:hover { background: var(--surface-2); color: var(--text); }
+    #logout-btn:hover { background: var(--danger-bg); color: var(--danger-text); }
+    .theme-btn svg { width: 16px; height: 16px; display: block; }
+    .theme-btn .icon-sun { display: none; }
+    [data-theme="dark"] .theme-btn .icon-sun { display: block; }
+    [data-theme="dark"] .theme-btn .icon-moon { display: none; }
+
+    .page { max-width: 980px; margin: 0 auto; padding: 1rem .85rem 3rem; }
+    .page > h1 { font-size: 1.15rem; margin: .2rem 0 .3rem; }
+    .page > .lede { font-size: .82rem; color: var(--text-2); margin: 0 0 1rem; }
+    .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .card h2 { font-size: .98rem; margin: 0 0 .6rem; }
+    .card .hint { font-size: .78rem; color: var(--text-3); margin: .5rem 0 0; }
+    .item {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .45rem .6rem;
+        padding: .6rem 0;
+        border-top: 1px solid var(--border);
+    }
+    .item:first-of-type { border-top: none; }
+    .item .title { font-size: .9rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    .item .meta { font-size: .76rem; color: var(--text-2); overflow-wrap: anywhere; }
+    .item .grow { flex: 1; min-width: 8rem; }
+    .tag {
+        font-size: .7rem;
+        padding: .1rem .4rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        color: var(--text-2);
+        white-space: nowrap;
+    }
+    .tag-on { background: var(--success-bg); color: var(--success-text); border-color: var(--success); }
+    .tag-off { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger); }
+    .tag-own { background: var(--primary-soft); color: var(--text); border-color: var(--primary); }
+    .row-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .row-actions button, .row-actions a {
+        width: auto; margin: 0; padding: .25rem .55rem; font-size: .76rem;
+        border-radius: var(--radius-sm);
+    }
+    .empty { font-size: .82rem; color: var(--text-3); padding: .5rem 0; }
+    label { font-size: .8rem; color: var(--text-2); }
+    input, textarea, select { font-size: .88rem; }
+    textarea { resize: vertical; min-height: 4.5rem; }
+    .grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+    .notice {
+        font-size: .82rem;
+        padding: .55rem .7rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
+        color: var(--text-2);
+        margin-bottom: .8rem;
+        overflow-wrap: anywhere;
+    }
+    .notice-err { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger); }
+    .notice-ok { background: var(--success-bg); color: var(--success-text); border-color: var(--success); }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .8rem; }
+    .actions button { width: auto; margin: 0; padding: .45rem .9rem; font-size: .85rem; }
+    .btn-ghost { background: var(--surface) !important; color: var(--text-2) !important; border: 1px solid var(--border-strong) !important; }
+    details.sub { border-top: 1px solid var(--border); padding-top: .5rem; margin-top: .5rem; }
+    details.sub summary { font-size: .8rem; color: var(--text-2); cursor: pointer; }
+</style>
+<script>
+    /* 主题首帧恢复：与聊天页同一机制与存储键，避免管理页与聊天页配色分裂 */
+    (function () {
+        try {
+            var t = localStorage.getItem('aiyichat_web_theme');
+            if (t !== 'dark' && t !== 'light') {
+                t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) { /* 隐私模式下 localStorage 不可用，保持默认浅色 */ }
+    })();
+
+    window.toggleTheme = function () {
+        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('aiyichat_web_theme', next); } catch (e) {}
+    };
+
+    /* 网页端 API 约定封装：令牌缺失/过期一律回登录页 */
+    window.WebAuth = (function () {
+        const TOKEN_KEY = 'aiyichat_web_token';
+
+        function authHeader(extra) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            return Object.assign(
+                token ? { Authorization: 'Bearer ' + token } : {},
+                extra || {}
+            );
+        }
+
+        function toLogin() {
+            window.location.replace('/web/login');
+        }
+
+        /* 统一取回 {status, ok, data, detail}：非 2xx 时 detail 用后端中文提示 */
+        async function call(path, options) {
+            const opts = Object.assign({}, options || {});
+            opts.headers = authHeader(opts.headers);
+            let resp;
+            try {
+                resp = await fetch(path, opts);
+            } catch (e) {
+                return { status: 0, ok: false, data: null, detail: '网络异常，请稍后重试' };
+            }
+            if (resp.status === 401) { toLogin(); return { status: 401, ok: false, data: null, detail: '登录已过期' }; }
+            const data = await resp.json().catch(() => ({}));
+            return { status: resp.status, ok: resp.ok, data: data, detail: data.detail || '' };
+        }
+
+        async function logout() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (token) {
+                try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeader() }); }
+                catch (e) { /* 注销失败也要清本地令牌，否则用户会被过期令牌反复打回 */ }
+            }
+            localStorage.removeItem(TOKEN_KEY);
+            toLogin();
+        }
+
+        return { call: call, logout: logout, toLogin: toLogin, TOKEN_KEY: TOKEN_KEY };
+    })();
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var btn = document.getElementById('logout-btn');
+        if (btn) btn.addEventListener('click', function (e) { e.preventDefault(); WebAuth.logout(); });
+    });
+</script>

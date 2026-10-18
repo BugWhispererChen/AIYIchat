@@ -75,6 +75,8 @@
             <label>锁定时长（分钟）<input type="number" name="web_login_lockout_minutes" min="1" max="1440" value="{{ cfg.web_login_lockout_minutes }}"></label>
             <label>注册限流（10 分钟/IP）<input type="number" name="web_rate_limit_register" min="0" max="1000" value="{{ cfg.web_rate_limit_register }}"></label>
             <label>登录限流（10 分钟/IP）<input type="number" name="web_rate_limit_login" min="0" max="1000" value="{{ cfg.web_rate_limit_login }}"></label>
+            <label>自助角色上限（0=关闭）<input type="number" name="web_max_profiles" min="0" max="100" value="{{ cfg.web_max_profiles }}"></label>
+            <label>自助伙伴上限（0=关闭）<input type="number" name="web_max_services" min="0" max="100" value="{{ cfg.web_max_services }}"></label>
         </div>
         <button type="submit" style="margin-top:.75rem;">保存配置</button>
     </form>

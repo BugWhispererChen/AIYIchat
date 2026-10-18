@@ -26,6 +26,7 @@ class StreamChatRequest(BaseModel):
 
     开启 `web_auth_enabled` 后 `platform`/`platform_id`/`bot_id` 全部由会话令牌反查，
     此处字段仅为开关关闭时的旧客户端保留；网页端传空串即可。
+    `service_id` 用于在同一 Bot 的多个服务间指定当前角色（网页端角色切换）。
     """
 
     bot_id: str = ""
@@ -33,6 +34,7 @@ class StreamChatRequest(BaseModel):
     platform_id: str = ""
     text: str
     nickname: str = ""
+    service_id: str = ""
 
 
 async def _require_web_user_or_401(request: Request) -> WebUser:
@@ -144,9 +146,24 @@ async def chat_stream(req: StreamChatRequest, request: Request):
         bot_id = web_user.bot_id
         platform, platform_id = "web", web_user.username
         nickname = req.nickname or web_user.username
+        # 指定服务时校验归属：只能对话自己名下的服务（多角色切换的越权面）
+        service_id = req.service_id.strip()
+        if service_id:
+            svc = await _service_repo.find_by_id(service_id)
+            if svc is None or svc.user_id != web_user.user_id:
+                logger.warning(
+                    "越权尝试：登录身份 %s 试图使用他人服务 service_id=%s",
+                    web_user.username,
+                    service_id,
+                )
+                raise HTTPException(status_code=403, detail="无权使用该服务")
+            service_id = svc.id
+        else:
+            service_id = ""
     else:
         bot_id = req.bot_id
         platform, platform_id, nickname = req.platform, req.platform_id, req.nickname
+        service_id = ""
     if not bot_id or not platform_id:
         raise HTTPException(status_code=400, detail="缺少 bot_id 或 platform_id")
 
@@ -159,6 +176,7 @@ async def chat_stream(req: StreamChatRequest, request: Request):
                 platform_id=platform_id,
                 text=req.text,
                 nickname=nickname,
+                service_id=service_id,
             ):
                 # SSE 数据帧：对换行做转义避免破坏协议，客户端反转义
                 safe = chunk.replace("\r", "").replace("\n", "\\n")

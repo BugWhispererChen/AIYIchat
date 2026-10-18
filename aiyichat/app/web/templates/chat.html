@@ -65,6 +65,35 @@
         [data-theme="dark"] .theme-btn .icon-sun { display: block; }
         [data-theme="dark"] .theme-btn .icon-moon { display: none; }
 
+        /* 顶栏第二行：伙伴选择 + 自助管理入口（375px 下与首行一起换行） */
+        .chat-subbar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: .4rem .6rem;
+            padding: .45rem .85rem;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+            font-size: .78rem;
+            color: var(--text-2);
+        }
+        .chat-subbar label { font-size: .78rem; margin: 0; white-space: nowrap; }
+        .chat-subbar select {
+            margin: 0;
+            padding: .25rem .5rem;
+            font-size: .8rem;
+            width: auto;
+            max-width: 12rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-strong);
+            background: var(--surface);
+            color: var(--text);
+        }
+        .chat-subbar .links { display: flex; gap: .5rem; margin-left: auto; flex-wrap: wrap; }
+        .chat-subbar .links a { color: var(--text-2); text-decoration: none; white-space: nowrap; }
+        .chat-subbar .links a:hover { color: var(--text); text-decoration: underline; }
+
         #transcript {
             flex: 1;
             overflow-y: auto;
@@ -162,6 +191,16 @@
         <button class="icon-btn" id="logout-btn">退出登录</button>
     </div>
 
+    <!-- 伙伴（对话服务）选择与管理入口：一个伙伴=一个可对话的角色 -->
+    <div class="chat-subbar">
+        <label for="service-select">正在对话</label>
+        <select id="service-select" disabled></select>
+        <span class="links">
+            <a href="/web/profiles">我的角色</a>
+            <a href="/web/services">我的伙伴</a>
+        </span>
+    </div>
+
     <!-- 对话记录容器：最简形态，不做到场列表/历史分页 -->
     <div id="transcript" aria-live="polite">
         <div class="system-note" id="loading-note">正在建立会话…</div>
@@ -185,6 +224,8 @@
 
         // 与登录页约定的令牌键：改动需同步 login.html
         const TOKEN_KEY = 'aiyichat_web_token';
+        // 记住本次会话选择的伙伴：换页/刷新后仍是同一个角色
+        const SERVICE_KEY = 'aiyichat_web_service';
 
         const transcript = document.getElementById('transcript');
         const input = document.getElementById('chat-input');
@@ -192,6 +233,7 @@
         const logoutBtn = document.getElementById('logout-btn');
         const quotaInfo = document.getElementById('quota-info');
         const loadingNote = document.getElementById('loading-note');
+        const serviceSelect = document.getElementById('service-select');
         let streaming = false;
 
         function toLogin() {
@@ -241,8 +283,52 @@
             return data;
         }
 
-        /* SSE 手工解析：EventSource 无法携带 Authorization 头，只能用 fetch + reader。
-           服务端把 chunk 内的换行转义成字面量 \n，故需按帧拆分后反转义还原。 */
+        /* 伙伴（对话服务）列表：只有一个时锁死选择器，多个时供用户切换角色 */
+        async function loadServices() {
+            const resp = await fetch('/api/web/services', { headers: authHeader() });
+            if (!resp.ok) {
+                serviceSelect.disabled = true;
+                return;
+            }
+            const data = await resp.json().catch(() => ({ items: [] }));
+            const items = (data.items || []).filter(function (s) { return s.is_active; });
+            serviceSelect.textContent = '';
+            if (items.length <= 1) {
+                const opt = document.createElement('option');
+                const one = items[0];
+                opt.value = one ? one.id : '';
+                opt.textContent = one ? one.profile_name : '未配置伙伴';
+                serviceSelect.appendChild(opt);
+                serviceSelect.disabled = true;
+                if (one) { try { localStorage.setItem(SERVICE_KEY, one.id); } catch (e) {} }
+                return;
+            }
+            const saved = (function () {
+                try { return localStorage.getItem(SERVICE_KEY) || ''; } catch (e) { return ''; }
+            })();
+            const preferred = saved || data.current_service_id || items[0].id;
+            items.forEach(function (s) {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.name + ' · ' + s.profile_name;
+                if (s.id === preferred) opt.selected = true;
+                serviceSelect.appendChild(opt);
+            });
+            // saved 指向已删除的服务时回落首项，避免带着无效 ID 发请求
+            if (serviceSelect.selectedIndex === -1) serviceSelect.selectedIndex = 0;
+            serviceSelect.disabled = false;
+        }
+
+        function currentServiceId() {
+            return serviceSelect.disabled ? '' : serviceSelect.value;
+        }
+
+        serviceSelect.addEventListener('change', function () {
+            try { localStorage.setItem(SERVICE_KEY, serviceSelect.value); } catch (e) {}
+            addNote('已切换为「' + serviceSelect.options[serviceSelect.selectedIndex].textContent + '」，各伙伴的对话与记忆相互独立。');
+        });
+
+        /* SSE 手工解析：EventSource 无法携带 Authorization 头，只能用 fetch + reader。           服务端把 chunk 内的换行转义成字面量 \n，故需按帧拆分后反转义还原。 */
         function consumeFrames(buffer) {
             const frames = [];
             let sep;
@@ -280,7 +366,7 @@
                 const resp = await fetch('/api/conversations/chat/stream', {
                     method: 'POST',
                     headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify({ text: text, service_id: currentServiceId() })
                 });
                 if (resp.status === 401) { toLogin(); return; }
                 if (!resp.ok) {
@@ -350,7 +436,7 @@
             }
         });
 
-        loadMe().then(function (me) {
+        loadMe().then(async function (me) {
             if (!me) {
                 // 403 一类"账号可用但进不了会话"的情况：留在本页说明原因，不反复跳转
                 loadingNote.textContent = '无法进入对话，请按页面提示处理或重新登录。';
@@ -361,6 +447,7 @@
             input.disabled = false;
             sendBtn.disabled = false;
             input.focus();
+            await loadServices();
         }).catch(function () {
             quotaInfo.textContent = '账号信息读取失败';
             loadingNote.textContent = '账号信息读取失败，请检查网络或重新登录。';

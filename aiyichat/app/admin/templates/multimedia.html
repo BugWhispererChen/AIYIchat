@@ -1,88 +1,72 @@
 {% extends "base.html" %}
 {% set active_page = "multimedia" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}AI模型配置{% endblock %}
 
-{% block extra_head %}
-<style>
-    /* 配置状态指示灯：颜色交 CSS 类控制，深色主题通过令牌自动适配（避免 inline 硬编码在暗色下突兀） */
-    .feat-status {
-        display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-        margin-left: 4px; background: var(--text-3);
-        transition: background var(--transition);
-    }
-    .feat-status.on { background: var(--success); }
-</style>
-{% endblock %}
+{% from "partials/_ui.html" import page_header, card, alert %}
 
 {% block content %}
 {% macro text_feature(key, label, cfg) %}
-<div class="card u-mb0" >
-    <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
-    <label>基础配置
-        <select name="{{ key }}_config_id" class="config-select" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
+{% call card(label, title_extra='<span class="feat-status" title="配置状态"></span>') %}
+    <label class="ui-field">
+        <span class="ui-label">基础配置</span>
+        <select class="ui-select config-select" name="{{ key }}_config_id" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
     </label>
-    <div class="grid-3" >
-        <label class="u-fs-82" >温度
-            <input type="number" name="{{ key }}_temperature" value="{{ cfg[key ~ '_temperature'] }}" min="0" max="2" step="any">
+    <div class="ui-grid ui-grid--3">
+        <label class="ui-field">
+            <span class="ui-label">温度</span>
+            <input class="ui-input" type="number" name="{{ key }}_temperature" value="{{ cfg[key ~ '_temperature'] }}" min="0" max="2" step="any">
         </label>
-        <label class="u-fs-82" >最大Token
-            <input type="number" name="{{ key }}_max_tokens" value="{{ cfg[key ~ '_max_tokens'] }}" min="1" step="1">
+        <label class="ui-field">
+            <span class="ui-label">最大Token</span>
+            <input class="ui-input" type="number" name="{{ key }}_max_tokens" value="{{ cfg[key ~ '_max_tokens'] }}" min="1" step="1">
         </label>
-        <label class="u-fs-82" >超时(秒)
-            <input type="number" name="{{ key }}_timeout_seconds" value="{{ cfg[key ~ '_timeout_seconds'] }}" min="1" step="1">
+        <label class="ui-field">
+            <span class="ui-label">超时(秒)</span>
+            <input class="ui-input" type="number" name="{{ key }}_timeout_seconds" value="{{ cfg[key ~ '_timeout_seconds'] }}" min="1" step="1">
         </label>
     </div>
-</div>
+{% endcall %}
 {% endmacro %}
 
 {% macro media_feature(key, label, cfg) %}
-<div class="card u-mb0" >
-    <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
-    <label>
+{% call card(label, title_extra='<span class="feat-status" title="配置状态"></span>') %}
+    <label class="ui-cluster">
         <input type="checkbox" name="{{ key }}_enabled" role="switch" {{ 'checked' if cfg[key ~ '_enabled'] }}>
-        启用
+        <span>启用</span>
     </label>
-    <label>基础配置
-        <select name="{{ key }}_config_id" class="config-select" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
+    <label class="ui-field">
+        <span class="ui-label">基础配置</span>
+        <select class="ui-select config-select" name="{{ key }}_config_id" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
     </label>
-</div>
+{% endcall %}
 {% endmacro %}
 
-<div class="page-header">
-    <h3>AI 模型配置</h3>
-    <p class="subtitle">先配置可复用的"基础配置"（连接凭证 + 默认模型），再让各功能引用</p>
-</div>
+{{ page_header('AI 模型配置', '先配置可复用的"基础配置"（连接凭证 + 默认模型），再让各功能引用', '系统设置') }}
 
-{% if success %}
-<div class="alert alert-success">{{ success }}</div>
-{% endif %}
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('success', success) }}
+{{ alert('error', error) }}
 
-<form method="post" action="/admin/multimedia" onsubmit="return onSubmitForm()">
+<form method="post" action="/admin/multimedia" onsubmit="return onSubmitForm()" class="ui-page">
     <input type="hidden" id="model_configs_json" name="model_configs_json" value="">
 
     <!-- 基础配置管理 -->
-    <div class="card">
-        <div class="card-title-row">
-            <h4>基础配置（连接凭证组）</h4>
-            <div class="btn-row" style="gap:0.4rem;">
-                <button type="button" class="ghost btn-sm" onclick="addPreset('DeepSeek','https://api.deepseek.com/v1','deepseek-chat')">+ DeepSeek</button>
-                <button type="button" class="ghost btn-sm" onclick="addPreset('通义千问','https://dashscope.aliyuncs.com/compatible-mode/v1','qwen-plus')">+ 通义千问</button>
-                <button type="button" class="ghost btn-sm" onclick="addPreset('阿里云百炼','https://dashscope.aliyuncs.com/compatible-mode/v1','')">+ 百炼</button>
-                <button type="button" class="btn-sm" onclick="addGroup()">+ 新增一组</button>
-            </div>
+    {% call card('基础配置（连接凭证组）') %}
+        <div class="ui-cluster">
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('DeepSeek','https://api.deepseek.com/v1','deepseek-chat')">+ DeepSeek</button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('通义千问','https://dashscope.aliyuncs.com/compatible-mode/v1','qwen-plus')">+ 通义千问</button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('阿里云百炼','https://dashscope.aliyuncs.com/compatible-mode/v1','')">+ 百炼</button>
+            <button type="button" class="ui-btn ui-btn--primary ui-btn--sm" onclick="addGroup()">+ 新增一组</button>
         </div>
-        <p class="muted u-fs-82 u-mt-hint" >
+        <p class="ui-note">
             每组包含名称、API 地址、密钥、默认模型。下方各功能通过"基础配置"下拉引用其中一组。
             密钥留空或保留脱敏值（含 *）则不更新该组密钥。删除仍被功能引用的组会使该功能不可用。
         </p>
 
-        <div id="mc-rows"></div>
+        <div id="mc-rows" class="ui-stack"></div>
 
         <!-- 服务端初始数据：脱敏后的基础配置组 -->
-        <div id="mc-initial" style="display:none;">
+        <div id="mc-initial" hidden>
             {% for g in model_configs %}
             <div class="mc-init"
                  data-id="{{ g.id }}"
@@ -93,12 +77,11 @@
                  data-default-model="{{ g.default_model }}"></div>
             {% endfor %}
         </div>
-    </div>
+    {% endcall %}
 
     <!-- 文本功能 -->
-    <div class="card">
-        <h4>文本模型功能</h4>
-        <div class="grid-min-300" >
+    {% call card('文本模型功能') %}
+        <div class="ui-grid ui-grid--tile">
             {{ text_feature('chat', '对话主回复', cfg) }}
             {{ text_feature('proactive', '主动消息', cfg) }}
             {{ text_feature('focus', '焦点抽取（长期记忆）', cfg) }}
@@ -106,12 +89,11 @@
             {{ text_feature('summary', '上下文摘要', cfg) }}
             {{ text_feature('chat_import', '聊天记录导入分析', cfg) }}
         </div>
-    </div>
+    {% endcall %}
 
     <!-- 多媒体功能 -->
-    <div class="card">
-        <h4>多媒体功能</h4>
-        <div class="grid-min-300" >
+    {% call card('多媒体功能') %}
+        <div class="ui-grid ui-grid--tile">
             {{ media_feature('asr', 'ASR 语音转文字', cfg) }}
             {{ media_feature('tts', 'TTS 语音合成', cfg) }}
             {{ media_feature('vision', 'Vision 图片理解', cfg) }}
@@ -119,28 +101,34 @@
             {{ media_feature('imagegen_edit', 'ImageGen 参考图编辑（人物一致性）', cfg) }}
             {{ media_feature('embedding', 'Embedding 向量化', cfg) }}
         </div>
-    </div>
+    {% endcall %}
 
-    <button type="submit" style="max-width:200px;">保存设置</button>
+    <div class="ui-cluster">
+        <button type="submit" class="ui-btn ui-btn--primary u-mw-200">保存设置</button>
+    </div>
 </form>
 
 <!-- 基础配置行模板 -->
 <template id="mc-row-template">
-    <div class="mc-row grid-5-col" style="margin-bottom:0.6rem;">
+    <div class="mc-row ui-grid ui-grid--5">
         <input type="hidden" class="mc-id" value="">
-        <label class="u-fs-80 u-m0" >名称
-            <input type="text" class="mc-name" value="" placeholder="配置名称">
+        <label class="ui-field">
+            <span class="ui-label">名称</span>
+            <input class="ui-input mc-name" type="text" value="" placeholder="配置名称">
         </label>
-        <label class="u-fs-80 u-m0" >API 地址
-            <input type="text" class="mc-base-url" value="" placeholder="https://api.deepseek.com/v1">
+        <label class="ui-field">
+            <span class="ui-label">API 地址</span>
+            <input class="ui-input mc-base-url" type="text" value="" placeholder="https://api.deepseek.com/v1">
         </label>
-        <label class="u-fs-80 u-m0" >API 密钥
-            <input type="password" class="mc-api-key" value="" placeholder="sk-xxxx">
+        <label class="ui-field">
+            <span class="ui-label">API 密钥</span>
+            <input class="ui-input mc-api-key" type="password" value="" placeholder="sk-xxxx">
         </label>
-        <label class="u-fs-80 u-m0" >默认模型
-            <input type="text" class="mc-default-model" value="" placeholder="deepseek-chat">
+        <label class="ui-field">
+            <span class="ui-label">默认模型</span>
+            <input class="ui-input mc-default-model" type="text" value="" placeholder="deepseek-chat">
         </label>
-        <button type="button" class="ghost btn-sm" onclick="deleteGroup(this)" style="margin-bottom:0.2rem;">删除</button>
+        <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--danger" onclick="deleteGroup(this)">删除</button>
     </div>
 </template>
 
@@ -256,7 +244,9 @@ function groupState(gid) {
 /* 按所选组更新各功能的状态灯 */
 function updateFeatureIndicators() {
     document.querySelectorAll('select.config-select').forEach(function(sel) {
-        var card = sel.closest('.card');
+        /* 双类并列：功能卡已从 legacy .card 迁到 .ui-card，
+           只认 .card 会让状态灯静默失效（灯永远灰） */
+        var card = sel.closest('.card, .ui-card');
         if (!card) return;
         var st = groupState(sel.value);
         var dot = card.querySelector('.feat-status');

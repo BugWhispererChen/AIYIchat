@@ -186,5 +186,6 @@ a:hover { color: var(--primary-hover); }
 .u-fs-88 { font-size: .88rem; }
 .u-fs-90 { font-size: .9rem; }
 .u-mw-160 { max-width: 160px; }
+.u-mw-200 { max-width: 200px; }
 .u-mw-220 { max-width: 220px; }
 .u-mw-240 { max-width: 240px; }

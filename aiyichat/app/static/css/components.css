@@ -795,6 +795,7 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ui-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ui-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ui-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .ui-grid--kpi   { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .ui-grid--tile  { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 /* 主从两栏：向导 / 详情页 */
@@ -936,18 +937,21 @@ details[open] > .ui-summary::before { transform: rotate(45deg); }
 @media (max-width: 1024px) {
     .ui-grid--aside,
     .ui-grid--split { grid-template-columns: 1fr; }
-    .ui-grid--4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ui-grid--4,
+    .ui-grid--5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 768px) {
     .ui-page-head { align-items: stretch; flex-direction: column; }
     .ui-grid--3,
-    .ui-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ui-grid--4,
+    .ui-grid--5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ui-span-2 { grid-column: span 2; }
 }
 @media (max-width: 640px) {
     .ui-grid--2,
     .ui-grid--3,
-    .ui-grid--4 { grid-template-columns: 1fr; }
+    .ui-grid--4,
+    .ui-grid--5 { grid-template-columns: 1fr; }
     .ui-span-2,
     .ui-span-all { grid-column: auto; }
 }

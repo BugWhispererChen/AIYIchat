@@ -777,6 +777,17 @@ td .text-ellipsis { display: block; }
 .gauge-value--warn { color: var(--warning-text); }
 .gauge-value--err  { color: var(--danger-text); }
 
+/* ══ AI 模型配置：功能状态灯（自 multimedia.html 的页内 style 上收） ══
+   颜色交 CSS 类控制而非行内硬编码，深色主题经令牌自动适配。 */
+.feat-status {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-left: 4px; background: var(--text-3);
+    transition: background var(--transition);
+}
+.feat-status.on { background: var(--success); }
+/* 配置行内的删除按钮与输入框底对齐 */
+.mc-row > .ui-btn { align-self: end; }
+
 /* ══ 步骤条 ══ */
 .steps { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .step {

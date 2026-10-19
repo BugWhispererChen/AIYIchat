@@ -113,6 +113,12 @@
     padding: var(--space-5);
 }
 .ui-card--flush { padding: 0; overflow: hidden; }
+/* 需要引起注意的卡片：左侧琥珀警告轨（与旧 .card--warn 同义，供迁移页使用） */
+.ui-card--warn {
+    border-left: 4px solid var(--amber);
+    background: var(--warning-bg);
+}
+.ui-card--warn .ui-card-title { color: var(--warning-text); }
 /* 贴边卡片里的表格外壳不再自带描边，否则与卡片形成双层边框接缝 */
 .ui-card--flush .ui-table-wrap { border: 0; border-radius: 0; box-shadow: none; }
 .ui-card--raised { box-shadow: var(--shadow-md); }

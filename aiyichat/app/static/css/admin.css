@@ -743,6 +743,38 @@ td .text-ellipsis { display: block; }
 .summary-item p, .summary-item li { font-size: .85rem; margin: .15rem 0; }
 .summary-item ul { margin: .2rem 0; padding-left: 1.1rem; }
 
+/* ══ 服务器资源仪表（partials/metrics.html） ══
+   此前环形图 maintainAspectRatio:true 且列宽随栅格自适应，
+   在 1400px 内容列下三个环各自涨到 ~250px 直径、圆心大片空白。
+   改为固定小环 + 右侧读数，密度与可读性都更好。 */
+.gauge-grid {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.gauge-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+}
+.gauge-box { position: relative; width: 84px; height: 84px; flex: none; }
+.gauge-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gauge-label { font-size: .82rem; color: var(--text-2); }
+.gauge-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.1;
+}
+.gauge-value--ok   { color: var(--success-text); }
+.gauge-value--warn { color: var(--warning-text); }
+.gauge-value--err  { color: var(--danger-text); }
+
 /* ══ 步骤条 ══ */
 .steps { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .step {

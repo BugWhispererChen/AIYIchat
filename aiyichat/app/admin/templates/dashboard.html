@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set active_page = "dashboard" %}
-{% from "partials/_ui.html" import page_header, kpi %}
+{% from "partials/_ui.html" import page_header, kpi, card, alert, skeleton %}
 
 {% block title %}仪表盘{% endblock %}
 
@@ -11,14 +11,12 @@
 {% endblock %}
 
 {% block content %}
-{{ page_header('系统仪表盘', '平台核心业务数据与服务器运行状态总览') }}
+{{ page_header('系统仪表盘', '平台核心业务数据与服务器运行状态总览', '概览') }}
 
 <!-- 语义检索降级告警：embedding 开启但有失败记录时提醒运营排查 -->
 {% if embedding_status.degraded %}
-<div class="card card--warn">
-    <div class="card-title-row">
-        <h4>语义检索处于降级态</h4>
-    </div>
+<section class="ui-card ui-card--warn">
+    <div class="ui-card-head"><h4 class="ui-card-title">语义检索处于降级态</h4></div>
     <p class="muted">
         Embedding 请求累计失败 {{ embedding_status.fail_count }} 次，记忆检索已自动回退到规则排序。
     </p>
@@ -29,13 +27,13 @@
         {% endif %}
     </p>
     <p class="muted">请检查「AI 模型」页的 embedding 基础配置与密钥。</p>
-</div>
+</section>
 {% elif not embedding_status.enabled %}
-<p class="muted u-mb-4">ℹ 语义检索未启用（embedding 关闭或未配密钥），长期记忆使用规则排序。</p>
+{{ alert('info', 'ℹ 语义检索未启用（embedding 关闭或未配密钥），长期记忆使用规则排序。') }}
 {% endif %}
 
 <!-- 业务统计 -->
-<div class="stats-grid">
+<div class="ui-grid ui-grid--kpi">
     {{ kpi('角色总数 / 活跃', stats.profile_count, '/ ' ~ stats.active_profile_count, 'star') }}
     {{ kpi('身份总数', stats.identity_count, '', 'globe') }}
     {{ kpi('对话总数', stats.conversation_count, '', 'chat') }}
@@ -44,26 +42,22 @@
 </div>
 
 <!-- 经营趋势图表 -->
-<section class="card">
-    <div class="card-title-row">
-        <h4>近 14 天经营趋势</h4>
-        <span class="kicker">14-day trend</span>
-    </div>
-    <div class="chart-grid">
-        <div>
+{% call card('近 14 天经营趋势', kicker='14-day trend') %}
+    <div class="ui-grid ui-grid--3">
+        <div class="ui-stack ui-stack--tight">
             <div class="chart-label">每日消息量</div>
             <div class="chart-box"><canvas id="msgDailyChart"></canvas></div>
         </div>
-        <div>
+        <div class="ui-stack ui-stack--tight">
             <div class="chart-label">AI 回复平均延迟 (ms)</div>
             <div class="chart-box"><canvas id="latencyChart"></canvas></div>
         </div>
-        <div>
+        <div class="ui-stack ui-stack--tight">
             <div class="chart-label">近 7 天情绪分布</div>
             <div class="chart-box"><canvas id="emotionChart"></canvas></div>
         </div>
     </div>
-</section>
+{% endcall %}
 
 <!-- 系统资源监控 (HTMX 动态加载) -->
 <div id="system-metrics"
@@ -72,8 +66,7 @@
      hx-swap="innerHTML">
     <div class="monitor-panel">
         <h3>服务器状态监控</h3>
-        <div class="ui-skeleton ui-skeleton--card"></div>
-        <div class="ui-skeleton ui-skeleton--card u-mt-2"></div>
+        {{ skeleton(2) }}
     </div>
 </div>
 

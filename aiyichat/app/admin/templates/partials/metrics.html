@@ -1,30 +1,36 @@
-<!-- 系统资源监控 - Chart.js 环形图 -->
+<!-- 系统资源监控 - Chart.js 环形仪表 -->
 <div class="monitor-panel">
     <h3>服务器状态监控</h3>
-    
-    <div class="charts-grid">
-        <!-- CPU 环形图 -->
-        <div class="chart-item">
-            <canvas id="cpuChart"></canvas>
-            <div class="chart-label">CPU 使用率</div>
-            <div class="chart-value" style="color:{% if metrics.cpu_percent > 90 %}var(--danger-color){% elif metrics.cpu_percent > 70 %}var(--warning-color){% else %}var(--success-color){% endif %}">
-                {{ "%.1f"|format(metrics.cpu_percent) }}%
+
+    <div class="gauge-grid">
+        <!-- CPU -->
+        <div class="gauge-item">
+            <div class="gauge-box"><canvas id="cpuChart"></canvas></div>
+            <div class="gauge-text">
+                <span class="gauge-label">CPU 使用率</span>
+                <span class="gauge-value {% if metrics.cpu_percent > 90 %}gauge-value--err{% elif metrics.cpu_percent > 70 %}gauge-value--warn{% else %}gauge-value--ok{% endif %}">
+                    {{ "%.1f"|format(metrics.cpu_percent) }}%
+                </span>
             </div>
         </div>
-        <!-- 内存环形图 -->
-        <div class="chart-item">
-            <canvas id="memChart"></canvas>
-            <div class="chart-label">内存使用率</div>
-            <div class="chart-value" style="color:{% if metrics.memory_percent > 90 %}var(--danger-color){% elif metrics.memory_percent > 70 %}var(--warning-color){% else %}var(--success-color){% endif %}">
-                {{ "%.1f"|format(metrics.memory_percent) }}%
+        <!-- 内存 -->
+        <div class="gauge-item">
+            <div class="gauge-box"><canvas id="memChart"></canvas></div>
+            <div class="gauge-text">
+                <span class="gauge-label">内存使用率</span>
+                <span class="gauge-value {% if metrics.memory_percent > 90 %}gauge-value--err{% elif metrics.memory_percent > 70 %}gauge-value--warn{% else %}gauge-value--ok{% endif %}">
+                    {{ "%.1f"|format(metrics.memory_percent) }}%
+                </span>
             </div>
         </div>
-        <!-- 磁盘环形图 -->
-        <div class="chart-item">
-            <canvas id="diskChart"></canvas>
-            <div class="chart-label">磁盘使用率</div>
-            <div class="chart-value" style="color:{% if metrics.disk_percent > 90 %}var(--danger-color){% elif metrics.disk_percent > 80 %}var(--warning-color){% else %}var(--success-color){% endif %}">
-                {{ "%.1f"|format(metrics.disk_percent) }}%
+        <!-- 磁盘 -->
+        <div class="gauge-item">
+            <div class="gauge-box"><canvas id="diskChart"></canvas></div>
+            <div class="gauge-text">
+                <span class="gauge-label">磁盘使用率</span>
+                <span class="gauge-value {% if metrics.disk_percent > 90 %}gauge-value--err{% elif metrics.disk_percent > 80 %}gauge-value--warn{% else %}gauge-value--ok{% endif %}">
+                    {{ "%.1f"|format(metrics.disk_percent) }}%
+                </span>
             </div>
         </div>
     </div>
@@ -53,7 +59,7 @@
 <script>
 (function() {
     if (typeof Chart === 'undefined') return;
-    
+
     /* 环形图轨道色取自设计令牌，需在函数内定义 css 变量（修复 ReferenceError 导致环形图空白） */
     var css = getComputedStyle(document.documentElement);
     var chartTrack = css.getPropertyValue('--chart-track').trim() || '#e2e8f0';
@@ -68,12 +74,13 @@
                     data: [value, 100 - value],
                     backgroundColor: [color, chartTrack],
                     borderWidth: 0,
-                    cutout: '75%'
+                    cutout: '72%'
                 }]
             },
             options: {
+                // 固定容器尺寸下铺满，不再按列宽自适应放大成 250px 的空心大环
                 responsive: true,
-                maintainAspectRatio: true,
+                maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 animation: { duration: 800, easing: 'easeOutQuart' }
             }
@@ -83,7 +90,7 @@
     var cpuVal = {{ "%.1f"|format(metrics.cpu_percent) }};
     var memVal = {{ "%.1f"|format(metrics.memory_percent) }};
     var diskVal = {{ "%.1f"|format(metrics.disk_percent) }};
-    
+
     function getColor(val, highThreshold, midThreshold) {
         var css = getComputedStyle(document.documentElement);
         var danger = css.getPropertyValue('--chart-danger').trim() || '#ef4444';

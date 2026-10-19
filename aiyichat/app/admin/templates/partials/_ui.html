@@ -146,6 +146,19 @@
 {%- endmacro %}
 
 
+{# ── 额度单元：>=10亿 视为无限（与 format_quota 的判定保持一致），
+      无限额度不画进度条——一条永远为空的灰线在表格里读起来像渲染故障 #}
+{% macro quota(used, limit) -%}
+<div class="ui-stack ui-stack--tight">
+    <span class="text-ellipsis" title="{{ used }}/{{ limit }}">{{ used|format_quota }} / {{ limit|format_quota }}</span>
+    {% if limit > 0 and limit < 1000000000 %}
+    {% set pct = used / limit * 100 %}
+    {{ bar(pct, 'err' if pct > 90 else ('warn' if pct > 70 else '')) }}
+    {% endif %}
+</div>
+{%- endmacro %}
+
+
 {# ── 骨架屏 ───────────────────────────────────────────── #}
 {% macro skeleton(rows=3) -%}
 <div class="ui-stack ui-stack--tight" aria-hidden="true">

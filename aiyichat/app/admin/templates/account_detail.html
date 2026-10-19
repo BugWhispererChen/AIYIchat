@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% set active_page = "accounts" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}账号详情 - {{ account.name }}{% endblock %}
+
+{% from "partials/_ui.html" import page_header, alert, empty, bar, badge %}
 
 {% block breadcrumb %}
 <a href="/admin/accounts">账号管理</a>
@@ -9,17 +12,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>账号详情：{{ account.name }}</h3>
-    <p class="subtitle">管理账号信息、身份、Bot 和对话服务</p>
-</div>
+{{ page_header('账号详情：' ~ account.name, '管理账号信息、身份、Bot 和对话服务', '运营管理') }}
 
-{% if success %}
-<div class="alert alert-success">{{ success }}</div>
-{% endif %}
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('success', success) }}
+{{ alert('error', error) }}
 
 {# ── 额度数据预计算：用于进度条概览 ─────────────── #}
 {% set text_limit  = (quota.text_quota.limit  if quota and quota.text_quota  else 0) %}
@@ -44,308 +40,298 @@
     {# ─────────── Tab 1：基本信息（账号编辑 + 额度概览 + 删除） ─────────── #}
     <div class="tab-content active" data-tab-content="info">
         <!-- 基本信息：账号名称/备注编辑 + 删除账号 -->
-        <div class="card">
-            <h4>基本信息</h4>
-            <form method="post" action="/admin/accounts/{{ account.id }}/edit">
-                <div class="grid">
-                    <label>账号名称
-                        <input type="text" name="name" value="{{ account.name }}" required>
+        <section class="ui-card">
+            <div class="ui-card-head"><h4 class="ui-card-title">基本信息</h4></div>
+            <form method="post" action="/admin/accounts/{{ account.id }}/edit" class="ui-stack">
+                <div class="ui-grid ui-grid--2">
+                    <label class="ui-field">
+                        <span class="ui-label">账号名称</span>
+                        <input class="ui-input" type="text" name="name" value="{{ account.name }}" required>
                     </label>
-                    <label>备注
-                        <input type="text" name="remark" value="{{ account.remark }}">
+                    <label class="ui-field">
+                        <span class="ui-label">备注</span>
+                        <input class="ui-input" type="text" name="remark" value="{{ account.remark }}">
                     </label>
                 </div>
-                <div class="btn-row">
-                    <button type="submit">保存</button>
+                <div class="ui-cluster">
+                    <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存</button>
                     {# 删除账号：级联删除关联身份/Bot/服务，需二次确认 #}
                     <button type="submit" formaction="/admin/accounts/{{ account.id }}/delete"
-                            class="danger outline" data-danger data-confirm-text="删除账号"
+                            class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" data-danger data-confirm-text="删除账号"
                             data-confirm="确认删除账号「{{ account.name }}」？此操作不可恢复，关联的身份和 Bot 数据也将被删除！">删除账号</button>
                 </div>
             </form>
-        </div>
+        </section>
 
         <!-- 额度概览：进度条直观展示用量 -->
-        <div class="card">
-            <h4>额度概览</h4>
-            <div style="display:flex;flex-direction:column;gap:1rem;">
-                {# 文字额度（Token） #}
-                <div>
-                    <div class="u-row-between u-fs-88" >
-                        <span><strong>文字额度（Token）</strong></span>
-                        <span class="muted">{{ text_used }} / {{ text_limit if text_limit > 0 else '∞' }}
-                            {% if text_limit > 0 %}<small>（{{ '%.1f'|format(text_pct) }}%）</small>{% endif %}
+        <section class="ui-card">
+            <div class="ui-card-head"><h4 class="ui-card-title">额度概览</h4></div>
+            <div class="ui-stack">
+                {% for label, used, limit, pct in [
+                      ('文字额度（Token）', text_used, text_limit, text_pct),
+                      ('语音额度', voice_used, voice_limit, voice_pct),
+                      ('图片额度', image_used, image_limit, image_pct)] %}
+                <div class="ui-stack ui-stack--tight">
+                    <div class="u-row-between u-fs-88">
+                        <strong>{{ label }}</strong>
+                        <span class="muted">{{ used }} / {{ limit if limit > 0 else '∞' }}
+                            {% if limit > 0 %}<small>（{{ '%.1f'|format(pct) }}%）</small>{% endif %}
                         </span>
                     </div>
-                    <div class="progress-bar">
-                        <div class="fill {% if text_pct >= 90 %}red{% elif text_pct >= 70 %}yellow{% else %}blue{% endif %}"
-                             style="width: {{ [text_pct, 100]|min }}%;"></div>
-                    </div>
+                    {% if limit > 0 and limit < 1000000000 %}{{ bar(pct, 'err' if pct >= 90 else ('warn' if pct >= 70 else '')) }}{% endif %}
                 </div>
-                {# 语音额度 #}
-                <div>
-                    <div class="u-row-between u-fs-88" >
-                        <span><strong>语音额度</strong></span>
-                        <span class="muted">{{ voice_used }} / {{ voice_limit if voice_limit > 0 else '∞' }}
-                            {% if voice_limit > 0 %}<small>（{{ '%.1f'|format(voice_pct) }}%）</small>{% endif %}
-                        </span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="fill {% if voice_pct >= 90 %}red{% elif voice_pct >= 70 %}yellow{% else %}blue{% endif %}"
-                             style="width: {{ [voice_pct, 100]|min }}%;"></div>
-                    </div>
-                </div>
-                {# 图片额度 #}
-                <div>
-                    <div class="u-row-between u-fs-88" >
-                        <span><strong>图片额度</strong></span>
-                        <span class="muted">{{ image_used }} / {{ image_limit if image_limit > 0 else '∞' }}
-                            {% if image_limit > 0 %}<small>（{{ '%.1f'|format(image_pct) }}%）</small>{% endif %}
-                        </span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="fill {% if image_pct >= 90 %}red{% elif image_pct >= 70 %}yellow{% else %}blue{% endif %}"
-                             style="width: {{ [image_pct, 100]|min }}%;"></div>
-                    </div>
-                </div>
+                {% endfor %}
             </div>
 
             {# 调整额度（折叠）：保留原有编辑功能 #}
-            <details style="margin-top:1.2rem;">
-                <summary class="link-strong" >调整额度</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/quota" style="margin-top:0.8rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
-                    <div class="grid">
-                        <div>
-                            <label>文字额度（Token） - 上限</label>
-                            <input type="number" name="text_limit" value="{{ text_limit }}" min="0">
-                        </div>
-                        <div>
-                            <label>文字额度（Token） - 已用</label>
-                            <input type="number" name="text_used" value="{{ text_used }}" min="0">
-                        </div>
-                        <div>
-                            <label>语音额度 - 上限</label>
-                            <input type="number" name="voice_limit" value="{{ voice_limit }}" min="0">
-                        </div>
-                        <div>
-                            <label>语音额度 - 已用</label>
-                            <input type="number" name="voice_used" value="{{ voice_used }}" min="0">
-                        </div>
-                        <div>
-                            <label>图片额度 - 上限</label>
-                            <input type="number" name="image_limit" value="{{ image_limit }}" min="0">
-                        </div>
-                        <div>
-                            <label>图片额度 - 已用</label>
-                            <input type="number" name="image_used" value="{{ image_used }}" min="0">
-                        </div>
+            <details class="u-mt-4">
+                <summary class="ui-summary">调整额度</summary>
+                <form method="post" action="/admin/accounts/{{ account.id }}/quota" class="inset-block">
+                    <div class="ui-grid ui-grid--3">
+                        {% for cap, fname, val in [
+                              ('文字额度（Token） - 上限', 'text_limit', text_limit),
+                              ('文字额度（Token） - 已用', 'text_used', text_used),
+                              ('语音额度 - 上限', 'voice_limit', voice_limit),
+                              ('语音额度 - 已用', 'voice_used', voice_used),
+                              ('图片额度 - 上限', 'image_limit', image_limit),
+                              ('图片额度 - 已用', 'image_used', image_used)] %}
+                        <label class="ui-field">
+                            <span class="ui-label">{{ cap }}</span>
+                            <input class="ui-input" type="number" name="{{ fname }}" value="{{ val }}" min="0">
+                        </label>
+                        {% endfor %}
                     </div>
-                    <button type="submit">更新额度</button>
+                    <div class="ui-cluster">
+                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">更新额度</button>
+                    </div>
                 </form>
             </details>
-        </div>
+        </section>
 
         <!-- 套餐开通：一键套用模板额度与有效期 -->
-        <div class="card">
-            <h4>套餐开通</h4>
+        <section class="ui-card">
+            <div class="ui-card-head"><h4 class="ui-card-title">套餐开通</h4></div>
             {% if quota_templates %}
-            <p class="muted" style="font-size:0.85rem;margin-bottom:0.75rem;">选择套餐一键写入额度与有效期（开通将重置已用量），并自动记入台账。</p>
-            <form method="post" action="/admin/accounts/{{ account.id }}/apply-template"
+            <p class="muted u-fs-85">选择套餐一键写入额度与有效期（开通将重置已用量），并自动记入台账。</p>
+            <form method="post" action="/admin/accounts/{{ account.id }}/apply-template" class="ui-stack"
                   data-confirm="确认为该账号开通所选套餐？将按套餐重置额度与有效期。">
-                <div class="grid">
-                    <label>选择套餐
-                        <select name="template_id" required>
+                <div class="ui-grid ui-grid--2">
+                    <label class="ui-field">
+                        <span class="ui-label">选择套餐</span>
+                        <select class="ui-select" name="template_id" required>
                             <option value="">选择套餐...</option>
                             {% for t in quota_templates %}
                             <option value="{{ t.id }}">{{ t.name }}（文字{{ t.text_limit|format_quota }}/语音{{ t.voice_limit|format_quota }}/图片{{ t.image_limit|format_quota }}{% if t.validity_days %}·{{ t.validity_days }}天{% else %}·永久{% endif %}）</option>
                             {% endfor %}
                         </select>
                     </label>
-                    <label>记账金额（元，选填）
-                        <input type="number" name="amount" value="0" min="0" step="0.01">
+                    <label class="ui-field">
+                        <span class="ui-label">记账金额（元，选填）</span>
+                        <input class="ui-input" type="number" name="amount" value="0" min="0" step="0.01">
                     </label>
                 </div>
-                <label>备注（选填）
-                    <input type="text" name="remark" placeholder="如：微信转账开通">
+                <label class="ui-field">
+                    <span class="ui-label">备注（选填）</span>
+                    <input class="ui-input" type="text" name="remark" placeholder="如：微信转账开通">
                 </label>
-                <button type="submit">开通套餐</button>
+                <div class="ui-cluster">
+                    <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">开通套餐</button>
+                </div>
             </form>
             {% else %}
-            <p class="muted">暂无套餐模板，请先到【<a href="/admin/billing">套餐计费</a>】创建。</p>
+            {{ empty('暂无套餐模板', '请先到【套餐计费】创建。', 'billing',
+                     '<a href="/admin/billing" class="ui-btn ui-btn--outline ui-btn--sm">前往套餐计费</a>') }}
             {% endif %}
-        </div>
+        </section>
     </div>
 
     {# ─────────── Tab 2：身份管理 ─────────── #}
     <div class="tab-content" data-tab-content="identities">
-        <div class="card">
-            <h4>身份管理 <small class="muted u-fs-82" >({{ identities|length }} 个)</small></h4>
+        <section class="ui-card">
+            <div class="ui-card-head">
+                <h4 class="ui-card-title">身份管理 <small class="muted u-fs-82">({{ identities|length }} 个)</small></h4>
+            </div>
             {% if identities %}
-            <table>
-                <thead>
-                    <tr><th>名称</th><th>平台ID</th><th>平台</th><th>昵称</th><th>状态</th><th>操作</th></tr>
-                </thead>
-                <tbody>
-                    {% for u in identities %}
-                    <tr>
-                        <td><strong>{{ u.name or '-' }}</strong></td>
-                        <td><code class="u-fs-80" >{{ u.platform_id }}</code></td>
-                        <td><span class="badge {% if u.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ u.platform }}</span></td>
-                        <td>{{ u.nickname or '-' }}</td>
-                        <td>
-                            {% if u.is_blocked %}
-                            <span class="badge badge-inactive">已禁用</span>
-                            {% if u.block_reason %}<br><small class="muted">{{ u.block_reason }}</small>{% endif %}
-                            {% else %}
-                            <span class="badge badge-active">正常</span>
-                            {% endif %}
-                            {% if u.is_minor %}<br><span class="badge badge-warning">未成年</span>{% endif %}
-                        </td>
-                        <td>
-                            <div class="btn-row" style="gap:0.3rem;">
-                                {# 禁用/启用身份：禁用时通过 Modal 输入禁用原因 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block" 
-                                      {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %} class="u-m0">
-                                    <input type="hidden" name="block_reason" value="">
-                                    {% if not u.is_blocked %}
-                                    <button type="submit" class="ghost btn-sm">禁用</button>
+            <div class="ui-table-wrap">
+                <table class="ui-table">
+                    <thead>
+                        <tr><th>名称</th><th>平台ID</th><th>平台</th><th>昵称</th><th>状态</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for u in identities %}
+                        <tr>
+                            <td><strong>{{ u.name or '-' }}</strong></td>
+                            <td><code class="u-fs-80">{{ u.platform_id }}</code></td>
+                            <td><span class="ui-badge ui-badge--line">{{ u.platform }}</span></td>
+                            <td>{{ u.nickname or '-' }}</td>
+                            <td>
+                                <div class="ui-stack ui-stack--tight">
+                                    {% if u.is_blocked %}
+                                    <span class="ui-badge ui-badge--line">已禁用</span>
+                                    {% if u.block_reason %}<small class="muted">{{ u.block_reason }}</small>{% endif %}
                                     {% else %}
-                                    <button type="submit" class="btn-sm">启用</button>
+                                    <span class="ui-badge ui-badge--ok">正常</span>
+                                    {% endif %}
+                                    {% if u.is_minor %}<span class="ui-badge ui-badge--warn">未成年</span>{% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="ui-cluster">
+                                    {# 禁用/启用身份：禁用时通过 Modal 输入禁用原因 #}
+                                    <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block"
+                                          {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %} class="u-m0">
+                                        <input type="hidden" name="block_reason" value="">
+                                        {% if not u.is_blocked %}
+                                        <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">禁用</button>
+                                        {% else %}
+                                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">启用</button>
+                                        {% endif %}
+                                    </form>
+                                    {# 删除身份：不可恢复，需二次确认 #}
+                                    <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete"
+                                          data-confirm="确认删除此身份？此操作不可恢复！" data-danger data-confirm-text="删除" class="u-m0">
+                                        <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">删除</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {# 时区设置行：常用 IANA 下拉 + 手动输入，校验失败在页面顶部提示 #}
+                        <tr class="ui-row-sub">
+                            <td colspan="6">
+                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/timezone"
+                                      class="ui-cluster">
+                                    <small class="muted">时区：</small>
+                                    <select class="ui-select ui-select--sm" name="timezone">
+                                        <option value="" {% if not u.timezone %}selected{% endif %}>跟随全局默认</option>
+                                        {% for tz in common_timezones %}
+                                        <option value="{{ tz }}" {% if u.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input class="ui-input ui-input--sm" type="text" name="timezone_custom" placeholder="或手动输入 IANA 名"
+                                           value="{% if u.timezone and u.timezone not in common_timezones %}{{ u.timezone }}{% endif %}">
+                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">保存</button>
+                                    {% if u.timezone %}
+                                    <small class="muted">当前：{{ u.timezone }}</small>
                                     {% endif %}
                                 </form>
-                                {# 删除身份：不可恢复，需二次确认 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete" 
-                                      data-confirm="确认删除此身份？此操作不可恢复！" data-danger data-confirm-text="删除" class="u-m0">
-                                    <button type="submit" class="danger outline btn-sm">删除</button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    {# 时区设置行：常用 IANA 下拉 + 手动输入，校验失败在页面顶部提示 #}
-                    <tr>
-                        <td colspan="6" style="padding-top:0;border-top:none;">
-                            <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/timezone"
-                                  style="display:flex;align-items:center;gap:0.5rem;margin:0;">
-                                <small class="muted" style="white-space:nowrap;">时区：</small>
-                                <select name="timezone" style="max-width:220px;padding:0.2rem 0.4rem;font-size:0.82rem;">
-                                    <option value="" {% if not u.timezone %}selected{% endif %}>跟随全局默认</option>
-                                    {% for tz in common_timezones %}
-                                    <option value="{{ tz }}" {% if u.timezone == tz %}selected{% endif %}>{{ tz }}</option>
-                                    {% endfor %}
-                                </select>
-                                <input type="text" name="timezone_custom" placeholder="或手动输入 IANA 名"
-                                       value="{% if u.timezone and u.timezone not in common_timezones %}{{ u.timezone }}{% endif %}"
-                                       style="max-width:200px;padding:0.2rem 0.4rem;font-size:0.82rem;">
-                                <button type="submit" class="ghost btn-sm">保存</button>
-                                {% if u.timezone %}
-                                <small class="muted">当前：{{ u.timezone }}</small>
-                                {% endif %}
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
             <p class="muted">暂无身份</p>
             {% endif %}
 
-            <details class="u-mt-3" >
-                <summary class="link-strong" >+ 新增身份</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" class="inset-block" >
-                    <div class="grid">
-                        <label>用户名称
-                            <input type="text" name="name" placeholder="用户名称">
+            <details class="u-mt-3">
+                <summary class="ui-summary">+ 新增身份</summary>
+                <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" class="inset-block">
+                    <div class="ui-grid ui-grid--3">
+                        <label class="ui-field">
+                            <span class="ui-label">用户名称</span>
+                            <input class="ui-input" type="text" name="name" placeholder="用户名称">
                         </label>
-                        <label>平台
-                            <select name="platform" required>
+                        <label class="ui-field">
+                            <span class="ui-label">平台</span>
+                            <select class="ui-select" name="platform" required>
                                 <option value="qq">QQ</option>
                                 <option value="wechat">微信</option>
                                 <option value="web">网页</option>
                             </select>
                         </label>
-                        <label>昵称
-                            <input type="text" name="nickname" placeholder="昵称">
+                        <label class="ui-field">
+                            <span class="ui-label">昵称</span>
+                            <input class="ui-input" type="text" name="nickname" placeholder="昵称">
                         </label>
                     </div>
-                    <label>自我描述（供 LLM 参考）
-                        <textarea name="self_description" placeholder="例如：张三，25岁，软件工程师，喜欢 hiking" rows="2"></textarea>
+                    <label class="ui-field">
+                        <span class="ui-label">自我描述（供 LLM 参考）</span>
+                        <textarea class="ui-textarea" name="self_description" placeholder="例如：张三，25岁，软件工程师，喜欢 hiking" rows="2"></textarea>
                     </label>
-                    <label style="display:flex;align-items:center;gap:0.5rem;">
+                    <label class="ui-cluster">
                         <input type="checkbox" name="is_minor" role="switch">
-                        未成年人（启用后将限制亲密关系与不宜内容，并加强防沉迷引导）
+                        <span>未成年人（启用后将限制亲密关系与不宜内容，并加强防沉迷引导）</span>
                     </label>
-                    <button type="submit">创建身份</button>
+                    <div class="ui-cluster">
+                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">创建身份</button>
+                    </div>
                 </form>
             </details>
-        </div>
+        </section>
     </div>
 
     {# ─────────── Tab 3：Bot 管理 ─────────── #}
     <div class="tab-content" data-tab-content="bots">
-        <div class="card">
-            <h4>Bot 管理 <small class="muted u-fs-82" >({{ bots|length }} 个)</small></h4>
+        <section class="ui-card">
+            <div class="ui-card-head">
+                <h4 class="ui-card-title">Bot 管理 <small class="muted u-fs-82">({{ bots|length }} 个)</small></h4>
+            </div>
             {% if bots %}
-            <div class="stats-grid">
+            <div class="ui-grid ui-grid--tile">
                 {% for bot in bots %}
                 <div class="bot-card">
                     <details>
-                        <summary style="font-weight:700;font-size:0.95rem;cursor:pointer;">
+                        <summary class="ui-summary">
                             <span class="status-dot {% if bot.platform == 'wechat' and bot.status == 'online' %}online{% elif bot.platform == 'wechat' and bot.status == 'pending_qr' %}pending{% else %}offline{% endif %}"></span>
                             {{ bot.name }}
-                            <span class="badge {% if bot.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %} u-ml-1" >
+                            <span class="ui-badge ui-badge--line u-ml-1">
                                 {{ 'QQ' if bot.platform == 'qq' else ('网页' if bot.platform == 'web' else '微信') }}
                             </span>
                             {% if bot.platform == 'qq' %}
-                            <span class="badge {% if bot.sandbox_mode %}badge-active{% else %}badge-warning{% endif %} u-ml-1" >
+                            <span class="ui-badge {% if bot.sandbox_mode %}ui-badge--warn{% else %}ui-badge--ok{% endif %} u-ml-1">
                                 {{ '沙箱' if bot.sandbox_mode else '正式' }}
                             </span>
                             {% endif %}
                             {% if bot.platform == 'wechat' %}
-                            <span class="badge {% if bot.status == 'online' %}badge-active{% elif bot.status == 'pending_qr' %}badge-warning{% else %}badge-inactive{% endif %} u-ml-1" >
+                            <span class="ui-badge {% if bot.status == 'online' %}ui-badge--ok{% elif bot.status == 'pending_qr' %}ui-badge--warn{% else %}ui-badge--line{% endif %} u-ml-1">
                                 {% if bot.status == 'online' %}在线{% elif bot.status == 'pending_qr' %}等待扫码{% else %}离线{% endif %}
                             </span>
                             {% endif %}
                             {% if bot.is_blocked %}
-                            <span class="badge badge-inactive u-ml-1" >已禁用</span>
+                            <span class="ui-badge ui-badge--line u-ml-1">已禁用</span>
                             {% endif %}
                         </summary>
-                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/edit" class="u-mt-3" >
-                            <label>名称
-                                <input type="text" name="name" value="{{ bot.name }}" required>
+                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/edit" class="ui-stack u-mt-3">
+                            <label class="ui-field">
+                                <span class="ui-label">名称</span>
+                                <input class="ui-input" type="text" name="name" value="{{ bot.name }}" required>
                             </label>
-                            <label>平台
-                                <input type="text" value="{{ bot.platform }}" disabled style="opacity:0.6;">
+                            <label class="ui-field">
+                                <span class="ui-label">平台</span>
+                                <input class="ui-input" type="text" value="{{ bot.platform }}" disabled>
                             </label>
-                            <label>App ID
-                                <input type="text" name="app_id" value="{{ bot.app_id }}">
+                            <label class="ui-field">
+                                <span class="ui-label">App ID</span>
+                                <input class="ui-input" type="text" name="app_id" value="{{ bot.app_id }}">
                             </label>
-                            <label>App Secret
-                                <input type="text" name="app_secret" value="{{ bot.app_secret }}">
+                            <label class="ui-field">
+                                <span class="ui-label">App Secret</span>
+                                <input class="ui-input" type="text" name="app_secret" value="{{ bot.app_secret }}">
                             </label>
                             {% if bot.platform == 'qq' %}
-                            <label>
+                            <label class="ui-cluster">
                                 <input type="checkbox" name="sandbox_mode" role="switch" {{ 'checked' if bot.sandbox_mode }}>
-                                沙箱模式
+                                <span>沙箱模式</span>
                             </label>
                             {% endif %}
                             {% if bot.is_blocked and bot.block_reason %}
-                            <p style="color:var(--danger-color);margin:0.3rem 0;font-size:0.85rem;">禁用原因：{{ bot.block_reason }}</p>
+                            <p class="ui-note ui-note--err">禁用原因：{{ bot.block_reason }}</p>
                             {% endif %}
-                            <div class="btn-row u-mt-2" >
-                                <button type="submit" class="u-fill" >保存修改</button>
+                            <div class="ui-cluster u-mt-2">
+                                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-fill">保存修改</button>
                                 {# 删除 Bot：不可恢复，需二次确认 #}
                                 <button type="submit" formaction="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/delete"
-                                        class="danger outline u-fill"  data-danger data-confirm-text="删除"
+                                        class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger u-fill" data-danger data-confirm-text="删除"
                                         data-confirm="确认删除 Bot「{{ bot.name }}」？此操作不可恢复！">删除</button>
                             </div>
                         </form>
                         {% if bot.platform == 'wechat' %}
                         <!-- 微信操作区：扫码登录 / 停止 Bot -->
-                        <div style="margin:0.8rem 0;padding:0.8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);">
-                            <div class="btn-row">
+                        <div class="ui-inset u-mt-3">
+                            <div class="ui-cluster">
                                 {% if bot.status != 'online' %}
-                                <button type="button" class="ghost"
+                                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm"
                                         hx-post="/admin/wechat-bots/{{ bot.id }}/qrcode"
                                         hx-target="#qr-area-{{ bot.id }}"
                                         hx-swap="innerHTML"
@@ -355,25 +341,23 @@
                                 <span id="qr-loading-{{ bot.id }}" class="htmx-indicator muted">加载中...</span>
                                 {% else %}
                                 {# 停止 Bot：将断开连接，需二次确认 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/stop" 
+                                <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/stop"
                                       data-confirm="确认停止 Bot「{{ bot.name }}」？Bot 将断开连接。" class="u-m0">
-                                    <button type="submit" class="ghost">停止 Bot</button>
+                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">停止 Bot</button>
                                 </form>
                                 {% endif %}
                             </div>
                             {% if bot.token_expire_at %}
-                            <p style="font-size:0.8rem;color:var(--text-2);margin:0.5rem 0 0;">
-                                Token过期: {{ bot.token_expire_at | to_beijing }}
-                            </p>
+                            <p class="ui-note">Token过期: {{ bot.token_expire_at | to_beijing }}</p>
                             {% endif %}
-                            <div id="qr-area-{{ bot.id }}" class="u-mt-2" ></div>
+                            <div id="qr-area-{{ bot.id }}" class="u-mt-2"></div>
                         </div>
                         {% endif %}
                         {% if bot.platform == 'qq' %}
                         <!-- QQ操作区：扫码绑定凭据 -->
-                        <div style="margin:0.8rem 0;padding:0.8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);">
-                            <div class="btn-row">
-                                <button type="button" class="ghost"
+                        <div class="ui-inset u-mt-3">
+                            <div class="ui-cluster">
+                                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm"
                                         hx-post="/admin/qq-bots/{{ bot.id }}/qrcode"
                                         hx-target="#qr-area-{{ bot.id }}"
                                         hx-swap="innerHTML"
@@ -382,19 +366,17 @@
                                 </button>
                                 <span id="qr-loading-{{ bot.id }}" class="htmx-indicator muted">加载中...</span>
                             </div>
-                            <p style="font-size:0.8rem;color:var(--text-2);margin:0.5rem 0 0;">
-                                用手机QQ扫码选择机器人，自动填入 App ID / App Secret
-                            </p>
-                            <div id="qr-area-{{ bot.id }}" class="u-mt-2" ></div>
+                            <p class="ui-note">用手机QQ扫码选择机器人，自动填入 App ID / App Secret</p>
+                            <div id="qr-area-{{ bot.id }}" class="u-mt-2"></div>
                         </div>
                         {% endif %}
-                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/toggle-block" 
+                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/toggle-block"
                               {% if not bot.is_blocked %}data-confirm="确定禁用 Bot「{{ bot.name }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用 Bot「{{ bot.name }}」？"{% endif %} class="u-mt-2">
                             <input type="hidden" name="block_reason" value="">
                             {% if not bot.is_blocked %}
-                            <button type="submit" class="ghost btn-sm">禁用 Bot</button>
+                            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">禁用 Bot</button>
                             {% else %}
-                            <button type="submit" class="btn-sm">启用</button>
+                            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">启用</button>
                             {% endif %}
                         </form>
                     </details>
@@ -405,15 +387,17 @@
             <p class="muted">暂无 Bot</p>
             {% endif %}
 
-            <details class="u-mt-3" >
-                <summary class="link-strong" >+ 新增 Bot</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/bots/create" class="inset-block" >
-                    <div class="grid">
-                        <label>Bot 名称
-                            <input type="text" name="name" placeholder="Bot 名称" required>
+            <details class="u-mt-3">
+                <summary class="ui-summary">+ 新增 Bot</summary>
+                <form method="post" action="/admin/accounts/{{ account.id }}/bots/create" class="inset-block">
+                    <div class="ui-grid ui-grid--2">
+                        <label class="ui-field">
+                            <span class="ui-label">Bot 名称</span>
+                            <input class="ui-input" type="text" name="name" placeholder="Bot 名称" required>
                         </label>
-                        <label>平台
-                            <select name="platform" required onchange="toggleBotFields(this.value)">
+                        <label class="ui-field">
+                            <span class="ui-label">平台</span>
+                            <select class="ui-select" name="platform" required onchange="toggleBotFields(this.value)">
                                 <option value="qq">QQ</option>
                                 <option value="wechat">微信</option>
                                 <option value="web">网页</option>
@@ -421,127 +405,138 @@
                         </label>
                     </div>
                     <div id="qq-only-fields">
-                        <div class="grid">
-                            <label>App ID
-                                <input type="text" name="app_id" placeholder="App ID（可留空，创建后扫码绑定）">
+                        <div class="ui-grid ui-grid--2">
+                            <label class="ui-field">
+                                <span class="ui-label">App ID</span>
+                                <input class="ui-input" type="text" name="app_id" placeholder="App ID（可留空，创建后扫码绑定）">
                             </label>
-                            <label>App Secret
-                                <input type="text" name="app_secret" placeholder="App Secret（可留空，创建后扫码绑定）">
+                            <label class="ui-field">
+                                <span class="ui-label">App Secret</span>
+                                <input class="ui-input" type="text" name="app_secret" placeholder="App Secret（可留空，创建后扫码绑定）">
                             </label>
                         </div>
-                        <label>
+                        <label class="ui-cluster">
                             <input type="checkbox" name="sandbox_mode" role="switch" checked>
-                            沙箱模式（仅QQ）
+                            <span>沙箱模式（仅QQ）</span>
                         </label>
                     </div>
-                    <button type="submit">添加 Bot</button>
+                    <div class="ui-cluster">
+                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加 Bot</button>
+                    </div>
                 </form>
             </details>
-        </div>
+        </section>
     </div>
 
     {# ─────────── Tab 4：对话服务（列表 + 添加） ─────────── #}
     <div class="tab-content" data-tab-content="services">
         <!-- 对话服务列表 -->
-        <div class="card">
-            <h4>对话服务 <small class="muted u-fs-82" >({{ service_infos|length }} 个)</small></h4>
+        <section class="ui-card">
+            <div class="ui-card-head">
+                <h4 class="ui-card-title">对话服务 <small class="muted u-fs-82">({{ service_infos|length }} 个)</small></h4>
+            </div>
             {% if service_infos %}
-            <div style="display:flex;flex-direction:column;gap:0.8rem;">
+            <div class="ui-stack">
                 {% for sinfo in service_infos %}
                 <div class="entity-tile">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;">
-                        <div>
-                            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                                <strong style="font-size:0.98rem;">{{ sinfo.service.name }}</strong>
+                    <div class="u-row-between">
+                        <div class="ui-stack ui-stack--tight">
+                            <div class="ui-cluster">
+                                <strong>{{ sinfo.service.name }}</strong>
                                 {% if sinfo.service.is_active %}
-                                <span class="badge badge-active"><span class="status-dot online u-m0" ></span>启用</span>
+                                <span class="ui-badge ui-badge--ok"><span class="status-dot online u-m0"></span>启用</span>
                                 {% else %}
-                                <span class="badge badge-inactive"><span class="status-dot offline u-m0" ></span>禁用</span>
+                                <span class="ui-badge ui-badge--line"><span class="status-dot offline u-m0"></span>禁用</span>
                                 {% endif %}
                             </div>
-                            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
-                                <span class="badge badge-neutral">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.user else '-' }}</span>
-                                <span class="badge badge-neutral">Bot：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
-                                <span class="badge badge-neutral">角色：{{ sinfo.profile.name if sinfo.profile else '-' }}</span>
+                            <div class="ui-cluster">
+                                <span class="ui-badge ui-badge--line">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.user else '-' }}</span>
+                                <span class="ui-badge ui-badge--line">Bot：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
+                                <span class="ui-badge ui-badge--line">角色：{{ sinfo.profile.name if sinfo.profile else '-' }}</span>
                                 {% if sinfo.service.share_group_id %}
-                                <span class="badge badge-neutral">共享组：{{ sinfo.service.share_group_id[:8] }}</span>
+                                <span class="ui-badge ui-badge--ink">共享组：{{ sinfo.service.share_group_id[:8] }}</span>
                                 {% endif %}
                             </div>
                         </div>
-                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/delete" 
+                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/delete"
                               data-confirm="确定删除服务「{{ sinfo.service.name }}」？将级联删除其对话、消息与长期记忆（共享组数据仅在删除最后一个成员时清理）。" data-danger data-confirm-text="删除" class="u-m0">
-                            <button type="submit" class="danger outline btn-sm">删除</button>
+                            <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">删除</button>
                         </form>
                     </div>
                     {% if sinfo.service.disable_reason %}
-                    <p class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;">禁用原因：{{ sinfo.service.disable_reason }}</p>
+                    <p class="ui-note">禁用原因：{{ sinfo.service.disable_reason }}</p>
                     {% endif %}
-                    <details style="margin-top:0.6rem;">
-                        <summary style="font-size:0.85rem;cursor:pointer;color:var(--primary);font-weight:500;">编辑服务</summary>
-                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/edit" style="margin-top:0.6rem;padding:0.9rem;background:var(--surface-2);border-radius:var(--radius-sm);">
-                            <div class="grid">
-                                <label>服务名称
-                                    <input type="text" name="name" value="{{ sinfo.service.name }}">
+                    <details class="u-mt-3">
+                        <summary class="ui-summary">编辑服务</summary>
+                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/edit" class="inset-block">
+                            <div class="ui-grid ui-grid--2">
+                                <label class="ui-field">
+                                    <span class="ui-label">服务名称</span>
+                                    <input class="ui-input" type="text" name="name" value="{{ sinfo.service.name }}">
                                 </label>
-                                <label>角色
-                                    <select name="profile_id">
+                                <label class="ui-field">
+                                    <span class="ui-label">角色</span>
+                                    <select class="ui-select" name="profile_id">
                                         {% for p in profiles %}
                                         <option value="{{ p.slug }}" {% if p.slug == sinfo.service.profile_id %}selected{% endif %}>{{ p.name }}</option>
                                         {% endfor %}
                                     </select>
                                 </label>
                             </div>
-                            <div class="grid">
-                                <label>
+                            <div class="ui-grid ui-grid--2">
+                                <label class="ui-cluster">
                                     <input type="checkbox" name="is_active" role="switch" {% if sinfo.service.is_active %}checked{% endif %}>
-                                    启用服务
+                                    <span>启用服务</span>
                                 </label>
-                                <label>禁用原因
-                                    <input type="text" name="disable_reason" value="{{ sinfo.service.disable_reason or '' }}" placeholder="禁用时的提示原因">
+                                <label class="ui-field">
+                                    <span class="ui-label">禁用原因</span>
+                                    <input class="ui-input" type="text" name="disable_reason" value="{{ sinfo.service.disable_reason or '' }}" placeholder="禁用时的提示原因">
                                 </label>
                             </div>
-                            <label>共享组ID
-                                <input type="text" name="share_group_id" value="{{ sinfo.service.share_group_id or '' }}" placeholder="填相同ID的服务共享对话与记忆（限同账号同角色，留空不共享）">
+                            <label class="ui-field">
+                                <span class="ui-label">共享组ID</span>
+                                <input class="ui-input" type="text" name="share_group_id" value="{{ sinfo.service.share_group_id or '' }}" placeholder="填相同ID的服务共享对话与记忆（限同账号同角色，留空不共享）">
                             </label>
-                            <button type="submit" class="btn-sm">保存修改</button>
+                            <div class="ui-cluster">
+                                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存修改</button>
+                            </div>
                         </form>
                     </details>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="empty-state">
-                <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-                <div class="empty-title">暂无对话服务</div>
-                <div class="empty-desc">在下方选择身份、Bot 与角色来创建第一个对话服务</div>
-            </div>
+            {{ empty('暂无对话服务', '在下方选择身份、Bot 与角色来创建第一个对话服务', 'chat') }}
             {% endif %}
-        </div>
+        </section>
 
         <!-- 添加对话服务 -->
-        <div class="card">
-            <h4>添加对话服务</h4>
-            <p class="muted" style="margin-bottom:0.75rem;font-size:0.85rem;">服务名称将自动生成：{身份}-{角色}-{Bot名称}</p>
-            <form method="post" action="/admin/accounts/{{ account.id }}/services">
-                <div class="grid">
-                    <label>选择身份
-                        <select name="identity_id" required>
+        <section class="ui-card">
+            <div class="ui-card-head"><h4 class="ui-card-title">添加对话服务</h4></div>
+            <p class="muted u-fs-85">服务名称将自动生成：{身份}-{角色}-{Bot名称}</p>
+            <form method="post" action="/admin/accounts/{{ account.id }}/services" class="ui-stack">
+                <div class="ui-grid ui-grid--3">
+                    <label class="ui-field">
+                        <span class="ui-label">选择身份</span>
+                        <select class="ui-select" name="identity_id" required>
                             <option value="">选择身份...</option>
                             {% for u in identities %}
                             <option value="{{ u.id }}">{{ u.name or u.platform_id }} ({{ u.platform }})</option>
                             {% endfor %}
                         </select>
                     </label>
-                    <label>选择 Bot
-                        <select name="bot_id" required>
+                    <label class="ui-field">
+                        <span class="ui-label">选择 Bot</span>
+                        <select class="ui-select" name="bot_id" required>
                             <option value="">选择 Bot...</option>
                             {% for b in bots %}
                             <option value="{{ b.id }}">{{ b.name }} ({{ b.platform }})</option>
                             {% endfor %}
                         </select>
                     </label>
-                    <label>选择角色
-                        <select name="profile_id" required>
+                    <label class="ui-field">
+                        <span class="ui-label">选择角色</span>
+                        <select class="ui-select" name="profile_id" required>
                             <option value="">选择角色...</option>
                             {% for p in profiles %}
                             <option value="{{ p.slug }}">{{ p.name }}</option>
@@ -549,9 +544,11 @@
                         </select>
                     </label>
                 </div>
-                <button type="submit">添加服务</button>
+                <div class="ui-cluster">
+                    <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加服务</button>
+                </div>
             </form>
-        </div>
+        </section>
     </div>
 </div>
 

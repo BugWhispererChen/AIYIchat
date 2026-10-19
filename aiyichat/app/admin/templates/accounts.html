@@ -1,139 +1,125 @@
 {% extends "base.html" %}
 {% set active_page = "accounts" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}账号管理{% endblock %}
 
+{% from "partials/_ui.html" import page_header, alert, empty, quota, table_meta, actions %}
+
 {% block content %}
-<div class="page-header">
-    <h3>账号管理</h3>
-    <p class="subtitle">管理平台账号及其关联资源</p>
+{{ page_header('账号管理', '管理平台账号及其关联资源', '运营管理') }}
+
+{{ alert('error', error) }}
+{{ alert('success', success) }}
+
+{# ── 检索带：搜索与重置同行，右侧留白 ───────────────── #}
+<div class="ui-toolbar">
+    <form method="get" action="/admin/accounts" class="ui-cluster ui-cluster--fill">
+        <input type="search" name="q" class="ui-input"
+               value="{{ request.query_params.get('q', '') }}"
+               placeholder="搜索账号名称或备注..." aria-label="搜索账号">
+        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>
+        {% if request.query_params.get('q') %}
+        <a href="/admin/accounts" class="ui-btn ui-btn--ghost ui-btn--sm">重置</a>
+        {% endif %}
+    </form>
 </div>
 
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
-{% if success %}
-<div class="alert alert-success">{{ success }}</div>
-{% endif %}
-
-<!-- 搜索 + 新增 -->
-<div class="card">
-    <div class="card-title-row">
-        <div class="search-bar" style="flex:1;">
-            <form method="get" action="/admin/accounts" style="display:flex;gap:0.5rem;flex:1;">
-                <input type="search" name="q" value="{{ request.query_params.get('q', '') }}" placeholder="搜索账号名称或备注...">
-                <button type="submit">搜索</button>
-                {% if request.query_params.get('q') %}
-                <a href="/admin/accounts" role="button" class="ghost">重置</a>
-                {% endif %}
-            </form>
+{# ── 新建账号：折叠组独立成卡，表单一律走 .ui-grid 分栏 ── #}
+<details class="ui-card">
+    <summary class="ui-summary">新增账号</summary>
+    <form method="post" action="/admin/accounts/create" class="ui-stack u-mt-4">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">账号名称</span>
+                <input class="ui-input" type="text" name="name" placeholder="输入账号名称" required>
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">备注</span>
+                <input class="ui-input" type="text" name="remark" placeholder="可选备注信息">
+            </label>
         </div>
-    </div>
+        {% call actions('start') %}
+        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">创建账号</button>
+        {% endcall %}
+    </form>
+</details>
 
-    <!-- 创建账号 -->
-    <details style="margin-bottom:0;">
-        <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增账号</summary>
-        <form method="post" action="/admin/accounts/create" style="margin-top:0.8rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
-            <div class="grid">
-                <label>账号名称
-                    <input type="text" name="name" placeholder="输入账号名称" required>
-                </label>
-                <label>备注
-                    <input type="text" name="remark" placeholder="可选备注信息">
-                </label>
-            </div>
-            <button type="submit">创建账号</button>
-        </form>
-    </details>
-</div>
-
-<!-- 账号列表 -->
+{# ── 账号列表 ─────────────────────────────────────────── #}
 {% if account_infos %}
-<div class="card">
-    <div class="table-wrap">
-    <table style="table-layout: fixed !important; width: 100%;">
-        <colgroup>
-            <col style="width: 22%;">
-            <col style="width: 15%;">
-            <col style="width: 15%;">
-            <col style="width: 15%;">
-            <col style="width: 12%;">
-            <col style="width: 9%;">
-            <col style="width: 12%;">
-        </colgroup>
-        <thead>
-            <tr>
-                <th data-sortable="账号名称">账号名称</th>
-                <th data-sortable="文字额度（Token）">文字额度（Token）</th>
-                <th data-sortable="语音额度">语音额度</th>
-                <th data-sortable="图片额度">图片额度</th>
-                <th data-sortable="有效期">有效期</th>
-                <th data-sortable="服务数">服务数</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for info in account_infos %}
-            {% set q = info.quota %}
-            <tr>
-                <td>
-                    <strong>{{ info.account.name }}</strong>
-                    {% if info.account.remark %}
-                    <br><small style="color:var(--text-2);">{{ info.account.remark }}</small>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if q %}
-                    <span class="text-ellipsis" title="{{ q.text_quota.used }}/{{ q.text_quota.limit }}">{{ q.text_quota.used|format_quota }}/{{ q.text_quota.limit|format_quota }}</span>
-                    {% set text_pct = (q.text_quota.used / q.text_quota.limit * 100) if q.text_quota.limit > 0 else 0 %}
-                    <div class="progress-bar">
-                        <div class="fill {% if text_pct > 90 %}red{% elif text_pct > 70 %}yellow{% else %}green{% endif %}" style="width:{{ text_pct }}%"></div>
-                    </div>
-                    {% else %}-{% endif %}
-                </td>
-                <td>
-                    {% if q %}
-                    <span class="text-ellipsis" title="{{ q.voice_quota.used }}/{{ q.voice_quota.limit }}">{{ q.voice_quota.used|format_quota }}/{{ q.voice_quota.limit|format_quota }}</span>
-                    {% set voice_pct = (q.voice_quota.used / q.voice_quota.limit * 100) if q.voice_quota.limit > 0 else 0 %}
-                    <div class="progress-bar">
-                        <div class="fill {% if voice_pct > 90 %}red{% elif voice_pct > 70 %}yellow{% else %}green{% endif %}" style="width:{{ voice_pct }}%"></div>
-                    </div>
-                    {% else %}-{% endif %}
-                </td>
-                <td>
-                    {% if q %}
-                    <span class="text-ellipsis" title="{{ q.image_quota.used }}/{{ q.image_quota.limit }}">{{ q.image_quota.used|format_quota }}/{{ q.image_quota.limit|format_quota }}</span>
-                    {% set img_pct = (q.image_quota.used / q.image_quota.limit * 100) if q.image_quota.limit > 0 else 0 %}
-                    <div class="progress-bar">
-                        <div class="fill {% if img_pct > 90 %}red{% elif img_pct > 70 %}yellow{% else %}blue{% endif %}" style="width:{{ img_pct }}%"></div>
-                    </div>
-                    {% else %}-{% endif %}
-                </td>
-                <td>
-                    {% if q and q.text_quota.expires_at %}
+<section class="ui-card ui-card--flush">
+    {{ table_meta('共 ' ~ account_infos|length ~ ' 个账号') }}
+    <div class="ui-table-wrap">
+        <table class="ui-table">
+            <colgroup>
+                <col style="width: 22%;">
+                <col style="width: 16%;">
+                <col style="width: 15%;">
+                <col style="width: 15%;">
+                <col style="width: 12%;">
+                <col style="width: 8%;">
+                <col style="width: 12%;">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th data-sortable="账号名称">账号名称</th>
+                    <th data-sortable="文字额度（Token）">文字额度（Token）</th>
+                    <th data-sortable="语音额度">语音额度</th>
+                    <th data-sortable="图片额度">图片额度</th>
+                    <th data-sortable="有效期">有效期</th>
+                    <th class="num" data-sortable="服务数">服务数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for info in account_infos %}
+                {% set q = info.quota %}
+                <tr>
+                    <td>
+                        <div class="ui-stack ui-stack--tight">
+                            <strong>{{ info.account.name }}</strong>
+                            {% if info.account.remark %}
+                            <small class="u-muted">{{ info.account.remark }}</small>
+                            {% endif %}
+                        </div>
+                    </td>
+                    {% for bucket, label in [
+                          (q.text_quota if q else None, 'text'),
+                          (q.voice_quota if q else None, 'voice'),
+                          (q.image_quota if q else None, 'image')] %}
+                    <td>
+                        {% if bucket %}
+                        {{ quota(bucket.used, bucket.limit) }}
+                        {% else %}
+                        <span class="u-muted">—</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td>
+                        {% if q and q.text_quota.expires_at %}
                         {{ (q.text_quota.expires_at|to_beijing).strftime('%Y-%m-%d') }}
-                    {% elif q %}
-                        <span style="color:var(--text-2);">永久</span>
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-                <td>{% if info.service_count %}<span class="badge badge-role-user">{{ info.service_count }}</span>{% else %}<span class="badge badge-neutral">0</span>{% endif %}</td>
-                <td>
-                    <a href="/admin/accounts/{{ info.account.id }}" role="button" class="ghost btn-sm">管理</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                        {% elif q %}
+                        <span class="u-muted">永久</span>
+                        {% else %}
+                        <span class="u-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">
+                        {% if info.service_count %}
+                        <span class="ui-badge ui-badge--ink">{{ info.service_count }}</span>
+                        {% else %}
+                        <span class="ui-badge ui-badge--line">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/admin/accounts/{{ info.account.id }}" class="ui-btn ui-btn--outline ui-btn--sm">管理</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-</div>
+</section>
 {% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-        <div class="empty-title">暂无账号</div>
-        <div class="empty-desc">点击上方“新增账号”创建第一个平台账号</div>
-    </div>
-</div>
+{{ empty('暂无账号', '点击上方“新增账号”创建第一个平台账号', 'users') }}
 {% endif %}
 {% endblock %}

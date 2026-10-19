@@ -283,6 +283,7 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 /* 补充说明文字：比正文低一档，用于禁用原因、过期时间等附属信息 */
 .ui-note { font-size: .82rem; color: var(--text-2); margin: var(--space-1) 0 0; }
 .ui-note--err { color: var(--danger-text); }
+.ui-note--ok { color: var(--success-text); }
 
 /* 滑块右侧的数值回显（性格特质） */
 .ui-trait-val {
@@ -640,6 +641,12 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-cluster--fill { flex: 1 1 auto; }
 /* 表格行内的操作组不换行，避免窄列里按钮竖排 */
 .ui-cluster--nowrap { flex-wrap: nowrap; }
+/* 动作条：页面/向导底部的操作行，用上分隔线把它与上方区块连成一体，
+   否则在 1400px 宽的内容列里，左右两端对齐的按钮会像两个孤儿浮在空白中 */
+.ui-cluster--bar {
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-4);
+}
 
 /* ── 网格：一律 minmax(0,1fr) 防止子项内容撑破列 ──────── */
 .ui-grid {

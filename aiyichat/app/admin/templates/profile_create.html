@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% set active_page = "profiles" %}
+{% set content_width = "ui-container--narrow" %}
 {% block title %}创建自定义角色{% endblock %}
+
+{% from "partials/_ui.html" import page_header, alert %}
 
 {% block breadcrumb %}
 <a href="/admin/profiles">角色管理</a>
@@ -9,62 +12,45 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>创建自定义角色</h3>
-    <p class="subtitle">第 1/4 步：描述角色 —— 系统将调用大模型生成完整的角色档案</p>
-</div>
+{{ page_header('创建自定义角色', '第 1/4 步：描述角色 —— 系统将调用大模型生成完整的角色档案', '角色内容') }}
 
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('error', error) }}
 
-<div class="card" style="max-width: 720px;">
-    <form method="post" action="/admin/profiles/create/generate" id="create-form">
-        <label>角色名称 <small class="field-hint">(必填，如：林小满)</small>
-            <input type="text" name="name" value="{{ name or '' }}" required maxlength="30"
+<section class="ui-card">
+    <form method="post" action="/admin/profiles/create/generate" id="create-form" class="ui-stack">
+        <label class="ui-field">
+            <span class="ui-label">角色名称 <small class="field-hint">(必填，如：林小满)</small></span>
+            <input class="ui-input" type="text" name="name" value="{{ name or '' }}" required maxlength="30"
                    placeholder="例如：林小满">
         </label>
-        <label>角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与身份的关系等)</small>
-            <textarea name="description" rows="6" required minlength="10"
+        <label class="ui-field">
+            <span class="ui-label">角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与身份的关系等)</small></span>
+            <textarea class="ui-textarea" name="description" rows="6" required minlength="10"
                       placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心身份">{{ description or '' }}</textarea>
         </label>
         {% set vb = verbosity | default('standard', true) %}
-        <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
-            <div style="display:flex;gap:1.2rem;">
-                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
-                    <input type="radio" name="verbosity" value="concise" {% if vb == 'concise' %}checked{% endif %}> 凝练
+        <fieldset class="ui-field">
+            <legend class="ui-label">回复风格
+                <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
+            </legend>
+            <div class="ui-cluster">
+                {% for val, cap in [('concise', '凝练'), ('standard', '标准'), ('verbose', '健谈')] %}
+                <label class="ui-cluster u-fw-normal">
+                    <input type="radio" name="verbosity" value="{{ val }}" {% if vb == val %}checked{% endif %}> {{ cap }}
                 </label>
-                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
-                    <input type="radio" name="verbosity" value="standard" {% if vb == 'standard' %}checked{% endif %}> 标准
-                </label>
-                <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
-                    <input type="radio" name="verbosity" value="verbose" {% if vb == 'verbose' %}checked{% endif %}> 健谈
-                </label>
+                {% endfor %}
             </div>
-        </label>
-        <div class="btn-row" style="display:flex;gap:0.6rem;align-items:center;">
-            <button type="submit" id="create-btn">生成角色信息</button>
-            <a href="/admin/profiles" role="button" class="ghost">取消</a>
+        </fieldset>
+        <div class="ui-cluster">
+            <button type="submit" id="create-btn" class="ui-btn ui-btn--primary">生成角色信息</button>
+            <a href="/admin/profiles" class="ui-btn ui-btn--ghost">取消</a>
         </div>
-        <p id="create-loading-hint" class="muted" style="font-size:0.82rem;margin:0.6rem 0 0;display:none;">
-            <span class="wizard-spinner"></span><span id="create-loading-text">处理中…</span>
+        {# display:none 必须留内联：脚本用 style.display 切换 #}
+        <p id="create-loading-hint" class="ui-note" style="display:none;">
+            <span class="ui-spinner ui-spinner--xs"></span><span id="create-loading-text">处理中…</span>
         </p>
     </form>
-</div>
-
-<style>
-.wizard-spinner {
-    display: inline-block;
-    width: 12px; height: 12px;
-    margin-right: 6px;
-    border: 2px solid var(--border);
-    border-top-color: var(--primary);
-    border-radius: 50%;
-    animation: wizard-spin 0.8s linear infinite;
-    vertical-align: -2px;
-}
-@keyframes wizard-spin { to { transform: rotate(360deg); } }
-</style>
+</section>
 
 <script>
     // 生成提交加载态：LLM 生成约需 10-30 秒，禁用按钮并提示，防止误刷新

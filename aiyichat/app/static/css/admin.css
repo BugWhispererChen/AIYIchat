@@ -699,6 +699,50 @@ td .text-ellipsis { display: block; }
 .anchor-nav .save-row { margin-top: .5rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 .section-card { scroll-margin-top: calc(var(--topbar-h) + 1rem); }
 
+/* ══ 角色创建向导（自 profile_create_wizard.html 的页内 style 上收） ══
+   注：向导内的两栏布局、按钮行、加载小圈已分别由布局层的
+   .ui-grid--split / .ui-cluster / .ui-spinner--xs 承担，此处不再重复定义。 */
+.wizard-steps {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: .3rem; margin-bottom: var(--section-gap);
+}
+.wizard-step { display: flex; align-items: center; gap: .45rem; }
+.wizard-step-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: .8rem; font-weight: 600;
+    background: var(--surface-2); color: var(--text-3);
+    border: 1px solid var(--border);
+}
+.wizard-step-label { font-size: .85rem; color: var(--text-3); }
+.wizard-step.current .wizard-step-num { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+.wizard-step.current .wizard-step-label { color: var(--text); font-weight: 600; }
+.wizard-step.done .wizard-step-num { background: var(--success-bg); color: var(--success-text); border-color: var(--success-text); }
+.wizard-step-line { flex: 0 0 28px; height: 1px; background: var(--border); margin: 0 .2rem; }
+
+.wizard-ref-preview img { max-width: 220px; border-radius: var(--radius-sm); display: block; }
+.wizard-ref-preview--candidate {
+    padding: var(--space-3);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+}
+.wizard-voice-row {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .6rem .7rem; margin-bottom: .5rem;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.wizard-voice-row.selected { border-color: var(--primary-ink); background: var(--primary-soft); }
+.wizard-confirm-avatar { width: 72px; height: 72px; object-fit: cover; border-radius: var(--radius-sm); }
+
+/* 角色信息摘要（partials/profile_summary.html） */
+.summary-grid {
+    display: grid; gap: .8rem; margin-top: .6rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.summary-item h5 { margin: 0 0 .35rem; font-size: .85rem; color: var(--text-2); }
+.summary-item p, .summary-item li { font-size: .85rem; margin: .15rem 0; }
+.summary-item ul { margin: .2rem 0; padding-left: 1.1rem; }
+
 /* ══ 步骤条 ══ */
 .steps { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .step {

@@ -1,5 +1,8 @@
 {% extends "base.html" %}
+{% set active_page = "profiles" %}
 {% block title %}创建自定义角色 - {{ profile.name }}{% endblock %}
+
+{% from "partials/_ui.html" import page_header, alert %}
 
 {% block breadcrumb %}
 <a href="/admin/profiles">角色管理</a>
@@ -8,10 +11,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>创建自定义角色：{{ profile.name }}</h3>
-    <p class="subtitle">草稿 slug：<code>{{ profile.slug }}</code>（完成最后一步前不会出现在角色列表）</p>
-</div>
+{{ page_header('创建自定义角色：' ~ profile.name,
+               '草稿 slug：' ~ profile.slug ~ '（完成最后一步前不会出现在角色列表）', '角色内容') }}
 
 <!-- 步骤进度条 -->
 <div class="wizard-steps">
@@ -25,69 +26,65 @@
     {% endfor %}
 </div>
 
-{% if success %}
-<div class="alert alert-success">{{ success }}</div>
-{% endif %}
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('success', success) }}
+{{ alert('error', error) }}
 
 {# ═══════════ Step 2：定妆照 ═══════════ #}
 {% if step == 2 %}
-<div class="wizard-layout">
-    <div class="card">
-        <h4>设置定妆照</h4>
-        <p class="muted u-fs-85" >定妆照是角色的标准参考肖像，用于对话中生成人物一致的图片。可上传照片，或用 AI 根据外貌描述生成；也可跳过，稍后在角色详情页补设。</p>
+<div class="ui-grid ui-grid--split">
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">设置定妆照</h4></div>
+        <p class="ui-note">定妆照是角色的标准参考肖像，用于对话中生成人物一致的图片。可上传照片，或用 AI 根据外貌描述生成；也可跳过，稍后在角色详情页补设。</p>
 
         {% if profile.reference_image_url %}
         <div class="wizard-ref-preview">
             <img src="{{ profile.reference_image_url }}" alt="定妆照">
-            <p class="muted u-fs-82 u-mt-1" >当前定妆照</p>
+            <p class="ui-note">当前定妆照</p>
         </div>
         {% endif %}
 
         {% if ref_candidate_url %}
-        <div class="wizard-ref-preview" style="border:1px dashed var(--border);padding:0.6rem;border-radius:8px;">
+        <div class="wizard-ref-preview wizard-ref-preview--candidate">
             <img src="{{ ref_candidate_url }}" alt="候选定妆照">
-            <p class="muted u-fs-82 u-mt-1" >AI 生成的候选图</p>
-            <div class="btn-row" style="display:flex;gap:0.5rem;margin-top:0.5rem;">
-                <button type="submit" form="wiz-ref-confirm-form" class="btn-sm" id="wiz-ref-confirm-btn">确认使用</button>
-                <button type="submit" form="wiz-ref-generate-form" class="ghost btn-sm" id="wiz-ref-regen-btn">重新生成</button>
+            <p class="ui-note">AI 生成的候选图</p>
+            <div class="ui-cluster u-mt-1">
+                <button type="submit" form="wiz-ref-confirm-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-ref-confirm-btn">确认使用</button>
+                <button type="submit" form="wiz-ref-generate-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="wiz-ref-regen-btn">重新生成</button>
             </div>
         </div>
         {% endif %}
 
-        <div class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.8rem;">
-            <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required class="u-mw-240" >
-            <button type="submit" form="wiz-ref-upload-form" class="btn-sm" id="wiz-ref-upload-btn">上传照片</button>
-            <button type="submit" form="wiz-ref-generate-form" class="ghost btn-sm" id="wiz-ref-generate-btn"
+        <div class="ui-cluster u-mt-3">
+            <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required class="u-mw-240">
+            <button type="submit" form="wiz-ref-upload-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-ref-upload-btn">上传照片</button>
+            <button type="submit" form="wiz-ref-generate-form" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-ref-generate-btn"
                     {% if not (profile.persona.appearance or profile.persona.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
                 AI 生成候选
             </button>
         </div>
-        <p id="wiz-ref-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
-            <span class="wizard-spinner"></span><span id="wiz-ref-loading-text">处理中…</span>
+        <p id="wiz-ref-loading-hint" class="ui-note" style="display:none;">
+            <span class="ui-spinner ui-spinner--xs"></span><span id="wiz-ref-loading-text">处理中…</span>
         </p>
-    </div>
+    </section>
 
-    <div class="card">
-        <h4>已生成的角色信息</h4>
-        <p style="margin:0.3rem 0;"><strong>{{ profile.name }}</strong> <span class="muted">（{{ profile.persona.age_appearance or '未描述年龄' }}）</span></p>
-        <p style="font-size:0.9rem;margin:0.3rem 0;">{{ profile.persona.background }}</p>
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">已生成的角色信息</h4></div>
+        <p class="u-m0"><strong>{{ profile.name }}</strong> <span class="muted">（{{ profile.persona.age_appearance or '未描述年龄' }}）</span></p>
+        <p class="u-fs-90">{{ profile.persona.background }}</p>
         <details>
-            <summary style="cursor:pointer;font-size:0.85rem;">查看完整设定</summary>
+            <summary class="ui-summary">查看完整设定</summary>
             {% include "partials/profile_summary.html" %}
         </details>
-        <p class="muted" style="font-size:0.8rem;margin-top:0.6rem;">如需修改角色信息，可在最后一步通过「编辑角色信息」进入详情页调整。</p>
-    </div>
+        <p class="ui-note">如需修改角色信息，可在最后一步通过「编辑角色信息」进入详情页调整。</p>
+    </section>
 </div>
 
-<div class="wizard-nav">
+<div class="ui-cluster ui-cluster--bar u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-2" style="display:none;"></form>
-    <button type="submit" form="wiz-cancel-form-2" class="ghost danger-outline"
+    <button type="submit" form="wiz-cancel-form-2" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <div class="u-fill" ></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/voice" role="button">
+    <div class="u-fill"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--primary">
         {% if profile.reference_image_url %}下一步：声音设置{% else %}跳过，下一步：声音设置{% endif %}
     </a>
 </div>
@@ -95,88 +92,84 @@
 
 {# ═══════════ Step 3：声音设置 ═══════════ #}
 {% if step == 3 %}
-<div class="wizard-layout">
-    <div class="card">
-        <h4>方式一：上传声音复刻</h4>
-        <p class="muted u-fs-85" >上传 10-20 秒清晰人声（WAV / MP3 / M4A），调用阿里云声音复刻生成专属音色。</p>
+<div class="ui-grid ui-grid--split">
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">方式一：上传声音复刻</h4></div>
+        <p class="ui-note">上传 10-20 秒清晰人声（WAV / MP3 / M4A），调用阿里云声音复刻生成专属音色。</p>
         {% if profile.voice_clone_status == 'active' %}
-        <p style="font-size:0.85rem;color:var(--success-text,var(--success));">
-            <strong>复刻已激活</strong>，音色 ID：<code>{{ profile.voice_id }}</code>
-        </p>
+        <p class="ui-note ui-note--ok"><strong>复刻已激活</strong>，音色 ID：<code>{{ profile.voice_id }}</code></p>
         {% elif profile.voice_clone_status == 'failed' %}
-        <p style="font-size:0.85rem;color:var(--danger-text,var(--danger));">上次复刻失败，可重新上传</p>
+        <p class="ui-note ui-note--err">上次复刻失败，可重新上传</p>
         {% endif %}
-        <div class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+        <div class="ui-cluster u-mt-2">
             <input type="file" name="voice_file" form="wiz-voice-clone-form"
-                   accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required class="u-mw-240" >
-            <button type="submit" form="wiz-voice-clone-form" class="btn-sm" id="wiz-voice-clone-btn">上传并复刻</button>
-            <button type="button" class="btn-sm" id="wiz-voice-record-btn" onclick="toggleWizVoiceRecord()">录音复刻</button>
+                   accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required class="u-mw-240">
+            <button type="submit" form="wiz-voice-clone-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-voice-clone-btn">上传并复刻</button>
+            <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-voice-record-btn" onclick="toggleWizVoiceRecord()">录音复刻</button>
             {% if profile.voice_id %}
-            <button type="submit" form="wiz-voice-preview-form" class="ghost btn-sm" id="wiz-voice-preview-btn">试听当前音色</button>
+            <button type="submit" form="wiz-voice-preview-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="wiz-voice-preview-btn">试听当前音色</button>
             {% endif %}
         </div>
 
-        {# 录音面板（默认隐藏） #}
-        <div id="wiz-voice-record-panel" style="display:none;margin-top:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:8px;background:var(--surface-2,var(--surface-2));">
-            <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
-                <div id="wiz-voice-record-status" style="font-size:0.9rem;color:var(--text-2,var(--text));">
+        {# 录音面板（默认隐藏）——display:none 必须留内联，脚本用 style.display 切换 #}
+        <div id="wiz-voice-record-panel" class="ui-inset u-mt-3" style="display:none;">
+            <div class="ui-cluster">
+                <div id="wiz-voice-record-status" class="ui-note">
                     点击"开始录音"按钮，录制 10-20 秒清晰人声
                 </div>
-                <div id="wiz-voice-record-timer" style="font-size:1.1rem;font-weight:600;color:var(--primary);min-width:60px;">
-                    00:00
-                </div>
+                <div id="wiz-voice-record-timer" class="ui-timer">00:00</div>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
-                <button type="button" class="btn-sm" id="wiz-voice-record-start-btn" onclick="startWizVoiceRecording()">
+            <div class="ui-cluster u-mt-2">
+                <button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-voice-record-start-btn" onclick="startWizVoiceRecording()">
                     开始录音
                 </button>
-                <button type="button" class="btn-sm danger" id="wiz-voice-record-stop-btn" onclick="stopWizVoiceRecording()" style="display:none;">
+                <button type="button" class="ui-btn ui-btn--danger ui-btn--sm" id="wiz-voice-record-stop-btn" onclick="stopWizVoiceRecording()" style="display:none;">
                     停止录音
                 </button>
-                <button type="button" class="ghost btn-sm" id="wiz-voice-record-cancel-btn" onclick="cancelWizVoiceRecording()">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="wiz-voice-record-cancel-btn" onclick="cancelWizVoiceRecording()">
                     取消
                 </button>
             </div>
-            <p class="muted" style="font-size:0.78rem;margin:0.5rem 0 0;">
+            <p class="ui-note">
                 录音时长要求 10-20 秒，不足 10 秒将无法提交。录音完成后自动转为 WAV 格式并上传复刻。
             </p>
         </div>
-    </div>
+    </section>
 
-    <div class="card">
-        <h4>方式二：选择预置音色</h4>
-        <p class="muted u-fs-85" >选择系统预置音色，试听确认后直接使用。</p>
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">方式二：选择预置音色</h4></div>
+        <p class="ui-note">选择系统预置音色，试听确认后直接使用。</p>
         {% for vid, vname, vdesc in preset_voices %}
         <div class="wizard-voice-row {% if preset_selected == vid or profile.voice_id == vid %}selected{% endif %}">
-            <div class="u-fill" >
-                <strong style="font-size:0.92rem;">{{ vname }}</strong>
-                <span class="muted" style="font-size:0.8rem;margin-left:0.5rem;">{{ vdesc }}</span>
+            <div class="u-fill">
+                <strong>{{ vname }}</strong>
+                <span class="muted u-fs-82">{{ vdesc }}</span>
             </div>
-            <button type="submit" form="wiz-preset-preview-{{ loop.index }}" class="ghost btn-sm">试听</button>
-            <button type="submit" form="wiz-preset-select-{{ loop.index }}" class="btn-sm">使用该音色</button>
+            <button type="submit" form="wiz-preset-preview-{{ loop.index }}" class="ui-btn ui-btn--ghost ui-btn--sm">试听</button>
+            <button type="submit" form="wiz-preset-select-{{ loop.index }}" class="ui-btn ui-btn--primary ui-btn--sm">使用该音色</button>
         </div>
         {% endfor %}
-    </div>
+    </section>
 </div>
 
 {% if voice_preview_url %}
-<div class="card u-mt-4" >
-    <h4>试听音频</h4>
-    <audio controls src="{{ voice_preview_url }}" style="width:100%;max-width:480px;"></audio>
-</div>
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">试听音频</h4></div>
+    <audio class="ui-audio" controls src="{{ voice_preview_url }}"></audio>
+</section>
 {% endif %}
 
-<p id="wiz-voice-loading-hint" class="muted" style="font-size:0.82rem;margin:0.6rem 0 0;display:none;">
-    <span class="wizard-spinner"></span><span id="wiz-voice-loading-text">处理中…</span>
+<p id="wiz-voice-loading-hint" class="ui-note" style="display:none;">
+    <span class="ui-spinner ui-spinner--xs"></span><span id="wiz-voice-loading-text">处理中…</span>
 </p>
 
-<div class="wizard-nav">
+<div class="ui-cluster ui-cluster--bar u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-3" style="display:none;"></form>
-    <button type="submit" form="wiz-cancel-form-3" class="ghost danger-outline"
+    <button type="submit" form="wiz-cancel-form-3" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <a href="/admin/profiles/create/{{ profile.slug }}/image" role="button" class="ghost">上一步：定妆照</a>
-    <div class="u-fill" ></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/confirm" role="button">
+    <a href="/admin/profiles/create/{{ profile.slug }}/image" class="ui-btn ui-btn--ghost">上一步：定妆照</a>
+    <div class="u-fill"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/confirm" class="ui-btn ui-btn--primary">
         {% if profile.voice_id %}下一步：确认生成{% else %}跳过（使用默认音色），下一步{% endif %}
     </a>
 </div>
@@ -196,37 +189,39 @@
 
 {# ═══════════ Step 4：确认生成 ═══════════ #}
 {% if step == 4 %}
-<div class="card">
-    <h4>角色信息总览</h4>
-    <div class="wizard-confirm-head">
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">角色信息总览</h4></div>
+    <div class="ui-cluster u-mb-3">
         {% if profile.reference_image_url %}
-        <img src="{{ profile.reference_image_url }}" alt="定妆照" class="wizard-confirm-avatar">
+        <img class="wizard-confirm-avatar" src="{{ profile.reference_image_url }}" alt="定妆照">
         {% endif %}
-        <div>
-            <p class="u-m0" ><strong style="font-size:1.05rem;">{{ profile.name }}</strong>
-                <span class="muted" style="margin-left:0.5rem;">slug: {{ profile.slug }}</span></p>
-            <p class="muted" style="font-size:0.85rem;margin:0.3rem 0 0;">
+        <div class="ui-stack ui-stack--tight">
+            <p class="u-m0"><strong>{{ profile.name }}</strong> <span class="muted">slug: {{ profile.slug }}</span></p>
+            <p class="ui-note">
                 音色：{{ profile.voice_id or '默认音色' }}
                 {% if profile.voice_clone_status == 'active' %}（复刻）{% endif %}
             </p>
-            <a href="/admin/profiles/{{ profile.slug }}" class="u-fs-85" >编辑角色信息（保存后请返回本页继续）</a>
+            <a href="/admin/profiles/{{ profile.slug }}" class="u-fs-85">编辑角色信息（保存后请返回本页继续）</a>
         </div>
     </div>
     {% include "partials/profile_summary.html" %}
-</div>
+</section>
 
-<div class="card u-mt-4" >
-    <h4>可见性与生成</h4>
-    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/confirm" id="wiz-confirm-form">
-        <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;">
-            <label>可见范围
-                <select name="visibility" id="wiz-visibility-select">
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">可见性与生成</h4></div>
+    <form method="post" action="/admin/profiles/create/{{ profile.slug }}/confirm" id="wiz-confirm-form" class="ui-stack">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">可见范围</span>
+                <select class="ui-select" name="visibility" id="wiz-visibility-select">
                     <option value="public" {% if profile.visibility == 'public' %}selected{% endif %}>公共（所有账号可用）</option>
                     <option value="private" {% if profile.visibility == 'private' %}selected{% endif %}>私有（仅指定账号可用）</option>
                 </select>
             </label>
-            <label id="wiz-account-select-label" style="display:none;">所属账号
-                <select name="account_id">
+            {# display:none 必须留内联：脚本用 style.display 切换 #}
+            <label class="ui-field" id="wiz-account-select-label" style="display:none;">
+                <span class="ui-label">所属账号</span>
+                <select class="ui-select" name="account_id">
                     <option value="">请选择账号</option>
                     {% for acc in accounts.values() %}
                     <option value="{{ acc.id }}">{{ acc.name or acc.id }}</option>
@@ -234,21 +229,21 @@
                 </select>
             </label>
         </div>
-        <div class="btn-row" style="display:flex;gap:0.5rem;align-items:center;margin-top:0.6rem;">
-            <button type="submit" id="wiz-confirm-btn">确认并生成角色</button>
+        <div class="ui-cluster">
+            <button type="submit" id="wiz-confirm-btn" class="ui-btn ui-btn--primary">确认并生成角色</button>
         </div>
-        <p id="wiz-confirm-loading-hint" class="muted" style="font-size:0.82rem;margin:0.5rem 0 0;display:none;">
-            <span class="wizard-spinner"></span><span id="wiz-confirm-loading-text">处理中…</span>
+        <p id="wiz-confirm-loading-hint" class="ui-note" style="display:none;">
+            <span class="ui-spinner ui-spinner--xs"></span><span id="wiz-confirm-loading-text">处理中…</span>
         </p>
     </form>
-</div>
+</section>
 
-<div class="wizard-nav">
+<div class="ui-cluster ui-cluster--bar u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-4" style="display:none;"></form>
-    <button type="submit" form="wiz-cancel-form-4" class="ghost danger-outline"
+    <button type="submit" form="wiz-cancel-form-4" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <div class="u-fill" ></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/voice" role="button" class="ghost">上一步：声音设置</a>
+    <div class="u-fill"></div>
+    <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--ghost">上一步：声音设置</a>
 </div>
 {% endif %}
 
@@ -263,46 +258,7 @@
 {% endif %}
 {% endif %}
 
-<style>
-.wizard-steps { display:flex; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:0.3rem; }
-.wizard-step { display:flex; align-items:center; gap:0.45rem; }
-.wizard-step-num {
-    width:26px; height:26px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    font-size:0.8rem; font-weight:600;
-    background:var(--surface-2); color:var(--text-3);
-    border:1px solid var(--border);
-}
-.wizard-step-label { font-size:0.85rem; color:var(--text-3); }
-.wizard-step.current .wizard-step-num { background:var(--primary); color:var(--primary-text); border-color:var(--primary); }
-.wizard-step.current .wizard-step-label { color:var(--text); font-weight:600; }
-.wizard-step.done .wizard-step-num { background:var(--success-bg,var(--success-bg)); color:var(--success-text,var(--success)); border-color:var(--success-text,var(--success)); }
-.wizard-step-line { flex:0 0 28px; height:1px; background:var(--border); margin:0 0.2rem; }
-.wizard-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:1rem; align-items:start; }
-@media (max-width: 900px) { .wizard-layout { grid-template-columns:1fr; } }
-.wizard-ref-preview img { max-width:220px; border-radius:8px; display:block; }
-.wizard-voice-row {
-    display:flex; align-items:center; gap:0.6rem;
-    padding:0.6rem 0.7rem; border:1px solid var(--border);
-    border-radius:8px; margin-bottom:0.5rem;
-}
-.wizard-voice-row.selected { border-color:var(--primary); background:var(--primary-soft); }
-.wizard-nav { display:flex; align-items:center; gap:0.6rem; margin-top:1.2rem; }
-.wizard-nav .danger-outline { color:var(--danger-text,var(--danger)); border-color:var(--danger-text,var(--danger)); background:transparent; }
-.wizard-confirm-head { display:flex; gap:1rem; align-items:center; margin-bottom:0.8rem; }
-.wizard-confirm-avatar { width:72px; height:72px; object-fit:cover; border-radius:10px; }
-.wizard-spinner {
-    display:inline-block; width:12px; height:12px; margin-right:6px;
-    border:2px solid var(--border); border-top-color:var(--primary);
-    border-radius:50%; animation:wizard-spin 0.8s linear infinite; vertical-align:-2px;
-}
-@keyframes wizard-spin { to { transform: rotate(360deg); } }
-.summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:0.8rem; margin-top:0.6rem; }
-.summary-item h5 { margin:0 0 0.35rem; font-size:0.85rem; color:var(--text-2); }
-.summary-item p, .summary-item li { font-size:0.85rem; margin:0.15rem 0; }
-.summary-item ul { margin:0.2rem 0; padding-left:1.1rem; }
-</style>
-
+{# 向导各组件样式已上收至 static/css/admin.css 的「角色创建向导」章节 #}
 <script>
     // 长耗时表单提交加载态：禁用按钮并显示提示，防止重复点击与误刷新
     (function() {

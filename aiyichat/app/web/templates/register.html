@@ -7,129 +7,29 @@
     {# 空图标：避免浏览器默认去取 /favicon.ico 产生 404 控制台报错 #}
     <link rel="icon" href="data:,">
     {% include "partials/_assets.html" %}
-    <style>
-        * { box-sizing: border-box; }
-        [hidden] { display: none !important; }
-        body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, var(--primary-soft) 0%, var(--bg) 50%, var(--login-bg-end, #ede9fe) 100%);
-            font-family: var(--pico-font-family);
-            color: var(--text);
-            padding: 1.5rem 0;
-        }
-        /* 深色主题：背景末端改用深石板色，避免硬编码浅紫在暗色下突兀 */
-        [data-theme="dark"] body {
-            background: linear-gradient(135deg, #1e293b 0%, var(--bg) 50%, #312e5c 100%);
-        }
-        .page-container { width: 100%; max-width: 460px; padding: 0 1rem; }
-        .page-box {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-lg);
-            padding: 1.75rem 1.5rem;
-        }
-        .page-header { text-align: center; margin-bottom: 1.4rem; }
-        .page-header .brand-icon {
-            width: 52px; height: 52px;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            border-radius: 15px;
-            display: inline-flex; align-items: center; justify-content: center;
-            font-size: 1.15rem; color: #fff; font-weight: 700;
-            margin-bottom: .7rem;
-            box-shadow: 0 6px 16px rgba(99,102,241,.35);
-        }
-        .page-header h2 { margin: 0; font-size: 1.35rem; font-weight: 700; color: var(--text); }
-        .page-header .subtitle { color: var(--text-2); font-size: .88rem; margin-top: .3rem; }
-        label { font-size: .88rem; font-weight: 500; color: var(--text); }
-        input[type="text"], input[type="password"] {
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-strong);
-            font-size: .95rem;
-        }
-        .field-tip { font-size: .78rem; color: var(--text-2); margin: -.3rem 0 .6rem; }
-        /* 密码强度条：纯前端提示，服务端弱密码规则才是最终裁判 */
-        .strength { display: flex; align-items: center; gap: .55rem; font-size: .78rem; margin: .1rem 0 .5rem; }
-        .strength-track { flex: 1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-        .strength-fill { height: 100%; width: 0; background: var(--border-strong); transition: width var(--transition), background var(--transition); }
-        .lvl-weak { color: var(--danger-text); }
-        .lvl-mid { color: var(--warning-text); }
-        .lvl-strong { color: var(--success-text); }
-        .captcha-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-        .captcha-row img {
-            width: 130px; height: 44px;
-            border: 1px solid var(--border-strong);
-            border-radius: var(--radius-sm);
-            background: #f5f6f8;   /* 验证码图本身是浅底，暗色下也保持可读 */
-            cursor: pointer;
-        }
-        .captcha-row input { flex: 1; min-width: 110px; margin: 0; }
-        .consent-item { display: flex; gap: .5rem; align-items: flex-start; font-size: .86rem; margin-bottom: .55rem; }
-        .consent-item input { margin-top: .3rem; flex-shrink: 0; }
-        .notice {
-            background: var(--info-bg);
-            border: 1px solid var(--border-strong);
-            color: var(--text);
-            border-radius: var(--radius-sm);
-            padding: .7rem .85rem;
-            font-size: .79rem;
-            line-height: 1.6;
-            margin: .9rem 0;
-        }
-        .notice-minor { background: var(--warning-bg); color: var(--warning-text); }
-        .alert { border-radius: var(--radius-sm); padding: .65rem .9rem; font-size: .86rem; margin-bottom: 1rem; }
-        .alert-error { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
-        .alert-warning { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning); }
-        .alert-success { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success); }
-        button[type="submit"] { width: 100%; margin-top: .5rem; font-weight: 600; font-size: .95rem; padding: .7rem; }
-        .footer-text { text-align: center; color: var(--text-2); font-size: .82rem; margin-top: 1.2rem; }
-        .theme-toggle {
-            position: fixed; top: .7rem; right: .7rem;
-            width: 36px; height: 36px; padding: 0;
-            display: inline-flex; align-items: center; justify-content: center;
-            border: none; background: none; cursor: pointer;
-            border-radius: var(--radius-sm); color: var(--text-2);
-        }
-        .theme-toggle:hover { background: var(--surface-2); color: var(--text); }
-        .theme-toggle svg { width: 18px; height: 18px; }
-        .theme-toggle .icon-sun { display: none; }
-        [data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
-        [data-theme="dark"] .theme-toggle .icon-moon { display: none; }
-        @media (max-width: 420px) {
-            .page-box { padding: 1.4rem 1rem; }
-        }
-    </style>
-    <script>
-      /* 主题首帧恢复：与后台同一机制（data-theme + localStorage 记忆）；
-         C 端用独立键，避免与管理员的后台偏好互相影响，无记忆时跟随系统偏好 */
-      (function () {
-          try {
-              var t = localStorage.getItem('aiyichat_web_theme');
-              if (t !== 'dark' && t !== 'light') {
-                  t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-              }
-              document.documentElement.setAttribute('data-theme', t);
-          } catch (e) { /* 隐私模式下 localStorage 不可用，保持默认浅色 */ }
-      })();
-    </script>
+    {% from "partials/_icons.html" import icon %}
+    <script src="{{ asset('js/web-register.js') }}" defer></script>
 </head>
-<body>
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
+<body class="auth-body auth-body-wide" data-token-key="aiyichat_web_token">
+    <main class="auth-shell auth-shell-register">
+        <section class="auth-aside">
+            <span class="kicker">AIYIchat · 注册</span>
+            <h1 class="auth-wordmark">注册新账号</h1>
+            <p class="auth-lede">爱易聊 · AI 角色陪伴。一个身份对应一份记忆与额度。</p>
+            <ul class="auth-points">
+                <li>{{ icon('users') }}<span>身份与账号相互独立</span></li>
+                <li>{{ icon('shield') }}<span>内容安全与未成年人保护</span></li>
+                <li>{{ icon('clock') }}<span>额度按月结算，可随时查看</span></li>
+            </ul>
+        </section>
 
-    <div class="page-container">
-        <div class="page-box">
-            <div class="page-header">
-                <div class="brand-icon">AI</div>
-                <h2>注册新账号</h2>
-                <p class="subtitle">爱易聊 · AI 角色陪伴</p>
-            </div>
+        <section class="auth-panel">
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
+                {{ icon('sun', 'icon-sun') }}
+                {{ icon('moon', 'icon-moon') }}
+            </button>
+
+            <h1>创建网页身份</h1>
 
             {% if not register_enabled %}
             <div class="alert alert-warning">管理员尚未开放自助注册，可先留意页面提示或联系站点运营者。</div>
@@ -137,41 +37,48 @@
 
             <!-- 所有错误就地渲染在此区域，全站禁用 alert 弹窗 -->
             <div id="form-alert" class="alert alert-error" hidden></div>
-
             <div id="success-panel" class="alert alert-success" hidden></div>
 
-            <form id="register-form" autocomplete="off">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required maxlength="32"
-                       placeholder="3-32 位字母、数字或下划线" autocomplete="username">
-                <p class="field-tip">不能使用 admin、system 等保留名，注册后不可修改。</p>
-
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required maxlength="64"
-                       placeholder="8-64 位，需同时包含字母和数字" autocomplete="new-password">
-                <div class="strength">
-                    <span>强度</span>
-                    <span class="strength-track"><span class="strength-fill" id="strength-fill"></span></span>
-                    <span id="strength-level">—</span>
+            <form id="register-form" autocomplete="off"
+                  data-captcha-enabled="{{ 'true' if captcha_enabled else 'false' }}"
+                  data-register-enabled="{{ 'true' if register_enabled else 'false' }}">
+                <div class="ui-field">
+                    <label for="username">用户名</label>
+                    <input class="ui-input" type="text" id="username" name="username" required maxlength="32"
+                           placeholder="3-32 位字母、数字或下划线" autocomplete="username">
+                    <p class="field-tip">不能使用 admin、system 等保留名，注册后不可修改。</p>
                 </div>
-                <p class="field-tip" id="password-tip">密码长度需为 8-64 位，且同时包含字母和数字。</p>
 
-                <label for="password-confirm">确认密码</label>
-                <input type="password" id="password-confirm" name="password_confirm" required maxlength="64"
-                       placeholder="请再次输入密码" autocomplete="new-password">
+                <div class="ui-field">
+                    <label for="password">密码</label>
+                    <input class="ui-input" type="password" id="password" name="password" required maxlength="64"
+                           placeholder="8-64 位，需同时包含字母和数字" autocomplete="new-password">
+                    <div class="strength">
+                        <span class="strength-label">强度</span>
+                        <span class="strength-track"><span class="strength-fill" id="strength-fill"></span></span>
+                        <span class="strength-level" id="strength-level">—</span>
+                    </div>
+                    <p class="field-tip" id="password-tip">密码长度需为 8-64 位，且同时包含字母和数字。</p>
+                </div>
+
+                <div class="ui-field">
+                    <label for="password-confirm">确认密码</label>
+                    <input class="ui-input" type="password" id="password-confirm" name="password_confirm" required
+                           maxlength="64" placeholder="请再次输入密码" autocomplete="new-password">
+                </div>
 
                 <!-- 服务端关闭验证码时保留节点但隐藏，避免前端分支出两套表单结构 -->
-                <fieldset id="captcha-field" {% if not captcha_enabled %}hidden{% endif %}>
-                    <legend style="font-size:.88rem;">图形验证码</legend>
+                <fieldset class="ui-field" id="captcha-field" {% if not captcha_enabled %}hidden{% endif %}>
+                    <legend>图形验证码</legend>
                     <div class="captcha-row">
-                        <img id="captcha-img" alt="点击刷新验证码" title="点击刷新验证码">
-                        <input type="text" id="captcha-answer" name="captcha_answer" inputmode="numeric"
-                               maxlength="6" placeholder="输入算式结果">
+                        <img class="captcha-img" id="captcha-img" alt="点击刷新验证码" title="点击刷新验证码">
+                        <input class="ui-input ui-fill" type="text" id="captcha-answer" name="captcha_answer"
+                               inputmode="numeric" maxlength="6" placeholder="输入算式结果">
                     </div>
                     <p class="field-tip">看不清？点击图片即可刷新。</p>
                 </fieldset>
 
-                <div style="margin-top:.9rem;">
+                <div class="consent-group">
                     <label class="consent-item">
                         <input type="checkbox" id="terms-accepted" name="terms_accepted" required>
                         <span>我已阅读并同意《身份协议》</span>
@@ -196,194 +103,11 @@
                     并对本站的内容合规、身份个人信息保护与未成年人保护措施承担全部责任。
                 </div>
 
-                <button type="submit" id="submit-btn">注册</button>
+                <button type="submit" class="btn-submit" id="submit-btn">注册</button>
             </form>
 
-            <p class="footer-text">已有账号？<a href="/web/login">直接登录</a></p>
-        </div>
-    </div>
-
-    <script>
-    function toggleTheme() {
-        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-        var next = cur === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        try { localStorage.setItem('aiyichat_web_theme', next); } catch (e) {}
-    }
-
-    (function () {
-        'use strict';
-
-        // 服务端子开关随模板注入：关闭时前端不再取码/不再强求答案，但表单结构保持一致
-        const CAPTCHA_ENABLED = {{ 'true' if captcha_enabled else 'false' }};
-        const REGISTER_ENABLED = {{ 'true' if register_enabled else 'false' }};
-
-        // 常见弱密码本地黑名单（与服务端词表同源思路）：仅用于即时提示，服务端仍会复核
-        const COMMON_PASSWORDS = [
-            'password', 'password1', 'password123', 'passw0rd', 'p@ssw0rd', 'qwerty123',
-            '12345678', '123456789', '1234567890', '1234567', '11111111', '00000000',
-            'abc123456', 'abcd1234', 'abcdef123', 'a12345678', '12345678a', 'iloveyou',
-            'letmein123', 'welcome123', 'admin123', '1q2w3e4r', 'qazwsx123', '123abc456',
-            'secret123', 'master123', 'trustno1', 'asdf1234', 'zxcvbnm123'
-        ];
-
-        const form = document.getElementById('register-form');
-        const alertBox = document.getElementById('form-alert');
-        const successPanel = document.getElementById('success-panel');
-        const captchaImg = document.getElementById('captcha-img');
-        const submitBtn = document.getElementById('submit-btn');
-        let captchaId = '';
-
-        function showAlert(text) {
-            successPanel.hidden = true;
-            alertBox.textContent = text;
-            alertBox.hidden = false;
-        }
-
-        function clearAlert() {
-            alertBox.hidden = true;
-            alertBox.textContent = '';
-        }
-
-        async function loadCaptcha() {
-            if (!CAPTCHA_ENABLED) return;
-            try {
-                const resp = await fetch('/api/auth/captcha');
-                if (!resp.ok) throw new Error('验证码获取失败，请稍后重试');
-                const data = await resp.json();
-                captchaId = data.captcha_id;
-                captchaImg.src = data.image;
-            } catch (err) {
-                showAlert(err.message || '验证码获取失败，请稍后重试');
-            }
-        }
-
-        /* 强度分级与后端规则一致（长度 8-64、含字母与数字、规避常见密码）：
-           弱=未过基线；中=过基线；强=基线 + 长度≥12 且含大写或符号 */
-        function evaluatePassword() {
-            const pwd = document.getElementById('password').value;
-            const user = document.getElementById('username').value.trim().toLowerCase();
-            const fill = document.getElementById('strength-fill');
-            const level = document.getElementById('strength-level');
-            const tip = document.getElementById('password-tip');
-            const lower = pwd.toLowerCase();
-            const hasLetter = /[a-zA-Z]/.test(pwd);
-            const hasDigit = /[0-9]/.test(pwd);
-            const hasSymbol = /[^a-zA-Z0-9]/.test(pwd);
-            const baseline = pwd.length >= 8 && pwd.length <= 64 && hasLetter && hasDigit
-                && !COMMON_PASSWORDS.includes(lower)
-                && !(user.length > 0 && pwd.toLowerCase().includes(user));
-
-            let grade = '—';
-            let width = '0';
-            let color = 'var(--border-strong)';
-            let cls = '';
-            if (!pwd) {
-                tip.textContent = '密码长度需为 8-64 位，且同时包含字母和数字。';
-            } else if (!baseline) {
-                grade = '弱'; width = '33%'; color = 'var(--danger)'; cls = 'lvl-weak';
-                tip.textContent = pwd.length < 8
-                    ? '至少 8 位，并同时包含字母和数字。'
-                    : '该密码过于常见或包含用户名，请更换。';
-            } else if (pwd.length >= 12 && (hasSymbol || /[A-Z]/.test(pwd))) {
-                grade = '强'; width = '100%'; color = 'var(--success)'; cls = 'lvl-strong';
-                tip.textContent = '强度良好。建议再启用大小写与符号混排。';
-            } else {
-                grade = '中'; width = '66%'; color = 'var(--warning)'; cls = 'lvl-mid';
-                tip.textContent = '可以用，但加长或混用符号会更安全。';
-            }
-            fill.style.width = width;
-            fill.style.background = color;
-            level.textContent = grade;
-            level.className = cls;
-            return { pwd: pwd, baseline: baseline };
-        }
-
-        async function submitRegister(event) {
-            event.preventDefault();
-            clearAlert();
-
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const confirm = document.getElementById('password-confirm').value;
-            if (password !== confirm) {
-                showAlert('两次输入的密码不一致。');
-                return;
-            }
-            if (!evaluatePassword().baseline) {
-                showAlert('密码不符合要求：长度需为 8-64 位，同时包含字母和数字，且不能使用常见弱密码。');
-                return;
-            }
-            if (!document.getElementById('age-confirmed').checked) {
-                showAlert('未满 14 周岁不得注册，请确认年龄后再提交。');
-                return;
-            }
-            if (!document.getElementById('terms-accepted').checked
-                || !document.getElementById('privacy-accepted').checked) {
-                showAlert('请先阅读并勾选《身份协议》与《隐私政策》。');
-                return;
-            }
-
-            const payload = {
-                username: username,
-                password: password,
-                terms_accepted: document.getElementById('terms-accepted').checked,
-                privacy_accepted: document.getElementById('privacy-accepted').checked,
-                age_confirmed: document.getElementById('age-confirmed').checked,
-                captcha_id: captchaId,
-                captcha_answer: document.getElementById('captcha-answer').value.trim()
-            };
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = '提交中…';
-            try {
-                const resp = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) {
-                    // 服务端无论答对答错都一次性消费验证码，失败后必须重新取码
-                    if (CAPTCHA_ENABLED) {
-                        document.getElementById('captcha-answer').value = '';
-                        await loadCaptcha();
-                    }
-                    const fallback = resp.status === 429 ? '操作过于频繁，请稍后再试。' : '注册失败，请稍后重试。';
-                    showAlert(data.detail || fallback);
-                    return;
-                }
-                // 成功文案来自服务端 detail（已含"等待审核/请登录"分支），补一个登录入口
-                form.hidden = true;
-                successPanel.textContent = data.detail
-                    || (data.status === 'pending' ? '注册成功，等待管理员审核' : '注册成功，请登录');
-                const loginLink = document.createElement('a');
-                loginLink.href = '/web/login';
-                loginLink.textContent = '前往登录';
-                successPanel.appendChild(loginLink);
-                successPanel.hidden = false;
-                successPanel.scrollIntoView({ block: 'nearest' });
-            } catch (err) {
-                showAlert('网络异常，注册未提交，请检查连接后重试。');
-                if (CAPTCHA_ENABLED) await loadCaptcha();
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '注册';
-            }
-        }
-
-        form.addEventListener('submit', submitRegister);
-        document.getElementById('password').addEventListener('input', evaluatePassword);
-        document.getElementById('username').addEventListener('input', evaluatePassword);
-        captchaImg.addEventListener('click', loadCaptcha);
-
-        if (!REGISTER_ENABLED) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = '暂未开放注册';
-        }
-        evaluatePassword();
-        loadCaptcha();
-    })();
-    </script>
+            <p class="auth-foot">已有账号？<a href="/web/login">直接登录</a></p>
+        </section>
+    </main>
 </body>
 </html>

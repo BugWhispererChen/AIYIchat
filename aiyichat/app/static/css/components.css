@@ -381,6 +381,27 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 }
 
 /* ── 提示条 / 浮层 / toast ──────────────────────────── */
+/* 旧式 .alert 语义（后台与 C 端共用），与 .ui-alert 同族 */
+.alert {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: .7rem .9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--primary-ink);
+    background: var(--info-bg);
+    color: var(--info-text);
+    font-size: .86rem;
+    line-height: 1.6;
+    margin-bottom: var(--space-4);
+}
+.alert-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success); border-left-color: var(--success); }
+.alert-error   { background: var(--danger-bg);  color: var(--danger-text);  border-color: var(--danger);  border-left-color: var(--danger); }
+.alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning); border-left-color: var(--warning); }
+.alert-info    { background: var(--info-bg);    color: var(--info-text);    border-color: var(--border);  border-left-color: var(--primary-ink); }
+.alert a { color: inherit; font-weight: 600; }
+
 .ui-alert {
     display: flex;
     align-items: flex-start;

@@ -7,243 +7,63 @@
     {# 空图标：避免浏览器默认去取 /favicon.ico 产生 404 控制台报错 #}
     <link rel="icon" href="data:,">
     {% include "partials/_assets.html" %}
-    <style>
-        * { box-sizing: border-box; }
-        [hidden] { display: none !important; }
-        body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, var(--primary-soft) 0%, var(--bg) 50%, var(--login-bg-end, #ede9fe) 100%);
-            font-family: var(--pico-font-family);
-            color: var(--text);
-        }
-        /* 深色主题：背景末端改用深石板色，避免硬编码浅紫在暗色下突兀 */
-        [data-theme="dark"] body {
-            background: linear-gradient(135deg, #1e293b 0%, var(--bg) 50%, #312e5c 100%);
-        }
-        .login-container { width: 100%; max-width: 400px; padding: 1rem; }
-        .login-box {
-            background: var(--surface);
-            border-radius: var(--radius-lg);
-            padding: 2.5rem 2rem;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid var(--border);
-        }
-        .login-header { text-align: center; margin-bottom: 2rem; }
-        .login-header .brand-icon {
-            width: 56px; height: 56px;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            border-radius: 16px;
-            display: inline-flex; align-items: center; justify-content: center;
-            font-size: 1.2rem; color: #fff; font-weight: 700;
-            margin-bottom: 1rem;
-            box-shadow: 0 6px 16px rgba(99,102,241,0.35);
-        }
-        .login-header h2 { margin: 0; font-size: 1.4rem; color: var(--text); font-weight: 700; }
-        .login-header .subtitle { color: var(--text-2); font-size: 0.9rem; margin-top: 0.3rem; }
-        label { font-size: 0.88rem; font-weight: 500; color: var(--text); }
-        input[type="text"], input[type="password"] {
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-strong);
-            font-size: 0.95rem;
-        }
-        .captcha-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-        .captcha-row img {
-            width: 130px; height: 44px;
-            border: 1px solid var(--border-strong);
-            border-radius: var(--radius-sm);
-            background: #f5f6f8;   /* 验证码图本身是浅底，暗色下也保持可读 */
-            cursor: pointer;
-        }
-        .captcha-row input { flex: 1; min-width: 110px; margin: 0; }
-        .field-tip { font-size: .78rem; color: var(--text-2); margin: .3rem 0 0; }
-        .alert-error {
-            background: var(--danger-bg);
-            color: var(--danger-text);
-            border: 1px solid var(--danger);
-            padding: 0.6rem 1rem;
-            border-radius: var(--radius-sm);
-            margin-bottom: 1rem;
-            font-size: 0.88rem;
-        }
-        button[type="submit"] {
-            width: 100%;
-            margin-top: 0.8rem;
-            border-radius: var(--radius-sm);
-            font-weight: 600;
-            font-size: 0.95rem;
-            padding: 0.7rem;
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-            border: none;
-            transition: all 0.2s ease;
-        }
-        button[type="submit"]:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(99,102,241,0.4); }
-        .footer-text { text-align: center; color: var(--text-2); font-size: 0.82rem; margin-top: 1.5rem; }
-        .theme-toggle {
-            position: fixed; top: .7rem; right: .7rem;
-            width: 36px; height: 36px; padding: 0;
-            display: inline-flex; align-items: center; justify-content: center;
-            border: none; background: none; cursor: pointer;
-            border-radius: var(--radius-sm); color: var(--text-2);
-        }
-        .theme-toggle:hover { background: var(--surface-2); color: var(--text); }
-        .theme-toggle svg { width: 18px; height: 18px; }
-        .theme-toggle .icon-sun { display: none; }
-        [data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
-        [data-theme="dark"] .theme-toggle .icon-moon { display: none; }
-        @media (max-width: 420px) {
-            .login-box { padding: 1.8rem 1.1rem; }
-        }
-    </style>
-    <script>
-      /* 主题首帧恢复：与后台同一机制（data-theme + localStorage 记忆），C 端用独立键 */
-      (function () {
-          try {
-              var t = localStorage.getItem('aiyichat_web_theme');
-              if (t !== 'dark' && t !== 'light') {
-                  t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-              }
-              document.documentElement.setAttribute('data-theme', t);
-          } catch (e) { /* 隐私模式下 localStorage 不可用，保持默认浅色 */ }
-      })();
-    </script>
+    {% from "partials/_icons.html" import icon %}
+    <script src="{{ asset('js/web-login.js') }}" defer></script>
 </head>
-<body>
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
+<body class="auth-body" data-token-key="aiyichat_web_token">
+    <main class="auth-shell">
+        <section class="auth-aside">
+            <span class="kicker">AIYIchat · 网页对话</span>
+            <h1 class="auth-wordmark">爱易聊</h1>
+            <p class="auth-lede">登录你的网页身份，继续与专属 AI 角色的对话。</p>
+            <ul class="auth-points">
+                <li>{{ icon('chat') }}<span>与伙伴的角色连续对话</span></li>
+                <li>{{ icon('memory') }}<span>长期记忆随对话累积</span></li>
+                <li>{{ icon('star') }}<span>可自建角色人格</span></li>
+            </ul>
+        </section>
 
-    <div class="login-container">
-        <div class="login-box">
-            <div class="login-header">
-                <div class="brand-icon">AI</div>
-                <h2>爱易聊</h2>
-                <p class="subtitle">网页身份登录</p>
-            </div>
+        <section class="auth-panel">
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
+                {{ icon('sun', 'icon-sun') }}
+                {{ icon('moon', 'icon-moon') }}
+            </button>
+
+            <h1 class="auth-heading">网页身份登录</h1>
 
             <!-- 错误就地渲染，不使用 alert 弹窗 -->
-            <div id="form-alert" class="alert-error" hidden></div>
+            <div id="form-alert" class="alert alert-error" hidden></div>
 
-            <form id="login-form" autocomplete="on">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required maxlength="32"
-                       placeholder="请输入用户名" autocomplete="username" autofocus>
+            <form id="login-form" autocomplete="on"
+                  data-captcha-enabled="{{ 'true' if captcha_enabled else 'false' }}">
+                <div class="ui-field">
+                    <label for="username">用户名</label>
+                    <input class="ui-input" type="text" id="username" name="username" required maxlength="32"
+                           placeholder="请输入用户名" autocomplete="username" autofocus>
+                </div>
 
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required maxlength="64"
-                       placeholder="请输入密码" autocomplete="current-password">
+                <div class="ui-field">
+                    <label for="password">密码</label>
+                    <input class="ui-input" type="password" id="password" name="password" required maxlength="64"
+                           placeholder="请输入密码" autocomplete="current-password">
+                </div>
 
                 <!-- 服务端关闭验证码时保留节点但隐藏，前端逻辑只靠一个标志位分支 -->
-                <fieldset id="captcha-field" {% if not captcha_enabled %}hidden{% endif %}>
-                    <legend style="font-size:.88rem;">图形验证码</legend>
+                <fieldset class="ui-field" id="captcha-field" {% if not captcha_enabled %}hidden{% endif %}>
+                    <legend>图形验证码</legend>
                     <div class="captcha-row">
-                        <img id="captcha-img" alt="点击刷新验证码" title="点击刷新验证码">
-                        <input type="text" id="captcha-answer" name="captcha_answer" inputmode="numeric"
-                               maxlength="6" placeholder="输入算式结果">
+                        <img class="captcha-img" id="captcha-img" alt="点击刷新验证码" title="点击刷新验证码">
+                        <input class="ui-input ui-fill" type="text" id="captcha-answer" name="captcha_answer"
+                               inputmode="numeric" maxlength="6" placeholder="输入算式结果">
                     </div>
                     <p class="field-tip">看不清？点击图片即可刷新。</p>
                 </fieldset>
 
-                <button type="submit" id="submit-btn">登录</button>
+                <button type="submit" class="btn-submit" id="submit-btn">登录</button>
             </form>
 
-            <p class="footer-text">还没有账号？<a href="/web/register">注册新账号</a></p>
-        </div>
-    </div>
-
-    <script>
-    function toggleTheme() {
-        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-        var next = cur === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        try { localStorage.setItem('aiyichat_web_theme', next); } catch (e) {}
-    }
-
-    (function () {
-        'use strict';
-
-        const CAPTCHA_ENABLED = {{ 'true' if captcha_enabled else 'false' }};
-        // 与聊天页约定的令牌存储键：改动需同步 chat.html
-        const TOKEN_KEY = 'aiyichat_web_token';
-
-        const form = document.getElementById('login-form');
-        const alertBox = document.getElementById('form-alert');
-        const captchaImg = document.getElementById('captcha-img');
-        const submitBtn = document.getElementById('submit-btn');
-        let captchaId = '';
-
-        function showAlert(text) {
-            alertBox.textContent = text;
-            alertBox.hidden = false;
-        }
-
-        function clearAlert() {
-            alertBox.hidden = true;
-            alertBox.textContent = '';
-        }
-
-        async function loadCaptcha() {
-            if (!CAPTCHA_ENABLED) return;
-            try {
-                const resp = await fetch('/api/auth/captcha');
-                if (!resp.ok) throw new Error('验证码获取失败，请稍后重试');
-                const data = await resp.json();
-                captchaId = data.captcha_id;
-                captchaImg.src = data.image;
-            } catch (err) {
-                showAlert(err.message || '验证码获取失败，请稍后重试');
-            }
-        }
-
-        async function submitLogin(event) {
-            event.preventDefault();
-            clearAlert();
-
-            const payload = {
-                username: document.getElementById('username').value.trim(),
-                password: document.getElementById('password').value,
-                captcha_id: captchaId,
-                captcha_answer: document.getElementById('captcha-answer').value.trim()
-            };
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = '登录中…';
-            try {
-                const resp = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) {
-                    // 服务端一次性消费验证码（答对答错都失效），失败后必须重新取码
-                    if (CAPTCHA_ENABLED) {
-                        document.getElementById('captcha-answer').value = '';
-                        await loadCaptcha();
-                    }
-                    showAlert(data.detail || '登录失败，请检查用户名与密码。');
-                    return;
-                }
-                localStorage.setItem(TOKEN_KEY, data.token);
-                window.location.href = '/web/chat';
-            } catch (err) {
-                showAlert('网络异常，登录未完成，请稍后重试。');
-                if (CAPTCHA_ENABLED) await loadCaptcha();
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '登录';
-            }
-        }
-
-        form.addEventListener('submit', submitLogin);
-        captchaImg.addEventListener('click', loadCaptcha);
-
-        loadCaptcha();
-    })();
-    </script>
+            <p class="auth-foot">还没有账号？<a href="/web/register">注册新账号</a></p>
+        </section>
+    </main>
 </body>
 </html>

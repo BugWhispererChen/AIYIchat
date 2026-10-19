@@ -1,4 +1,5 @@
 {# C 端资源清单：与后台共用同一套令牌与组件层（_assets_core.html 位于 admin 模板目录，
-   通过 web/router.py 追加的模板搜索路径解析），再叠加 C 端场景样式。 #}
+   通过 web/router.py 追加的模板搜索路径解析），再叠加 C 端场景样式与鉴权封装。 #}
 {% include "partials/_assets_core.html" %}
 <link rel="stylesheet" href="{{ asset('css/web.css') }}">
+<script src="{{ asset('js/web-auth.js') }}" defer></script>

@@ -16,19 +16,19 @@
 
 {% block content %}
 {% macro text_feature(key, label, cfg) %}
-<div class="card" style="margin-bottom:0;">
+<div class="card u-mb0" >
     <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
     <label>基础配置
         <select name="{{ key }}_config_id" class="config-select" data-selected="{{ cfg[key ~ '_config_id'] }}"></select>
     </label>
-    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.6rem;">
-        <label style="font-size:0.82rem;">温度
+    <div class="grid-3" >
+        <label class="u-fs-82" >温度
             <input type="number" name="{{ key }}_temperature" value="{{ cfg[key ~ '_temperature'] }}" min="0" max="2" step="any">
         </label>
-        <label style="font-size:0.82rem;">最大Token
+        <label class="u-fs-82" >最大Token
             <input type="number" name="{{ key }}_max_tokens" value="{{ cfg[key ~ '_max_tokens'] }}" min="1" step="1">
         </label>
-        <label style="font-size:0.82rem;">超时(秒)
+        <label class="u-fs-82" >超时(秒)
             <input type="number" name="{{ key }}_timeout_seconds" value="{{ cfg[key ~ '_timeout_seconds'] }}" min="1" step="1">
         </label>
     </div>
@@ -36,7 +36,7 @@
 {% endmacro %}
 
 {% macro media_feature(key, label, cfg) %}
-<div class="card" style="margin-bottom:0;">
+<div class="card u-mb0" >
     <h4>{{ label }} <span class="feat-status" title="配置状态"></span></h4>
     <label>
         <input type="checkbox" name="{{ key }}_enabled" role="switch" {{ 'checked' if cfg[key ~ '_enabled'] }}>
@@ -74,7 +74,7 @@
                 <button type="button" class="btn-sm" onclick="addGroup()">+ 新增一组</button>
             </div>
         </div>
-        <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+        <p class="muted u-fs-82 u-mt-hint" >
             每组包含名称、API 地址、密钥、默认模型。下方各功能通过"基础配置"下拉引用其中一组。
             密钥留空或保留脱敏值（含 *）则不更新该组密钥。删除仍被功能引用的组会使该功能不可用。
         </p>
@@ -98,7 +98,7 @@
     <!-- 文本功能 -->
     <div class="card">
         <h4>文本模型功能</h4>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+        <div class="grid-min-300" >
             {{ text_feature('chat', '对话主回复', cfg) }}
             {{ text_feature('proactive', '主动消息', cfg) }}
             {{ text_feature('focus', '焦点抽取（长期记忆）', cfg) }}
@@ -111,7 +111,7 @@
     <!-- 多媒体功能 -->
     <div class="card">
         <h4>多媒体功能</h4>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+        <div class="grid-min-300" >
             {{ media_feature('asr', 'ASR 语音转文字', cfg) }}
             {{ media_feature('tts', 'TTS 语音合成', cfg) }}
             {{ media_feature('vision', 'Vision 图片理解', cfg) }}
@@ -128,16 +128,16 @@
 <template id="mc-row-template">
     <div class="mc-row grid-5-col" style="margin-bottom:0.6rem;">
         <input type="hidden" class="mc-id" value="">
-        <label style="font-size:0.8rem;margin:0;">名称
+        <label class="u-fs-80 u-m0" >名称
             <input type="text" class="mc-name" value="" placeholder="配置名称">
         </label>
-        <label style="font-size:0.8rem;margin:0;">API 地址
+        <label class="u-fs-80 u-m0" >API 地址
             <input type="text" class="mc-base-url" value="" placeholder="https://api.deepseek.com/v1">
         </label>
-        <label style="font-size:0.8rem;margin:0;">API 密钥
+        <label class="u-fs-80 u-m0" >API 密钥
             <input type="password" class="mc-api-key" value="" placeholder="sk-xxxx">
         </label>
-        <label style="font-size:0.8rem;margin:0;">默认模型
+        <label class="u-fs-80 u-m0" >默认模型
             <input type="text" class="mc-default-model" value="" placeholder="deepseek-chat">
         </label>
         <button type="button" class="ghost btn-sm" onclick="deleteGroup(this)" style="margin-bottom:0.2rem;">删除</button>

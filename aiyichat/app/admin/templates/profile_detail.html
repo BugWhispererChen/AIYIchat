@@ -33,7 +33,7 @@
         <a href="#sec-meta">元指令</a>
         <a href="#sec-voice">语音设置</a>
         <div class="save-row">
-            <button type="submit" form="profile-form" style="width:100%;">保存修改</button>
+            <button type="submit" form="profile-form" class="u-w-full" >保存修改</button>
         </div>
     </aside>
 
@@ -55,7 +55,7 @@
                     <input type="text" name="category" value="{{ profile.category }}">
                 </label>
                 <label>状态
-                    <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.4rem;">
+                    <label class="u-row u-gap-2 u-mt-1" >
                         <input type="checkbox" name="is_active" role="switch" {{ 'checked' if profile.is_active }}>
                         活跃
                     </label>
@@ -118,23 +118,23 @@
         <!-- 定妆照（人物一致性参考肖像） -->
         <div class="card section-card" id="sec-refimg">
             <h4>定妆照 (Reference Portrait)</h4>
-            <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+            <p class="muted u-fs-82 u-mt-hint" >
                 本人出镜的图片（自拍等）将以此图为参考保持人物形象一致，
                 需在「AI 模型配置」中启用「ImageGen 参考图编辑」。
                 建议使用正面清晰、背景简洁的 3:4 竖版半身照。
             </p>
             <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;">
                 <div>
-                    <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">当前定妆照</p>
+                    <p class="muted u-fs-80 u-mb-1" >当前定妆照</p>
                     {% if profile.reference_image_url %}
                     <img src="{{ profile.reference_image_url }}" alt="定妆照" style="width:160px;border-radius:8px;border:1px solid var(--border);">
                     {% else %}
-                    <p class="muted" style="font-size:0.85rem;">未设置（本人出镜图片将使用外貌文字描述，无法保证形象一致）</p>
+                    <p class="muted u-fs-85" >未设置（本人出镜图片将使用外貌文字描述，无法保证形象一致）</p>
                     {% endif %}
                 </div>
                 {% if ref_candidate_url %}
                 <div>
-                    <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">待确认候选</p>
+                    <p class="muted u-fs-80 u-mb-1" >待确认候选</p>
                     <img src="{{ ref_candidate_url }}" alt="候选定妆照" style="width:160px;border-radius:8px;border:2px solid var(--primary);">
                 </div>
                 {% endif %}
@@ -144,7 +144,7 @@
                 <button type="submit" form="ref-confirm-form" class="btn-sm" id="ref-confirm-btn">确认设为定妆照</button>
                 {% endif %}
                 <button type="submit" form="ref-generate-form" class="ghost btn-sm" id="ref-generate-btn">用外貌描述生成{{ '新' if ref_candidate_url }}候选</button>
-                <input type="file" name="file" form="ref-upload-form" accept="image/*" required style="max-width:220px;">
+                <input type="file" name="file" form="ref-upload-form" accept="image/*" required class="u-mw-220" >
                 <button type="submit" form="ref-upload-form" class="ghost btn-sm" id="ref-upload-btn">上传设为定妆照</button>
                 {% if profile.reference_image_url %}
                 <button type="submit" form="ref-clear-form" class="ghost btn-sm" id="ref-clear-btn" onclick="return confirm('确定清除定妆照？')">清除</button>
@@ -172,14 +172,14 @@
         <div class="card section-card" id="sec-language">
             <h4>语言风格 (Language Style)</h4>
             <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
-                <div style="display:flex;gap:1.2rem;">
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                <div class="u-row u-gap-5" >
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="concise" {% if profile.verbosity == 'concise' %}checked{% endif %}> 凝练
                     </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="standard" {% if profile.verbosity == 'standard' %}checked{% endif %}> 标准
                     </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="verbose" {% if profile.verbosity == 'verbose' %}checked{% endif %}> 健谈
                     </label>
                 </div>
@@ -235,9 +235,9 @@
             <label>性格特质</label>
             {% for key, val in profile.personality.traits.items() %}
             <div class="grid" style="align-items:center;margin-bottom:0.3rem;">
-                <input type="text" name="trait_key" value="{{ key }}" style="max-width:160px;">
+                <input type="text" name="trait_key" value="{{ key }}" class="u-mw-160" >
                 <input type="range" name="trait_value" min="0" max="1" step="0.05" value="{{ val }}"
-                       oninput="this.nextElementSibling.textContent=this.value" style="flex:1;">
+                       oninput="this.nextElementSibling.textContent=this.value" class="u-fill" >
                 <span style="min-width:40px;text-align:center;">{{ val }}</span>
             </div>
             {% endfor %}
@@ -309,7 +309,7 @@
             {# 试听音频播放 #}
             {% if voice_preview_url %}
             <div style="margin-bottom:0.6rem;">
-                <p class="muted" style="font-size:0.8rem;margin:0 0 0.3rem;">试听音频</p>
+                <p class="muted u-fs-80 u-mb-1" >试听音频</p>
                 <audio controls style="width:100%;max-width:400px;">
                     <source src="{{ voice_preview_url }}" type="audio/mpeg">
                     您的浏览器不支持音频播放
@@ -320,8 +320,7 @@
             {# 操作按钮 #}
             <div class="btn-row" style="gap:0.5rem;flex-wrap:wrap;">
                 <input type="file" name="voice_file" form="voice-clone-upload-form"
-                       accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required
-                       style="max-width:220px;">
+                       accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required class="u-mw-220" >
                 <button type="submit" form="voice-clone-upload-form" class="btn-sm" id="voice-clone-btn">
                     上传并复刻
                 </button>

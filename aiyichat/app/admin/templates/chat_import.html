@@ -28,10 +28,10 @@
 
 {% if analyzing and task_id %}
 <!-- 分析进度区域 -->
-<div class="card" style="margin-bottom:1rem;">
+<div class="card u-mb-4" >
     <h4>解析结果</h4>
     {% if parse_result %}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.8rem;margin-bottom:1rem;">
+    <div class="grid-min-150 u-mb-4" >
         <div><strong>总消息数</strong><br>{{ parse_result.total_count }}</div>
         <div><strong>目标消息</strong><br>{{ parse_result.target_count }}</div>
         <div><strong>对话方消息</strong><br>{{ parse_result.other_count }}</div>
@@ -52,22 +52,22 @@
 
 {% else %}
 <!-- JSON 格式说明区域 -->
-<div class="card" style="margin-bottom:1rem;">
+<div class="card u-mb-4" >
     <details>
-        <summary style="cursor:pointer;"><strong>第一步：准备聊天记录 JSON 文件</strong></summary>
-        <div style="padding-top:0.5rem;">
+        <summary class="u-pointer" ><strong>第一步：准备聊天记录 JSON 文件</strong></summary>
+        <div class="u-pt-2" >
             <p>请自行将聊天记录整理为如下格式的 JSON 数组后上传：</p>
             <pre style="padding:0.8rem 1rem;background:var(--surface-2);border-radius:8px;overflow-x:auto;font-size:0.85rem;margin:0.5rem 0;"><code>[
   {"timestamp": "2024-03-15T14:23:01", "sender": "张三", "content": "在忙吗？", "is_target": true},
   {"timestamp": "2024-03-15T14:23:40", "sender": "我", "content": "刚开完会", "is_target": false}
 ]</code></pre>
-            <ul style="margin:0.5rem 0;">
+            <ul class="u-my-2" >
                 <li><code>timestamp</code>：消息时间，ISO 格式（<code>YYYY-MM-DDTHH:MM:SS</code>）；按导出时的本地墙钟时间填写，需与导入时区偏移配置一致，否则整体错位</li>
                 <li><code>sender</code>：发送者名称，用于区分对话双方</li>
                 <li><code>content</code>：消息文本内容</li>
                 <li><code>is_target</code>：是否为克隆对象发送的消息，<code>true</code> 标记需要学习风格的那一方</li>
             </ul>
-            <p class="muted" style="margin-bottom:0;">仅支持导入本人聊天记录，请遵守所用平台的服务条款与当地法律法规；分析完成后可在后台删除导入数据。</p>
+            <p class="muted u-mb0" >仅支持导入本人聊天记录，请遵守所用平台的服务条款与当地法律法规；分析完成后可在后台删除导入数据。</p>
         </div>
     </details>
 </div>
@@ -95,5 +95,5 @@
 </div>
 {% endif %}
 
-<p style="margin-top:1rem;"><a href="/admin/profiles">&larr; 返回角色列表</a></p>
+<p class="u-mt-4" ><a href="/admin/profiles">&larr; 返回角色列表</a></p>
 {% endblock %}

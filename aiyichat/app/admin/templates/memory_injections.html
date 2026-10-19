@@ -20,18 +20,18 @@
 <!-- ── 记忆质量评估指标 ─────────────────────────────── -->
 <div class="card">
     <h4>记忆质量评估</h4>
-    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+    <div class="u-row u-gap-8" >
         <div>
             <div style="font-size:1.6rem;font-weight:600;color:var(--primary);">
                 {% if metrics.hit_rate is not none %}{{ (metrics.hit_rate * 100) | round(1) }}%{% else %}-{% endif %}
             </div>
-            <div class="muted" style="font-size:0.85rem;">记忆命中率（{{ metrics.hit_count }}/{{ metrics.total_injected }} 条被回复引用）</div>
+            <div class="muted u-fs-85" >记忆命中率（{{ metrics.hit_count }}/{{ metrics.total_injected }} 条被回复引用）</div>
         </div>
         <div>
             <div style="font-size:1.6rem;font-weight:600;color:var(--success);">
                 {% if metrics.active_rate is not none %}{{ (metrics.active_rate * 100) | round(1) }}%{% else %}-{% endif %}
             </div>
-            <div class="muted" style="font-size:0.85rem;">记忆有效率（近 7 天 {{ metrics.active_facts }}/{{ metrics.total_facts }} 条被注入）</div>
+            <div class="muted u-fs-85" >记忆有效率（近 7 天 {{ metrics.active_facts }}/{{ metrics.total_facts }} 条被注入）</div>
         </div>
     </div>
     <p class="muted" style="font-size:0.8rem;margin:0.6rem 0 0;">命中率偏低可适当调低检索条数或提高语义权重；有效率偏低说明存在“死记忆”，可考虑清理。</p>
@@ -75,14 +75,14 @@
     {% if snapshots %}
         {% for snap in snapshots %}
         <details style="border-bottom:1px solid var(--muted-border-color,var(--text));padding:0.5rem 0;">
-            <summary style="cursor:pointer;">
+            <summary class="u-pointer" >
                 <span title="{{ (snap.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ snap.created_at|relative_time }}</span>
                 · 注入 <strong>{{ snap.injected_facts|length }}</strong> 条记忆
                 · 记忆 {{ snap.memory_tokens }} tok / 共 {{ snap.total_tokens }} tok
                 {% if snap.current_topic %}· <span class="badge badge-neutral">{{ snap.current_topic }}</span>{% endif %}
             </summary>
             {% if snap.injected_facts %}
-            <div class="table-wrap" style="margin-top:0.5rem;">
+            <div class="table-wrap u-mt-2" >
             <table>
                 <thead>
                     <tr><th>记忆内容</th><th>类别</th><th>评分</th><th>token</th></tr>

@@ -851,6 +851,22 @@ body.nav-collapsed .content-area { margin-left: 0; }
 }
 .qr-hint { margin: 0; font-size: .8rem; color: var(--text-2); }
 
+/* ══ 由模板内联样式收敛而来的场景类 ══ */
+/* 可点击的强调文字（如"展开更多"、分组名链接） */
+.link-strong { font-weight: 600; cursor: pointer; color: var(--primary); }
+/* 卡片内的次级信息块 */
+.inset-block {
+    margin-top: var(--space-2);
+    padding: var(--space-4);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+}
+/* 徽标式筛选链接 */
+.chip-link { text-decoration: none; padding: .35rem .7rem; }
+.grid-min-150 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; }
+.grid-min-300 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+
 /* ══ 暗色下的少量针对性微调（压过历史内联硬编码） ══ */
 [data-theme="dark"] table tbody tr:nth-child(even) { background: rgba(255, 255, 255, .022); }
 

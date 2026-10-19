@@ -156,3 +156,30 @@ a:hover { color: var(--primary-hover); }
     white-space: nowrap;
     border: 0;
 }
+
+/* ── 补充工具类：用于替换模板里重复的内联 style ───────── */
+.u-m0 { margin: 0; }
+.u-mb0 { margin-bottom: 0; }
+.u-mt-1 { margin-top: var(--space-1); }
+.u-ml-1 { margin-left: var(--space-1); }
+.u-mb-1 { margin-bottom: var(--space-1); }
+.u-my-2 { margin-top: var(--space-2); margin-bottom: var(--space-2); }
+.u-pt-2 { padding-top: var(--space-2); }
+.u-mt-hint { margin: 2px 0 var(--space-3); }
+.u-gap-1 { gap: var(--space-1); }
+.u-gap-5 { gap: var(--space-5); }
+.u-gap-6 { gap: var(--space-6); }
+.u-gap-8 { gap: var(--space-8); }
+.u-row-between { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.u-w-full { width: 100%; }
+.u-pointer { cursor: pointer; }
+.u-fw-normal { font-weight: 400; }
+.u-fw-600 { font-weight: 600; }
+.u-fs-80 { font-size: .8rem; }
+.u-fs-82 { font-size: .82rem; }
+.u-fs-85 { font-size: .85rem; }
+.u-fs-88 { font-size: .88rem; }
+.u-fs-90 { font-size: .9rem; }
+.u-mw-160 { max-width: 160px; }
+.u-mw-220 { max-width: 220px; }
+.u-mw-240 { max-width: 240px; }

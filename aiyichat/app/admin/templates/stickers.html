@@ -19,10 +19,9 @@
 {% endif %}
 
 {# ── 分组管理区 ── #}
-<details style="margin-bottom:1rem;" {% if not groups %}open{% endif %}>
-    <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 创建表情包分组</summary>
-    <form method="post" action="/admin/stickers/groups/create"
-          style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+<details  {% if not groups %}open{% endif %} class="u-mb-4">
+    <summary class="link-strong" >+ 创建表情包分组</summary>
+    <form method="post" action="/admin/stickers/groups/create" class="inset-block" >
         <div class="grid">
             <label>分组名称（唯一）
                 <input type="text" name="name" placeholder="如：萌猫日常" required>
@@ -31,14 +30,14 @@
                 <input type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
             </label>
         </div>
-        <button type="submit" style="margin-top:0.8rem;max-width:160px;">创建</button>
+        <button type="submit" class="u-mt-3 u-mw-160" >创建</button>
     </form>
 </details>
 
 {% if groups %}
 <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;">
-    <a href="/admin/stickers" class="badge {{ 'badge-role-user' if not group_filter else 'badge-neutral' }}"
-       style="text-decoration:none;padding:0.35rem 0.7rem;">全部</a>
+    <a href="/admin/stickers" class="badge {{ 'badge-role-user' if not group_filter else 'badge-neutral' }} chip-link"
+       >全部</a>
     {% for g in groups %}
     <div class="card" style="padding:0.55rem 0.75rem;margin:0;display:flex;align-items:center;gap:0.5rem;{% if not g.enabled %}opacity:0.55;{% endif %}">
         <a href="/admin/stickers?group={{ g.id }}" style="text-decoration:none;font-weight:600;font-size:0.88rem;">
@@ -46,26 +45,25 @@
         </a>
         <span class="muted" style="font-size:0.78rem;">{{ group_counts.get(g.id, 0) }} 张</span>
         {% if not g.enabled %}<span class="badge badge-role-neutral">已停用</span>{% endif %}
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" style="margin:0;">
+        <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0" >
             <button type="submit" class="ghost" style="padding:0.15rem 0.5rem;font-size:0.75rem;">
                 {{ '停用' if g.enabled else '启用' }}
             </button>
         </form>
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete" style="margin:0;"
-              onsubmit="return confirm('删除后该分组内表情将转为未归组（仅后台可见不参与发送），确认删除？');">
+        <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete" 
+              onsubmit="return confirm('删除后该分组内表情将转为未归组（仅后台可见不参与发送），确认删除？');" class="u-m0">
             <button type="submit" class="ghost" style="padding:0.15rem 0.5rem;font-size:0.75rem;color:var(--danger-text);">删除</button>
         </form>
     </div>
     {% endfor %}
-    <a href="/admin/stickers?group=none" class="badge {{ 'badge-role-user' if group_filter == 'none' else 'badge-neutral' }}"
-       style="text-decoration:none;padding:0.35rem 0.7rem;">未归组 {{ group_counts.get('', 0) }} 张</a>
+    <a href="/admin/stickers?group=none" class="badge {{ 'badge-role-user' if group_filter == 'none' else 'badge-neutral' }} chip-link"
+       >未归组 {{ group_counts.get('', 0) }} 张</a>
 </div>
 {% endif %}
 
-<details style="margin-bottom:1rem;">
-    <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 上传表情包</summary>
-    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data"
-          style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+<details class="u-mb-4" >
+    <summary class="link-strong" >+ 上传表情包</summary>
+    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data" class="inset-block" >
         <div class="grid">
             <label>图片文件（GIF / PNG / JPEG / WebP，≤2MB，GIF 保留动画）
                 <input type="file" name="file" accept="image/gif,image/png,image/jpeg,image/webp" required>
@@ -88,7 +86,7 @@
                 </select>
             </label>
         </div>
-        <button type="submit" style="margin-top:0.8rem;max-width:160px;">上传</button>
+        <button type="submit" class="u-mt-3 u-mw-160" >上传</button>
     </form>
 </details>
 
@@ -144,13 +142,13 @@
                     {% endfor %}
                 </select>
             </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/toggle" style="margin:0;">
+            <form method="post" action="/admin/stickers/{{ s.id }}/toggle" class="u-m0" >
                 <button type="submit" class="ghost" style="padding:0.25rem 0.7rem;font-size:0.8rem;">
                     {{ '停用' if s.enabled else '启用' }}
                 </button>
             </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/delete" style="margin:0;"
-                  onsubmit="return confirm('确认删除该表情包？');">
+            <form method="post" action="/admin/stickers/{{ s.id }}/delete" 
+                  onsubmit="return confirm('确认删除该表情包？');" class="u-m0">
                 <button type="submit" class="ghost" style="padding:0.25rem 0.7rem;font-size:0.8rem;color:var(--danger-text);">
                     删除
                 </button>

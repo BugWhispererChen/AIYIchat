@@ -39,7 +39,7 @@
         <a href="#sec-meta">元指令</a>
         <a href="#sec-voice">语音设置</a>
         <div class="save-row">
-            <button type="submit" form="preview-form" style="width:100%;">确认入库</button>
+            <button type="submit" form="preview-form" class="u-w-full" >确认入库</button>
             <a href="/admin/chat-import" role="button" class="ghost" style="width:100%;margin-top:0.4rem;">重新分析</a>
         </div>
     </aside>
@@ -75,7 +75,7 @@
                 </label>
             </div>
             <div class="grid">
-                <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.4rem;">
+                <label class="u-row u-gap-2 u-mt-1" >
                     <input type="checkbox" name="is_active" role="switch" {{ 'checked' if profile.is_active is not defined or profile.is_active }}>
                     激活角色
                 </label>
@@ -121,14 +121,14 @@
             <h4>语言风格 (Language Style)</h4>
             {% set vb = profile.verbosity | default('standard', true) %}
             <label>回复风格 <small class="field-hint">(凝练：倾向简短回应；标准：默认；健谈：乐于展开分享。长度不作硬限制，由模型按情景自然调整)</small>
-                <div style="display:flex;gap:1.2rem;">
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                <div class="u-row u-gap-5" >
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="concise" {% if vb == 'concise' %}checked{% endif %}> 凝练
                     </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="standard" {% if vb == 'standard' %}checked{% endif %}> 标准
                     </label>
-                    <label style="display:flex;align-items:center;gap:0.3rem;font-weight:400;">
+                    <label class="u-row u-gap-1 u-fw-normal" >
                         <input type="radio" name="verbosity" value="verbose" {% if vb == 'verbose' %}checked{% endif %}> 健谈
                     </label>
                 </div>
@@ -168,9 +168,9 @@
             {% if profile.personality and profile.personality.traits %}
             {% for key, val in profile.personality.traits.items() %}
             <div class="grid" style="align-items:center;margin-bottom:0.3rem;">
-                <input type="text" name="trait_key" value="{{ key }}" style="max-width:160px;">
+                <input type="text" name="trait_key" value="{{ key }}" class="u-mw-160" >
                 <input type="range" name="trait_value" min="0" max="1" step="0.05" value="{{ val }}"
-                       oninput="this.nextElementSibling.textContent=this.value" style="flex:1;">
+                       oninput="this.nextElementSibling.textContent=this.value" class="u-fill" >
                 <span style="min-width:40px;text-align:center;">{{ val }}</span>
             </div>
             {% endfor %}

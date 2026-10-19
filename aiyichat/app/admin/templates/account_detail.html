@@ -71,7 +71,7 @@
             <div style="display:flex;flex-direction:column;gap:1rem;">
                 {# 文字额度（Token） #}
                 <div>
-                    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.88rem;">
+                    <div class="u-row-between u-fs-88" >
                         <span><strong>文字额度（Token）</strong></span>
                         <span class="muted">{{ text_used }} / {{ text_limit if text_limit > 0 else '∞' }}
                             {% if text_limit > 0 %}<small>（{{ '%.1f'|format(text_pct) }}%）</small>{% endif %}
@@ -84,7 +84,7 @@
                 </div>
                 {# 语音额度 #}
                 <div>
-                    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.88rem;">
+                    <div class="u-row-between u-fs-88" >
                         <span><strong>语音额度</strong></span>
                         <span class="muted">{{ voice_used }} / {{ voice_limit if voice_limit > 0 else '∞' }}
                             {% if voice_limit > 0 %}<small>（{{ '%.1f'|format(voice_pct) }}%）</small>{% endif %}
@@ -97,7 +97,7 @@
                 </div>
                 {# 图片额度 #}
                 <div>
-                    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.88rem;">
+                    <div class="u-row-between u-fs-88" >
                         <span><strong>图片额度</strong></span>
                         <span class="muted">{{ image_used }} / {{ image_limit if image_limit > 0 else '∞' }}
                             {% if image_limit > 0 %}<small>（{{ '%.1f'|format(image_pct) }}%）</small>{% endif %}
@@ -112,7 +112,7 @@
 
             {# 调整额度（折叠）：保留原有编辑功能 #}
             <details style="margin-top:1.2rem;">
-                <summary style="font-weight:600;cursor:pointer;color:var(--primary);">调整额度</summary>
+                <summary class="link-strong" >调整额度</summary>
                 <form method="post" action="/admin/accounts/{{ account.id }}/quota" style="margin-top:0.8rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
                     <div class="grid">
                         <div>
@@ -179,7 +179,7 @@
     {# ─────────── Tab 2：身份管理 ─────────── #}
     <div class="tab-content" data-tab-content="identities">
         <div class="card">
-            <h4>身份管理 <small class="muted" style="font-size:0.82rem;">({{ identities|length }} 个)</small></h4>
+            <h4>身份管理 <small class="muted u-fs-82" >({{ identities|length }} 个)</small></h4>
             {% if identities %}
             <table>
                 <thead>
@@ -189,7 +189,7 @@
                     {% for u in identities %}
                     <tr>
                         <td><strong>{{ u.name or '-' }}</strong></td>
-                        <td><code style="font-size:0.8rem;">{{ u.platform_id }}</code></td>
+                        <td><code class="u-fs-80" >{{ u.platform_id }}</code></td>
                         <td><span class="badge {% if u.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ u.platform }}</span></td>
                         <td>{{ u.nickname or '-' }}</td>
                         <td>
@@ -204,8 +204,8 @@
                         <td>
                             <div class="btn-row" style="gap:0.3rem;">
                                 {# 禁用/启用身份：禁用时通过 Modal 输入禁用原因 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block" style="margin:0;"
-                                      {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %}>
+                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block" 
+                                      {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %} class="u-m0">
                                     <input type="hidden" name="block_reason" value="">
                                     {% if not u.is_blocked %}
                                     <button type="submit" class="ghost btn-sm">禁用</button>
@@ -214,8 +214,8 @@
                                     {% endif %}
                                 </form>
                                 {# 删除身份：不可恢复，需二次确认 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete" style="margin:0;"
-                                      data-confirm="确认删除此身份？此操作不可恢复！" data-danger data-confirm-text="删除">
+                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/delete" 
+                                      data-confirm="确认删除此身份？此操作不可恢复！" data-danger data-confirm-text="删除" class="u-m0">
                                     <button type="submit" class="danger outline btn-sm">删除</button>
                                 </form>
                             </div>
@@ -250,9 +250,9 @@
             <p class="muted">暂无身份</p>
             {% endif %}
 
-            <details style="margin-top:0.8rem;">
-                <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增身份</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+            <details class="u-mt-3" >
+                <summary class="link-strong" >+ 新增身份</summary>
+                <form method="post" action="/admin/accounts/{{ account.id }}/identities/create" class="inset-block" >
                     <div class="grid">
                         <label>用户名称
                             <input type="text" name="name" placeholder="用户名称">
@@ -284,7 +284,7 @@
     {# ─────────── Tab 3：Bot 管理 ─────────── #}
     <div class="tab-content" data-tab-content="bots">
         <div class="card">
-            <h4>Bot 管理 <small class="muted" style="font-size:0.82rem;">({{ bots|length }} 个)</small></h4>
+            <h4>Bot 管理 <small class="muted u-fs-82" >({{ bots|length }} 个)</small></h4>
             {% if bots %}
             <div class="stats-grid">
                 {% for bot in bots %}
@@ -293,24 +293,24 @@
                         <summary style="font-weight:700;font-size:0.95rem;cursor:pointer;">
                             <span class="status-dot {% if bot.platform == 'wechat' and bot.status == 'online' %}online{% elif bot.platform == 'wechat' and bot.status == 'pending_qr' %}pending{% else %}offline{% endif %}"></span>
                             {{ bot.name }}
-                            <span class="badge {% if bot.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}" style="margin-left:0.3rem;">
+                            <span class="badge {% if bot.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %} u-ml-1" >
                                 {{ 'QQ' if bot.platform == 'qq' else ('网页' if bot.platform == 'web' else '微信') }}
                             </span>
                             {% if bot.platform == 'qq' %}
-                            <span class="badge {% if bot.sandbox_mode %}badge-active{% else %}badge-warning{% endif %}" style="margin-left:0.3rem;">
+                            <span class="badge {% if bot.sandbox_mode %}badge-active{% else %}badge-warning{% endif %} u-ml-1" >
                                 {{ '沙箱' if bot.sandbox_mode else '正式' }}
                             </span>
                             {% endif %}
                             {% if bot.platform == 'wechat' %}
-                            <span class="badge {% if bot.status == 'online' %}badge-active{% elif bot.status == 'pending_qr' %}badge-warning{% else %}badge-inactive{% endif %}" style="margin-left:0.3rem;">
+                            <span class="badge {% if bot.status == 'online' %}badge-active{% elif bot.status == 'pending_qr' %}badge-warning{% else %}badge-inactive{% endif %} u-ml-1" >
                                 {% if bot.status == 'online' %}在线{% elif bot.status == 'pending_qr' %}等待扫码{% else %}离线{% endif %}
                             </span>
                             {% endif %}
                             {% if bot.is_blocked %}
-                            <span class="badge badge-inactive" style="margin-left:0.3rem;">已禁用</span>
+                            <span class="badge badge-inactive u-ml-1" >已禁用</span>
                             {% endif %}
                         </summary>
-                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/edit" style="margin-top:0.8rem;">
+                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/edit" class="u-mt-3" >
                             <label>名称
                                 <input type="text" name="name" value="{{ bot.name }}" required>
                             </label>
@@ -332,11 +332,11 @@
                             {% if bot.is_blocked and bot.block_reason %}
                             <p style="color:var(--danger-color);margin:0.3rem 0;font-size:0.85rem;">禁用原因：{{ bot.block_reason }}</p>
                             {% endif %}
-                            <div class="btn-row" style="margin-top:0.5rem;">
-                                <button type="submit" style="flex:1;">保存修改</button>
+                            <div class="btn-row u-mt-2" >
+                                <button type="submit" class="u-fill" >保存修改</button>
                                 {# 删除 Bot：不可恢复，需二次确认 #}
                                 <button type="submit" formaction="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/delete"
-                                        class="danger outline" style="flex:1;" data-danger data-confirm-text="删除"
+                                        class="danger outline u-fill"  data-danger data-confirm-text="删除"
                                         data-confirm="确认删除 Bot「{{ bot.name }}」？此操作不可恢复！">删除</button>
                             </div>
                         </form>
@@ -355,8 +355,8 @@
                                 <span id="qr-loading-{{ bot.id }}" class="htmx-indicator muted">加载中...</span>
                                 {% else %}
                                 {# 停止 Bot：将断开连接，需二次确认 #}
-                                <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/stop" style="margin:0;"
-                                      data-confirm="确认停止 Bot「{{ bot.name }}」？Bot 将断开连接。">
+                                <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/stop" 
+                                      data-confirm="确认停止 Bot「{{ bot.name }}」？Bot 将断开连接。" class="u-m0">
                                     <button type="submit" class="ghost">停止 Bot</button>
                                 </form>
                                 {% endif %}
@@ -366,7 +366,7 @@
                                 Token过期: {{ bot.token_expire_at | to_beijing }}
                             </p>
                             {% endif %}
-                            <div id="qr-area-{{ bot.id }}" style="margin-top:0.5rem;"></div>
+                            <div id="qr-area-{{ bot.id }}" class="u-mt-2" ></div>
                         </div>
                         {% endif %}
                         {% if bot.platform == 'qq' %}
@@ -385,11 +385,11 @@
                             <p style="font-size:0.8rem;color:var(--text-2);margin:0.5rem 0 0;">
                                 用手机QQ扫码选择机器人，自动填入 App ID / App Secret
                             </p>
-                            <div id="qr-area-{{ bot.id }}" style="margin-top:0.5rem;"></div>
+                            <div id="qr-area-{{ bot.id }}" class="u-mt-2" ></div>
                         </div>
                         {% endif %}
-                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/toggle-block" style="margin-top:0.5rem;"
-                              {% if not bot.is_blocked %}data-confirm="确定禁用 Bot「{{ bot.name }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用 Bot「{{ bot.name }}」？"{% endif %}>
+                        <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/toggle-block" 
+                              {% if not bot.is_blocked %}data-confirm="确定禁用 Bot「{{ bot.name }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用 Bot「{{ bot.name }}」？"{% endif %} class="u-mt-2">
                             <input type="hidden" name="block_reason" value="">
                             {% if not bot.is_blocked %}
                             <button type="submit" class="ghost btn-sm">禁用 Bot</button>
@@ -405,9 +405,9 @@
             <p class="muted">暂无 Bot</p>
             {% endif %}
 
-            <details style="margin-top:0.8rem;">
-                <summary style="font-weight:600;cursor:pointer;color:var(--primary);">+ 新增 Bot</summary>
-                <form method="post" action="/admin/accounts/{{ account.id }}/bots/create" style="margin-top:0.5rem;padding:1rem;background:var(--surface-2);border-radius:var(--radius-sm);">
+            <details class="u-mt-3" >
+                <summary class="link-strong" >+ 新增 Bot</summary>
+                <form method="post" action="/admin/accounts/{{ account.id }}/bots/create" class="inset-block" >
                     <div class="grid">
                         <label>Bot 名称
                             <input type="text" name="name" placeholder="Bot 名称" required>
@@ -444,7 +444,7 @@
     <div class="tab-content" data-tab-content="services">
         <!-- 对话服务列表 -->
         <div class="card">
-            <h4>对话服务 <small class="muted" style="font-size:0.82rem;">({{ service_infos|length }} 个)</small></h4>
+            <h4>对话服务 <small class="muted u-fs-82" >({{ service_infos|length }} 个)</small></h4>
             {% if service_infos %}
             <div style="display:flex;flex-direction:column;gap:0.8rem;">
                 {% for sinfo in service_infos %}
@@ -454,9 +454,9 @@
                             <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                                 <strong style="font-size:0.98rem;">{{ sinfo.service.name }}</strong>
                                 {% if sinfo.service.is_active %}
-                                <span class="badge badge-active"><span class="status-dot online" style="margin:0;"></span>启用</span>
+                                <span class="badge badge-active"><span class="status-dot online u-m0" ></span>启用</span>
                                 {% else %}
-                                <span class="badge badge-inactive"><span class="status-dot offline" style="margin:0;"></span>禁用</span>
+                                <span class="badge badge-inactive"><span class="status-dot offline u-m0" ></span>禁用</span>
                                 {% endif %}
                             </div>
                             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
@@ -468,8 +468,8 @@
                                 {% endif %}
                             </div>
                         </div>
-                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/delete" style="margin:0;"
-                              data-confirm="确定删除服务「{{ sinfo.service.name }}」？将级联删除其对话、消息与长期记忆（共享组数据仅在删除最后一个成员时清理）。" data-danger data-confirm-text="删除">
+                        <form method="post" action="/admin/accounts/{{ account.id }}/services/{{ sinfo.service.id }}/delete" 
+                              data-confirm="确定删除服务「{{ sinfo.service.name }}」？将级联删除其对话、消息与长期记忆（共享组数据仅在删除最后一个成员时清理）。" data-danger data-confirm-text="删除" class="u-m0">
                             <button type="submit" class="danger outline btn-sm">删除</button>
                         </form>
                     </div>

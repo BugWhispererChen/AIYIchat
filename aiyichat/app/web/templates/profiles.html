@@ -442,7 +442,17 @@
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
             el('name').focus();
         });
-        load().catch(function () { show('err', '角色列表读取失败，请稍后重试'); });
+        /* 本段内联脚本在解析期就执行，而 web-auth.js 带 defer（它要读 document.body，
+           不能同步放 head），此刻 window.WebAuth 尚未定义：直接 load() 会抛
+           ReferenceError 并被下面的 catch 吞成"读取失败"，列表永远出不来。
+           defer 脚本在 DOMContentLoaded 之前执行完，故把首屏加载挂到这个事件上。 */
+        document.addEventListener('DOMContentLoaded', function () {
+            load().catch(function (e) {
+                // 不加这行，任何渲染期异常都会被吞成一句"读取失败"，本 bug 就是这么藏住的
+                console.error('角色列表加载失败', e);
+                show('err', '角色列表读取失败，请稍后重试');
+            });
+        });
     })();
     </script>
 </body>

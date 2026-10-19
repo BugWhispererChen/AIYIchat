@@ -245,7 +245,14 @@
         document.getElementById('cancel-btn').addEventListener('click', closeEditor);
         saveBtn.addEventListener('click', save);
         document.getElementById('new-btn').addEventListener('click', function () { openEditor(null); });
-        load().catch(function () { show('err', '伙伴列表读取失败，请稍后重试'); });
+        /* 同 profiles.html：内联脚本在解析期执行，defer 的 web-auth.js 还没定义
+           window.WebAuth，直接 load() 会被 catch 吞成"读取失败"。挂到 DOMContentLoaded。 */
+        document.addEventListener('DOMContentLoaded', function () {
+            load().catch(function (e) {
+                console.error('伙伴列表加载失败', e);
+                show('err', '伙伴列表读取失败，请稍后重试');
+            });
+        });
     })();
     </script>
 </body>

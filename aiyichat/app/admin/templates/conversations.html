@@ -1,84 +1,81 @@
 {% extends "base.html" %}
 {% set active_page = "conversations" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}对话管理{% endblock %}
 
-{% block content %}
-<div class="page-header">
-    <h3>对话管理</h3>
-    <p class="subtitle">共 {{ total }} 条对话</p>
-</div>
+{% from "partials/_ui.html" import page_header, badge, empty, table_meta %}
 
-<!-- 搜索 -->
-<div class="card">
-    <div class="search-bar">
-        <form method="get" action="/admin/conversations" style="display:flex;gap:0.5rem;flex:1;">
-            <input type="search" name="q" value="{{ request.query_params.get('q', '') }}" placeholder="搜索对话 ID 或摘要...">
-            <button type="submit">搜索</button>
-            {% if request.query_params.get('q') %}
-            <a href="/admin/conversations" role="button" class="ghost">重置</a>
-            {% endif %}
-        </form>
-        {# 本页快速过滤：不改查询条件，只在已渲染的行里即时筛，配合表头排序使用 #}
-        <input type="search" class="filter-input" placeholder="本页快速过滤"
-               data-filter="#conv-table" aria-label="本页快速过滤">
-    </div>
+{% block content %}
+{{ page_header('对话管理', '共 ' ~ total ~ ' 条对话', '运营管理') }}
+
+{# ── 检索带：服务端搜索 + 本页即时过滤 + 表头排序 ────── #}
+<div class="ui-toolbar">
+    <form method="get" action="/admin/conversations" class="ui-cluster ui-cluster--fill">
+        <input class="ui-input" type="search" name="q"
+               value="{{ request.query_params.get('q', '') }}"
+               placeholder="搜索对话 ID 或摘要..." aria-label="搜索对话">
+        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>
+        {% if request.query_params.get('q') %}
+        <a href="/admin/conversations" class="ui-btn ui-btn--ghost ui-btn--sm">重置</a>
+        {% endif %}
+    </form>
+    {# 本页快速过滤：不改查询条件，只在已渲染的行里即时筛，配合表头排序使用 #}
+    <input class="ui-input filter-input" type="search" placeholder="本页快速过滤"
+           data-filter="#conv-table" aria-label="本页快速过滤">
 </div>
 
 {% if conv_infos %}
-<div class="card">
-    <div class="table-wrap">
-    <table id="conv-table">
-        <thead>
-            <tr>
-                <th data-sortable="对话 ID">对话 ID</th>
-                <th data-sortable="账号">账号</th>
-                <th data-sortable="身份">身份</th>
-                <th data-sortable="角色">角色</th>
-                <th data-sortable="消息数">消息数</th>
-                <th data-sortable="状态">状态</th>
-                <th data-sortable="最后活跃">最后活跃</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for info in conv_infos %}
-            <tr>
-                <td><code style="font-size:0.8rem;" class="text-ellipsis" title="{{ info.conv.id }}">{{ info.conv.id[:8] }}...</code></td>
-                <td>{{ info.account.name if info.account else '-' }}</td>
-                <td>{{ info.identity.nickname or info.identity.name or info.conv.identity_id[:8] if info.user else info.conv.identity_id[:8] }}</td>
-                <td>{{ info.profile.name if info.profile else '-' }}</td>
-                <td>{{ info.conv.message_count }}</td>
-                <td>
-                    <span class="status-dot {% if info.conv.status == 'active' %}online{% else %}offline{% endif %}"></span>
-                    <span class="badge {% if info.conv.status == 'active' %}badge-active{% else %}badge-inactive{% endif %}">{{ info.conv.status }}</span>
-                </td>
-                <td>
-                    {% if info.conv.last_message_at %}
-                    <span title="{{ (info.conv.last_message_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ info.conv.last_message_at|relative_time }}</span>
-                    {% else %}-{% endif %}
-                </td>
-                <td><a href="/admin/conversations/{{ info.conv.id }}" role="button" class="ghost btn-sm">查看消息</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<section class="ui-card ui-card--flush">
+    {{ table_meta('共 ' ~ conv_infos|length ~ ' 行') }}
+    <div class="ui-table-wrap">
+        <table class="ui-table" id="conv-table">
+            <thead>
+                <tr>
+                    <th data-sortable="对话 ID">对话 ID</th>
+                    <th data-sortable="账号">账号</th>
+                    <th data-sortable="身份">身份</th>
+                    <th data-sortable="角色">角色</th>
+                    <th class="num" data-sortable="消息数">消息数</th>
+                    <th data-sortable="状态">状态</th>
+                    <th data-sortable="最后活跃">最后活跃</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for info in conv_infos %}
+                <tr>
+                    <td><code class="u-fs-80 text-ellipsis" title="{{ info.conv.id }}">{{ info.conv.id[:8] }}...</code></td>
+                    <td>{{ info.account.name if info.account else '-' }}</td>
+                    <td>{{ info.identity.nickname or info.identity.name or info.conv.identity_id[:8] if info.user else info.conv.identity_id[:8] }}</td>
+                    <td>{{ info.profile.name if info.profile else '-' }}</td>
+                    <td class="num">{{ info.conv.message_count }}</td>
+                    <td>
+                        <span class="ui-cluster">
+                            <span class="status-dot {% if info.conv.status == 'active' %}online{% else %}offline{% endif %}"></span>
+                            {{ badge(info.conv.status, 'ok' if info.conv.status == 'active' else 'line') }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if info.conv.last_message_at %}
+                        <span title="{{ (info.conv.last_message_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ info.conv.last_message_at|relative_time }}</span>
+                        {% else %}-{% endif %}
+                    </td>
+                    <td><a href="/admin/conversations/{{ info.conv.id }}" class="ui-btn ui-btn--outline ui-btn--sm">查看消息</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
     {% if total_pages > 1 %}
-    <div class="pagination">
+    <div class="ui-pagination">
         {% for p in range(1, total_pages + 1) %}
-        <a href="/admin/conversations?page={{ p }}" class="{% if p == page %}current{% endif %}">{{ p }}</a>
+        <a href="/admin/conversations?page={{ p }}" class="{% if p == page %}is-current{% endif %}">{{ p }}</a>
         {% endfor %}
     </div>
     {% endif %}
-</div>
+</section>
 {% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-        <div class="empty-title">暂无对话数据</div>
-        <div class="empty-desc">身份与 Bot 产生交互后，对话记录将在此展示</div>
-    </div>
-</div>
+{{ empty('暂无对话数据', '身份与 Bot 产生交互后，对话记录将在此展示', 'chat') }}
 {% endif %}
 {% endblock %}

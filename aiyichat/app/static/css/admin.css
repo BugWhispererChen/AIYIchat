@@ -547,6 +547,8 @@ fieldset, .card, article { margin-bottom: 1.25rem; }
     box-shadow: var(--shadow);
     line-height: 1.65;
 }
+/* 气泡正文：与上方徽章行、下方元信息行拉开固定间距 */
+.message-bubble .msg-body { margin: var(--space-2) 0 var(--space-1); }
 .message-bubble.user {
     background: var(--primary-soft);
     color: var(--text);

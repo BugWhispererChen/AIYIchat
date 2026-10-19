@@ -2,6 +2,8 @@
 {% set active_page = "conversations" %}
 {% block title %}对话详情{% endblock %}
 
+{% from "partials/_ui.html" import page_header, card, badge, empty %}
+
 {% block breadcrumb %}
 <a href="/admin/conversations">对话记录</a>
 <span class="sep">/</span>
@@ -9,88 +11,54 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>对话详情</h3>
-    <p class="subtitle">
-        ID: <code>{{ conversation.id }}</code> |
-        消息数: {{ conversation.message_count }} |
-        状态: <span class="badge {% if conversation.status == 'active' %}badge-active{% else %}badge-inactive{% endif %}">{{ conversation.status }}</span>
-    </p>
-</div>
+{{ page_header('对话详情',
+               'ID: ' ~ conversation.id ~ '　|　消息数: ' ~ conversation.message_count ~ '　|　状态:',
+               '运营管理',
+               badge(conversation.status, 'ok' if conversation.status == 'active' else 'line')) }}
 
-<div class="btn-row" style="margin-bottom:1.2rem;">
-    <a href="/admin/conversations" role="button" class="ghost btn-sm">&larr; 返回列表</a>
+<div class="ui-cluster">
+    <a href="/admin/conversations" class="ui-btn ui-btn--ghost ui-btn--sm">&larr; 返回列表</a>
     {# 删除对话：同时清理所有消息，需二次确认 #}
-    <form method="post" action="/admin/conversations/{{ conversation.id }}/delete" style="margin:0;"
+    <form method="post" action="/admin/conversations/{{ conversation.id }}/delete" class="u-m0"
           data-confirm="确认删除此对话及其所有消息？此操作不可恢复！" data-danger data-confirm-text="删除">
-        <button type="submit" class="danger outline btn-sm">删除对话</button>
+        <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">删除对话</button>
     </form>
 </div>
 
 {% if conversation.summary %}
-<div class="card" style="margin-bottom:1rem;">
-    <h4>对话摘要</h4>
-    <p style="margin:0;color:var(--text-2);">{{ conversation.summary }}</p>
-</div>
+{% call card('对话摘要') %}
+    <p class="u-m0 u-muted">{{ conversation.summary }}</p>
+{% endcall %}
 {% endif %}
 
-<div class="card">
+<section class="ui-card">
     {# 消息统计和分页导航 #}
     {% if total_messages is defined %}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <span style="color:var(--text-2);font-size:13px;">
+    <div class="ui-cluster ui-cluster--between">
+        <span class="u-muted u-fs-85">
             显示第 {{ (current_page - 1) * page_size + 1 }}–{{ [current_page * page_size, total_messages] | min }} 条 / 共 {{ total_messages }} 条消息
         </span>
         {% if total_pages > 1 %}
-        <div style="display:flex;gap:8px;align-items:center;">
+        <span class="ui-cluster">
             {% if current_page > 1 %}
-            <a href="?page={{ current_page - 1 }}" role="button" class="secondary outline" style="font-size:0.8rem;padding:0.25rem 0.75rem;">← 上一页</a>
+            <a href="?page={{ current_page - 1 }}" class="ui-btn ui-btn--outline ui-btn--sm">← 上一页</a>
             {% endif %}
-            <span style="font-size:13px;color:var(--text-2);">第 {{ current_page }} / {{ total_pages }} 页</span>
+            <span class="u-muted u-fs-85">第 {{ current_page }} / {{ total_pages }} 页</span>
             {% if current_page < total_pages %}
-            <a href="?page={{ current_page + 1 }}" role="button" class="secondary outline" style="font-size:0.8rem;padding:0.25rem 0.75rem;">下一页 →</a>
+            <a href="?page={{ current_page + 1 }}" class="ui-btn ui-btn--outline ui-btn--sm">下一页 →</a>
             {% endif %}
-        </div>
+        </span>
         {% endif %}
     </div>
     {% endif %}
 
+    {# 消息气泡与 htmx 分页片段共用同一份模板，避免两处各写一遍 #}
     <div id="message-list">
-        {% for msg in messages %}
-        <div class="message-bubble {{ msg.role }}">
-            {# 删除单条消息：右上角叉号，悬停显示 #}
-            <form method="post" action="/admin/conversations/{{ conversation.id }}/messages/{{ msg.id }}/delete" style="display:inline;"
-                  data-confirm="确认删除此条消息？此操作不可恢复！" data-danger data-confirm-text="删除">
-                <button type="submit" class="msg-delete-btn" title="删除消息">&times;</button>
-            </form>
-            <div>
-                <span class="badge {% if msg.role == 'user' %}badge-role-user{% else %}badge-role-assistant{% endif %}">
-                    {{ '身份' if msg.role == 'user' else 'AI' }}
-                </span>
-                {% if msg.emotion_tag %}
-                <span class="badge badge-warning">{{ msg.emotion_tag }}</span>
-                {% endif %}
-                {% if msg.content_type and msg.content_type != 'text' %}
-                <span class="badge badge-role-assistant">{{ msg.content_type }}</span>
-                {% endif %}
-            </div>
-            <p style="margin:0.4rem 0 0.2rem;">{{ msg.content }}</p>
-            {% if msg.media_url %}
-            <div class="msg-media">
-                <img src="{{ msg.media_url }}" alt="图片" loading="lazy" onclick="window.open(this.src)">
-            </div>
-            {% endif %}
-            <div class="message-meta">
-                {{ (msg.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') if msg.created_at else '' }}
-                {% if msg.latency_ms %} | {{ msg.latency_ms }}ms{% endif %}
-                {% if msg.token_count %} | {{ msg.token_count }} tokens{% endif %}
-            </div>
-        </div>
-        {% endfor %}
+        {% include "partials/message_list.html" %}
     </div>
 
     {% if not messages %}
-    <p style="color:var(--text-2);text-align:center;padding:2rem 0;">暂无消息</p>
+    {{ empty('暂无消息', '', 'chat') }}
     {% endif %}
-</div>
+</section>
 {% endblock %}

@@ -271,6 +271,8 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-help { margin-top: 6px; font-size: .78rem; color: var(--text-3); }
 .ui-field.is-invalid .ui-input,
 .ui-field.is-invalid .ui-select { border-color: var(--danger); }
+/* 与同排输入框对齐的裸开关位：无标题时贴齐行底，不再浮到标签高度 */
+.ui-field--end { align-self: end; display: flex; }
 
 /* 行内紧凑控件：表格次级编辑行里的小输入框/下拉框 */
 .ui-input--sm, .ui-select--sm {
@@ -379,6 +381,15 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     color: var(--primary);
 }
 .ui-metric--ok { color: var(--success); }
+
+/* 表格内的长文本单元格：限宽并省略，避免一条消息把整行撑高 */
+.cell-content { max-width: 280px; display: inline-block; vertical-align: middle; }
+
+/* 贴边卡片底部分页条：与表格之间补一条分隔并留白 */
+.ui-card--flush .ui-pagination {
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border);
+}
 
 /* ── 空 / 加载 / 错误 三态 ───────────────────────────── */
 .ui-empty, .ui-error-state {
@@ -666,6 +677,9 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     line-height: 1.1;
     color: var(--text);
 }
+/* 语义着色档：成功/失败计数需要一眼可辨，不再往模板里写 color */
+.ui-kpi-value--ok  { color: var(--success-text); }
+.ui-kpi-value--err { color: var(--danger-text); }
 
 /* ══════════════════════════════════════════════════════
    布局与节奏（页面结构的唯一来源）

@@ -25,12 +25,12 @@
 
 
 {# ── KPI 数字块与网格 ─────────────────────────────────── #}
-{% macro kpi(label, value, sub='', name='') -%}
+{% macro kpi(label, value, sub='', name='', tone='') -%}
 <div class="ui-kpi">
     <span class="ui-kpi-label">
         {% if name %}{{ icon(name) }} {% endif %}{{ label }}
     </span>
-    <span class="ui-kpi-value">{{ value }}{% if sub %} <small>{{ sub }}</small>{% endif %}</span>
+    <span class="ui-kpi-value{% if tone %} ui-kpi-value--{{ tone }}{% endif %}">{{ value }}{% if sub %} <small>{{ sub }}</small>{% endif %}</span>
 </div>
 {%- endmacro %}
 
@@ -49,7 +49,9 @@
         {% if action %}<div class="ui-cluster ui-cluster--end">{{ action | safe }}</div>{% endif %}
     </div>
     {% endif %}
-    {{ caller() }}
+    {# 卡内正文统一交给 ui-stack 供给纵向节奏，
+       否则说明段落与首个表单域会贴在一起（各页反复出现的那类挤压） #}
+    <div class="ui-stack">{{ caller() }}</div>
 </section>
 {%- endmacro %}
 

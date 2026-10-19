@@ -1,197 +1,178 @@
 {% extends "base.html" %}
 {% set active_page = "proactive" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}主动关怀{% endblock %}
 
+{% from "partials/_ui.html" import page_header, card, kpi, alert, badge, empty %}
+
 {% block content %}
-<div class="page-header">
-    <h3>主动关怀</h3>
-    <p class="subtitle">沉默召回与事件跟进的发送记录与效果统计</p>
-</div>
+{{ page_header('主动关怀', '沉默召回与事件跟进的发送记录与效果统计', '运营管理') }}
 
 <!-- 近7天统计卡片 -->
-<div class="stats-grid" style="margin-bottom:1rem;">
-    <div class="stat-card">
-        <div class="stat-head"><span>近7天 · 发送总数</span></div>
-        <div class="value">{{ summary.total }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>成功送达</span></div>
-        <div class="value" style="color:var(--success-color);">{{ summary.sent }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>发送失败</span></div>
-        <div class="value" style="color:var(--danger-color);">{{ summary.failed }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>成功率</span></div>
-        <div class="value">{{ summary.success_rate }}<small>%</small></div>
-    </div>
+<div class="ui-grid ui-grid--kpi">
+    {{ kpi('近7天 · 发送总数', summary.total) }}
+    {{ kpi('成功送达', summary.sent, '', '', 'ok') }}
+    {{ kpi('发送失败', summary.failed, '', '', 'err') }}
+    {{ kpi('成功率', summary.success_rate, '%') }}
 </div>
 
 <!-- 免打扰时段设置 -->
-<div class="card">
-    <h4 style="margin-bottom:0.25rem;">免打扰时段</h4>
-    <p class="subtitle" style="margin-bottom:0.75rem;">
+{% call card('免打扰时段') %}
+    <p class="ui-note">
         处于该时段时暂停主动发送，白天恢复后自动触发；开始与结束相同视为不启用。保存即热生效。
     </p>
-    {% if saved %}
-    <p style="color:var(--success-color,green);">✓ 已保存并热生效</p>
-    {% endif %}
-    <form method="post" action="/admin/proactive/quiet-hours">
-        <div class="grid">
-            <label>
-                开始时刻（0-23 点）
-                <input type="number" name="quiet_start" min="0" max="23" value="{{ quiet_start }}">
+    {{ alert('success', '✓ 已保存并热生效' if saved else '') }}
+    <form method="post" action="/admin/proactive/quiet-hours" class="ui-stack">
+        <div class="ui-grid ui-grid--3">
+            <label class="ui-field">
+                <span class="ui-label">开始时刻（0-23 点）</span>
+                <input class="ui-input" type="number" name="quiet_start" min="0" max="23" value="{{ quiet_start }}">
             </label>
-            <label>
-                结束时刻（0-23 点）
-                <input type="number" name="quiet_end" min="0" max="23" value="{{ quiet_end }}">
+            <label class="ui-field">
+                <span class="ui-label">结束时刻（0-23 点）</span>
+                <input class="ui-input" type="number" name="quiet_end" min="0" max="23" value="{{ quiet_end }}">
             </label>
-            <label>
-                身份时区（UTC 偏移小时）
-                <input type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
+            <label class="ui-field">
+                <span class="ui-label">身份时区（UTC 偏移小时）</span>
+                <input class="ui-input" type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
             </label>
         </div>
-        <button type="submit" class="btn-sm">保存设置</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存设置</button>
+        </div>
     </form>
-</div>
+{% endcall %}
 
 <!-- 分享型消息设置 -->
-<div class="card">
-    <h4 style="margin-bottom:0.25rem;">分享内容（时事/见闻/趣事）</h4>
-    <p class="subtitle" style="margin-bottom:0.75rem;">
+{% call card('分享内容（时事/见闻/趣事）') %}
+    <p class="ui-note">
         召回触发点按概率发送"时事/趣事分享"替代关怀文案，更像真人随手分享；不新增发送频次，保存即热生效。
     </p>
-    <form method="post" action="/admin/proactive/share-settings">
-        <div class="grid">
-            <label style="display:flex;align-items:center;gap:0.5rem;">
-                <input type="checkbox" name="share_enabled" style="width:auto;" {% if share_enabled %}checked{% endif %}>
-                启用分享型消息
+    <form method="post" action="/admin/proactive/share-settings" class="ui-stack">
+        <div class="ui-grid ui-grid--3">
+            <label class="ui-field ui-field--end">
+                <span class="ui-cluster">
+                    <input type="checkbox" name="share_enabled" {% if share_enabled %}checked{% endif %}>
+                    <span>启用分享型消息</span>
+                </span>
             </label>
-            <label>
-                分享概率（0~1，其余走原阶段关怀）
-                <input type="number" name="share_ratio" min="0" max="1" step="0.05" value="{{ share_ratio }}">
+            <label class="ui-field">
+                <span class="ui-label">分享概率（0~1，其余走原阶段关怀）</span>
+                <input class="ui-input" type="number" name="share_ratio" min="0" max="1" step="0.05" value="{{ share_ratio }}">
             </label>
-            <label>
-                分享中"联网时事"占比（其余为"创作趣事"）
-                <input type="number" name="share_news_ratio" min="0" max="1" step="0.05" value="{{ share_news_ratio }}">
+            <label class="ui-field">
+                <span class="ui-label">分享中"联网时事"占比（其余为"创作趣事"）</span>
+                <input class="ui-input" type="number" name="share_news_ratio" min="0" max="1" step="0.05" value="{{ share_news_ratio }}">
             </label>
         </div>
-        <button type="submit" class="btn-sm">保存设置</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存设置</button>
+        </div>
     </form>
-</div>
+{% endcall %}
 
 <!-- 阶段分布 -->
 {% if stage_dist %}
-<div class="card">
-    <h4>近7天成功发送 · 阶段分布</h4>
-    <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+{% call card('近7天成功发送 · 阶段分布') %}
+    <div class="ui-cluster">
         {% for s in stage_dist %}
-        <span class="badge badge-role-user">{{ s.label }}：{{ s.count }}</span>
+        {{ badge(s.label ~ '：' ~ s.count, 'ink') }}
         {% endfor %}
     </div>
-</div>
+{% endcall %}
 {% endif %}
 
 <!-- 状态筛选 + 记录清理 -->
-<div class="card">
-    <div class="btn-row" style="gap:0.5rem;">
-        <a href="/admin/proactive" role="button" class="{% if not status %}{% else %}ghost{% endif %} btn-sm">全部</a>
-        <a href="/admin/proactive?status=sent" role="button" class="{% if status == 'sent' %}{% else %}ghost{% endif %} btn-sm">已发送</a>
-        <a href="/admin/proactive?status=failed" role="button" class="{% if status == 'failed' %}{% else %}ghost{% endif %} btn-sm">失败</a>
-        <span class="muted" style="font-size:0.78rem;margin-left:auto;">共 {{ total }} 条记录</span>
+<section class="ui-card">
+    <div class="ui-toolbar">
+        <a href="/admin/proactive" class="ui-btn ui-btn--sm{% if not status %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">全部</a>
+        <a href="/admin/proactive?status=sent" class="ui-btn ui-btn--sm{% if status == 'sent' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">已发送</a>
+        <a href="/admin/proactive?status=failed" class="ui-btn ui-btn--sm{% if status == 'failed' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">失败</a>
+        <span class="ui-note u-fill">共 {{ total }} 条记录</span>
     </div>
 
-    {% if deleted %}
-    <p style="color:var(--success-color,green);margin:0.5rem 0 0;">✓ 已删除 {{ deleted }} 条记录</p>
-    {% endif %}
+    {{ alert('success', '✓ 已删除 ' ~ deleted ~ ' 条记录' if deleted else '') }}
 
-    <h4 style="margin:0.75rem 0 0.25rem;">记录清理</h4>
-    <p class="subtitle" style="margin-bottom:0.75rem;">
+    <h4 class="ui-card-title u-mt-4">记录清理</h4>
+    <p class="ui-note">
         仅删除发送记录留痕，不影响已送达的消息；按保留天数定量清理老旧记录（默认保留 {{ retain_days }} 天，
         当前可清理 {{ cleanup_preview }} 条，其中失败记录 {{ cleanup_preview_failed }} 条）。
         若仅清理失败记录，成功记录会保留以维持月配额与阶段判定。
     </p>
-    <form method="post" action="/admin/proactive/records/cleanup"
+    <form method="post" action="/admin/proactive/records/cleanup" class="ui-stack"
           onsubmit="return confirm('将删除保留期之外的主动消息记录（不可恢复），确认清理？');">
         <input type="hidden" name="status" value="{{ status }}">
-        <div class="grid">
-            <label>
-                保留最近 N 天（早于此的记录将被删除）
-                <input type="number" name="retain_days" min="1" max="3650" value="{{ retain_days }}">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">保留最近 N 天（早于此的记录将被删除）</span>
+                <input class="ui-input" type="number" name="retain_days" min="1" max="3650" value="{{ retain_days }}">
             </label>
-            <label style="display:flex;align-items:center;gap:0.5rem;">
-                <input type="checkbox" name="only_failed" style="width:auto;">
-                仅清理失败记录
+            <label class="ui-field ui-field--end">
+                <span class="ui-cluster">
+                    <input type="checkbox" name="only_failed">
+                    <span>仅清理失败记录</span>
+                </span>
             </label>
         </div>
-        <button type="submit" class="btn-sm" style="color:var(--danger-text);">清理旧记录</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">清理旧记录</button>
+        </div>
     </form>
-</div>
+</section>
 
 {% if record_infos %}
-<div class="card">
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>时间</th>
-                <th>阶段</th>
-                <th>类型</th>
-                <th>平台</th>
-                <th>身份</th>
-                <th>内容</th>
-                <th>状态</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for info in record_infos %}
-            {% set rec = info.record %}
-            <tr>
-                <td><span title="{{ (rec.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ rec.created_at|relative_time }}</span></td>
-                <td><span class="badge badge-neutral">{{ info.stage_label }}</span></td>
-                <td><span class="badge {% if info.type_label == '关怀' %}badge-neutral{% else %}badge-active{% endif %}">{{ info.type_label }}</span></td>
-                <td><span class="badge {% if rec.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ rec.platform }}</span></td>
-                <td>{{ info.identity_display or '-' }}</td>
-                <td><span class="text-ellipsis" title="{{ rec.content }}" style="max-width:280px;display:inline-block;">{{ rec.content or '-' }}</span></td>
-                <td>
-                    {% if rec.status == 'sent' %}
-                    <span class="badge badge-active">已发送</span>
-                    {% elif rec.status == 'failed' %}
-                    <span class="badge badge-inactive" title="{{ rec.error_msg }}">失败</span>
-                    {% else %}
-                    <span class="badge badge-warning">待发送</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <form method="post" action="/admin/proactive/records/{{ rec.id }}/delete" style="margin:0;"
-                          onsubmit="return confirm('确认删除该条主动消息记录？');">
-                        <input type="hidden" name="status" value="{{ status }}">
-                        <button type="submit" class="ghost" style="padding:0.15rem 0.5rem;font-size:0.75rem;color:var(--danger-text);">删除</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<section class="ui-card ui-card--flush">
+    <div class="ui-table-wrap">
+        <table class="ui-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>阶段</th>
+                    <th>类型</th>
+                    <th>平台</th>
+                    <th>身份</th>
+                    <th>内容</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for info in record_infos %}
+                {% set rec = info.record %}
+                <tr>
+                    <td><span title="{{ (rec.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ rec.created_at|relative_time }}</span></td>
+                    <td>{{ badge(info.stage_label, 'line') }}</td>
+                    <td>{{ badge(info.type_label, 'line' if info.type_label == '关怀' else 'ok') }}</td>
+                    <td>{{ badge(rec.platform, 'line') }}</td>
+                    <td>{{ info.identity_display or '-' }}</td>
+                    <td><span class="text-ellipsis cell-content" title="{{ rec.content }}">{{ rec.content or '-' }}</span></td>
+                    <td>
+                        {% if rec.status == 'sent' %}{{ badge('已发送', 'ok') }}
+                        {% elif rec.status == 'failed' %}<span class="ui-badge ui-badge--line" title="{{ rec.error_msg }}">失败</span>
+                        {% else %}{{ badge('待发送', 'warn') }}{% endif %}
+                    </td>
+                    <td>
+                        <form method="post" action="/admin/proactive/records/{{ rec.id }}/delete" class="u-m0"
+                              onsubmit="return confirm('确认删除该条主动消息记录？');">
+                            <input type="hidden" name="status" value="{{ status }}">
+                            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--danger">删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
     {% if total_pages > 1 %}
-    <div class="pagination">
+    <div class="ui-pagination">
         {% for p in range(1, total_pages + 1) %}
-        <a href="/admin/proactive?page={{ p }}{% if status %}&status={{ status }}{% endif %}" class="{% if p == page %}current{% endif %}">{{ p }}</a>
+        <a href="/admin/proactive?page={{ p }}{% if status %}&status={{ status }}{% endif %}" class="{% if p == page %}is-current{% endif %}">{{ p }}</a>
         {% endfor %}
     </div>
     {% endif %}
-</div>
+</section>
 {% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
-        <div class="empty-title">暂无主动消息记录</div>
-        <div class="empty-desc">当身份沉默一段时间后，系统将自动发送关怀消息并在此留痕</div>
-    </div>
-</div>
+{{ empty('暂无主动消息记录', '当身份沉默一段时间后，系统将自动发送关怀消息并在此留痕', 'bell') }}
 {% endif %}
 {% endblock %}

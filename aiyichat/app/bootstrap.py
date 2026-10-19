@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db.mongo import close_db, connect_db
+from app.utils.assets import STATIC_DIR
 
 
 def setup_logging() -> None:
@@ -132,6 +134,14 @@ def create_app() -> FastAPI:
         description="基于Prompt Profile的角色扮演对话系统",
         version="0.1.0",
         lifespan=lifespan,
+    )
+
+    # 前端静态资源：CSS/JS/图标与本地化的第三方库统一走 /static，
+    # 不再引用外部 CDN，保证内网与离线部署下界面完整
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(STATIC_DIR)),
+        name="static",
     )
 
     # 注册 Trace ID 中间件（最外层，确保所有请求都有 Trace ID）

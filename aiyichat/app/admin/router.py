@@ -29,6 +29,7 @@ from app.admin.routes.web_credentials import web_credentials_router
 from app.admin.routes.wechat_bots import wechat_bots_router
 from app.admin.stats import get_dashboard_charts, get_dashboard_stats
 from app.admin.system_metrics import get_all_metrics
+from app.utils.assets import asset
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ def _to_beijing(dt):
 
 
 templates.env.filters["to_beijing"] = _to_beijing
+# 静态资源 URL 版本戳：模板里用 asset('css/admin.css') 取带 ?v= 的本地路径
+templates.env.globals["asset"] = asset
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 

@@ -1,0 +1,12 @@
+{# 静态资源清单：三方库本地副本 + 分层样式。
+
+   行序即层叠顺序：vendor → tokens → base → components → compat，
+   之后由各外壳（base.html / _web_shell.html）追加各自的场景样式。
+   不再引用任何外部 CDN，内网与离线部署同样完整。
+#}
+<link rel="stylesheet" href="{{ asset('vendor/pico.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/tokens.css') }}">
+<link rel="stylesheet" href="{{ asset('css/base.css') }}">
+<link rel="stylesheet" href="{{ asset('css/components.css') }}">
+<link rel="stylesheet" href="{{ asset('css/compat.css') }}">
+{% include "partials/_design_tokens.html" %}

@@ -3,6 +3,11 @@
 
 {% block title %}仪表盘{% endblock %}
 
+{% block extra_head %}
+{# Chart.js 只有仪表盘与资源指标分片用到，故不随所有后台页面加载 #}
+<script src="{{ asset('vendor/chart.umd.min.js') }}"></script>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <h3>系统仪表盘</h3>

@@ -1,0 +1,253 @@
+/* ══════════════════════════════════════════════════════
+   设计系统 Design Tokens ——「暖光 · 编年」
+
+   全局唯一配色/尺度来源，被后台与 C 端共同引用。
+   性格：暖纸底 + 衬线标题 + 靛蓝墨 + 琥珀光点；
+   数据面（后台）走紧凑与等宽数字，对话面（C 端）走行高与呼吸感。
+
+   兼容性约定：旧原语令牌（--bg/--surface/--primary/--text-2/
+   --radius/--space-N/--chart-* 等）只增不改名，因为 239 个既有 class
+   和大量内联 style 直接引用它们；新组件一律使用语义层令牌。
+   ══════════════════════════════════════════════════════ */
+
+:root {
+    /* 默认浅色配色方案：与暗色块的 color-scheme 对应，保证表单控件 UA 样式一致 */
+    color-scheme: light;
+
+    /* ── 字体三档（全部为系统可载字体，离线无外链） ─────────
+       display：衬线，用于页面主标题/角色名/KPI 说明，制造编年感
+       body：无衬线，用于正文与数据，保证密度与可读性
+       mono：等宽，用于 ID/时间/额度/图表刻度，配 tabular-nums 对齐 */
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+                    "Songti SC", STSong, "Noto Serif CJK SC", serif;
+    --font-body: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono",
+                 Consolas, monospace;
+
+    /* Pico 字体接管：让原生表单控件与我们的三档字体一致 */
+    --pico-font-family: var(--font-body);
+    --pico-font-family-sans-serif: var(--font-body);
+    --pico-font-family-serif: var(--font-display);
+    --pico-font-family-monospace: var(--font-mono);
+    --pico-font-size: 14px;
+    --pico-line-height: 1.55;
+    --pico-font-weight: 400;
+
+    /* ── 色板：暖纸与墨 ─────────────────────────────────── */
+    --bg: #f7f5f1;                 /* 页面底色：暖灰纸 */
+    --bg-deep: #efe9df;            /* 更外圈的氛围色（渐变收尾） */
+    --surface: #fffdf9;            /* 卡片表面：微暖白，避免纯白刺眼 */
+    --surface-2: #f4f1ea;          /* 次级表面（表头/浅底区/悬停） */
+    --surface-3: #ebe6dc;          /* 三级表面（分隔块、代码底） */
+    --border: #e6e1d6;             /* 常规边框 */
+    --border-strong: #d3ccbd;      /* 强调边框 */
+
+    /* 主色：靛蓝只作"墨"，不作大面积渐变 */
+    --primary: #4f46e5;            /* 实心按钮/关键动作（白字对比 ≈6.4:1，达 AA） */
+    --primary-hover: #4338ca;
+    --primary-active: #3730a3;
+    --primary-ink: #6366f1;        /* 装饰靛：描边、图表、聚焦光 */
+    --primary-soft: #eceafb;       /* 靛蓝浅底 */
+    --primary-text: #ffffff;       /* 实心按钮上的文字色 */
+
+    /* 文本三档 */
+    --text: #2a2622;               /* 主文本：暖墨 */
+    --text-2: #6b6258;             /* 次级文本（对比 ≈5.6:1） */
+    --text-3: #a39a8d;             /* 弱文本：仅限占位符与图标描边 */
+
+    /* 琥珀：本系统的"对方状态"专用色，只用于光点/作息/心情等装饰 */
+    --amber: #e08a2b;
+    --amber-ink: #97590e;
+    --amber-soft: #fbf0dd;
+
+    --success: #0f8a5f; --success-bg: #e8f5ee; --success-text: #0b6b4a;
+    --warning: #c47708; --warning-bg: #fdf3e0; --warning-text: #8a5306;
+    --danger:  #b42318; --danger-bg:  #fcecea; --danger-text: #8f1d14;
+    --info:    #4f46e5; --info-bg:    #eceafb; --info-text:    #3730a3;
+
+    /* 别名：部分模板内联样式仍引用 *-color / *-bg 旧命名 */
+    --success-color: var(--success);
+    --warning-color: var(--warning);
+    --danger-color: var(--danger);
+    --error: var(--danger);            /* 早期页面用过 --error/--error-bg */
+    --error-bg: var(--danger-bg);
+    --muted-border-color: var(--border);
+
+    /* ── 圆角 ─────────────────────────────────────────── */
+    --radius-sm: 10px;
+    --radius: 14px;
+    --radius-lg: 20px;
+    --radius-pill: 999px;
+
+    /* ── 阴影：暖墨多层极淡，不用冷黑 ─────────────────── */
+    --shadow: 0 1px 2px rgba(42,38,34,.05), 0 2px 6px rgba(42,38,34,.04);
+    --shadow-md: 0 2px 4px rgba(42,38,34,.05), 0 8px 24px rgba(42,38,34,.07);
+    --shadow-lg: 0 4px 8px rgba(42,38,34,.06), 0 18px 44px rgba(42,38,34,.12);
+    --ring-ink: rgba(99,102,241,.20);
+
+    /* ── 间距（4px 基准） ─────────────────────────────── */
+    --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+    --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+    --space-12: 48px;
+
+    /* ── 图表配色 ─────────────────────────────────────── */
+    --chart-primary: #4f46e5;
+    --chart-primary-soft: rgba(79,70,229,.12);
+    --chart-success: #0f8a5f;
+    --chart-success-soft: rgba(15,138,95,.12);
+    --chart-warning: #c47708;
+    --chart-danger: #b42318;
+    --chart-info: #8b5cf6;
+    --chart-accent: #e08a2b;
+    --chart-track: #e6e1d6;
+    --chart-text: #a39a8d;
+
+    /* ── 尺寸 ─────────────────────────────────────────── */
+    --sidebar-w: 240px;
+    --topbar-h: 56px;
+    --btn-height: 40px;
+    --btn-sm-height: 32px;
+    --input-height: 40px;
+    --row-h: 36px;                 /* 后台表格行高：紧凑数据密度 */
+    --transition: .18s ease;
+
+    /* ── 层级与焦点 ───────────────────────────────────── */
+    --z-sticky: 20;
+    --z-overlay: 60;
+    --z-modal: 80;
+    --z-toast: 90;
+    --focus-ring: 0 0 0 3px var(--ring-ink);
+
+    /* ── Pico 变量覆写：让原生组件采用暖光体系 ─────────── */
+    --pico-border-radius: var(--radius-sm);
+    --pico-spacing: 1rem;
+    --pico-form-element-spacing-vertical: .55rem;
+    --pico-form-element-spacing-horizontal: .85rem;
+    --pico-background-color: var(--bg);
+    --pico-color: var(--text);
+    --pico-card-background-color: var(--surface);
+    --pico-card-sectioning-background-color: var(--surface-2);
+    --pico-muted-color: var(--text-2);
+    --pico-muted-border-color: var(--border-strong);
+    --pico-primary: var(--primary);
+    --pico-primary-background: var(--primary);
+    --pico-primary-hover: var(--primary-hover);
+    --pico-primary-hover-background: var(--primary-hover);
+    --pico-primary-border: var(--primary);
+    --pico-primary-hover-border: var(--primary-hover);
+    --pico-primary-focus: var(--ring-ink);
+    --pico-primary-inverse: var(--primary-text);
+    --pico-form-element-background-color: var(--surface);
+    --pico-form-element-border-color: var(--border-strong);
+    --pico-form-element-color: var(--text);
+    --pico-form-element-placeholder-color: var(--text-3);
+    --pico-form-element-active-background-color: var(--surface);
+    --pico-form-element-active-border-color: var(--primary-ink);
+    --pico-table-border-color: var(--border);
+}
+
+/* Pico 主色覆写：用与 Pico 同等特性的选择器，确保原生按钮也采用靛蓝墨 */
+:root:not([data-theme="dark"]) {
+    --pico-primary-background: var(--primary);
+    --pico-primary-hover-background: var(--primary-hover);
+    --pico-primary-border: var(--primary);
+    --pico-primary-hover-border: var(--primary-hover);
+    --pico-primary: var(--primary);
+    --pico-primary-hover: var(--primary-hover);
+    --pico-primary-focus: var(--ring-ink);
+    --pico-primary-inverse: #ffffff;
+}
+
+/* 登录/注册页的氛围底：由旧内联样式引用的端点令牌补全 */
+:root {
+    --login-bg-end: var(--bg-deep);
+}
+
+/* ══════════════════════════════════════════════════════
+   暗色主题：同样走"暖墨"路线，不用冷蓝黑
+   仅覆写令牌，组件样式无需改动即自动适配
+   ══════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+    /* 声明深色配色方案：让浏览器对表单控件/滚动条使用深色 UA 样式，
+       避免系统浅色偏好下 input/select 渲染为白底（PicoCSS 依赖此值） */
+    color-scheme: dark;
+
+    --bg: #1a1714;
+    --bg-deep: #120f0d;
+    --surface: #23201b;
+    --surface-2: #2b2721;
+    --surface-3: #343028;
+    --border: #3a342c;
+    --border-strong: #4c453a;
+
+    --primary: #6a63e6;
+    --primary-hover: #7d77ee;
+    --primary-active: #5a53d6;
+    --primary-ink: #a5b4fc;
+    --primary-soft: #2b2740;
+    --primary-text: #ffffff;
+
+    --text: #f0e9df;
+    --text-2: #b9ada0;
+    --text-3: #7d7367;
+
+    --amber: #f0a55a;
+    --amber-ink: #f6c78b;
+    --amber-soft: #3a2c17;
+
+    --success: #3ddc97; --success-bg: #0e2b22; --success-text: #7feebe;
+    --warning: #f0b95a; --warning-bg: #2e2310; --warning-text: #f7d494;
+    --danger:  #f87171; --danger-bg:  #33110e; --danger-text:  #fca5a5;
+    --info:    #a5b4fc; --info-bg:    #24233f; --info-text:    #c7d2fe;
+
+    --success-color: var(--success);
+    --warning-color: var(--warning);
+    --danger-color: var(--danger);
+
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.30);
+    --shadow-md: 0 2px 4px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.45);
+    --shadow-lg: 0 4px 8px rgba(0,0,0,.40), 0 18px 44px rgba(0,0,0,.55);
+    --ring-ink: rgba(165,180,252,.28);
+
+    --chart-primary: #a5b4fc;
+    --chart-primary-soft: rgba(165,180,252,.18);
+    --chart-success: #3ddc97;
+    --chart-success-soft: rgba(61,220,151,.18);
+    --chart-warning: #f0b95a;
+    --chart-danger: #f87171;
+    --chart-accent: #f0a55a;
+    --chart-track: #3a342c;
+    --chart-text: #7d7367;
+
+    /* Pico 暗色覆写 */
+    --pico-primary-background: var(--primary);
+    --pico-primary-hover-background: var(--primary-hover);
+    --pico-primary: var(--primary);
+    --pico-primary-hover: var(--primary-hover);
+    --pico-primary-focus: var(--ring-ink);
+    --pico-primary-inverse: var(--primary-text);
+    --pico-background-color: var(--bg);
+    --pico-color: var(--text);
+    --pico-card-background-color: var(--surface);
+    --pico-card-sectioning-background-color: var(--surface-2);
+    --pico-muted-color: var(--text-2);
+    --pico-muted-border-color: var(--border-strong);
+    --pico-form-element-background-color: var(--surface-2);
+    --pico-form-element-border-color: var(--border-strong);
+    --pico-form-element-color: var(--text);
+    --pico-form-element-placeholder-color: var(--text-3);
+    --pico-form-element-active-background-color: var(--surface-2);
+    --pico-form-element-active-border-color: var(--primary-ink);
+    --pico-table-border-color: var(--border);
+}
+
+/* 尊重系统的减弱动效偏好：所有位移动画降级为无 */
+@media (prefers-reduced-motion: reduce) {
+    :root { --transition: 0s; }
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

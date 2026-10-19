@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import Response
 
 from app.config import settings
+from app.utils.assets import asset
 
 _template_dir = Path(__file__).parent / "templates"
 # 设计令牌只在 admin 的 partials/_design_tokens.html 里定义一次；把 admin 模板目录
@@ -25,6 +26,8 @@ _template_dir = Path(__file__).parent / "templates"
 _admin_template_dir = Path(__file__).parent.parent / "admin" / "templates"
 
 templates = Jinja2Templates(directory=[str(_template_dir), str(_admin_template_dir)])
+# 静态资源 URL 版本戳：C 端与后台共用同一套 /static 资源
+templates.env.globals["asset"] = asset
 
 web_router = APIRouter(tags=["web"])
 

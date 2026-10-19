@@ -14,6 +14,7 @@ from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.identity_repo import IdentityRepository
+from app.utils.assets import asset
 
 # ── 模板配置 ──────────────────────────────────────────────
 
@@ -70,6 +71,8 @@ def _relative_time(dt: Any) -> str:
 templates.env.filters["to_beijing"] = _to_beijing
 templates.env.filters["format_quota"] = _format_quota
 templates.env.filters["relative_time"] = _relative_time
+# 静态资源 URL 版本戳（admin 各路由页与 admin/router.py 用的是不同实例，需各自注册）
+templates.env.globals["asset"] = asset
 
 
 # ── Repository 实例（重构第二阶段再消除单例）───────────────

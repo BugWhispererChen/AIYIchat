@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}管理后台{% endblock %} - 爱易聊</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    {% include "partials/_design_tokens.html" %}
+    {% include "partials/_assets_core.html" %}
+    <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
+    <script src="{{ asset('vendor/htmx.min.js') }}"></script>
     <style>
         /* ── 全局重置 ─────────────────────────────────── */
         * { box-sizing: border-box; }
@@ -1071,6 +1071,5 @@
     /* HTMX 局部替换后重新初始化标签页 */
     document.body.addEventListener('htmx:afterSwap', function() { initTabs(); });
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </body>
 </html>

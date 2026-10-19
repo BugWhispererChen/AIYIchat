@@ -28,7 +28,7 @@
             <div class="muted" style="font-size:0.85rem;">记忆命中率（{{ metrics.hit_count }}/{{ metrics.total_injected }} 条被回复引用）</div>
         </div>
         <div>
-            <div style="font-size:1.6rem;font-weight:600;color:#22c55e;">
+            <div style="font-size:1.6rem;font-weight:600;color:var(--success);">
                 {% if metrics.active_rate is not none %}{{ (metrics.active_rate * 100) | round(1) }}%{% else %}-{% endif %}
             </div>
             <div class="muted" style="font-size:0.85rem;">记忆有效率（近 7 天 {{ metrics.active_facts }}/{{ metrics.total_facts }} 条被注入）</div>
@@ -48,16 +48,16 @@
         {% set mem_pct = (latest.memory_tokens / total * 100) | round(1) %}
         {% set his_pct = (latest.history_tokens / total * 100) | round(1) %}
         {% set sum_pct = (latest.summary_tokens / total * 100) | round(1) %}
-        {% if sys_pct > 0 %}<div style="width:{{ sys_pct }}%;background:#6366f1;" title="系统提示 {{ latest.system_prompt_tokens }}"></div>{% endif %}
-        {% if mem_pct > 0 %}<div style="width:{{ mem_pct }}%;background:#22c55e;" title="记忆注入 {{ latest.memory_tokens }}"></div>{% endif %}
-        {% if his_pct > 0 %}<div style="width:{{ his_pct }}%;background:#f59e0b;" title="历史对话 {{ latest.history_tokens }}"></div>{% endif %}
-        {% if sum_pct > 0 %}<div style="width:{{ sum_pct }}%;background:#ec4899;" title="摘要 {{ latest.summary_tokens }}"></div>{% endif %}
+        {% if sys_pct > 0 %}<div style="width:{{ sys_pct }}%;background:var(--primary);" title="系统提示 {{ latest.system_prompt_tokens }}"></div>{% endif %}
+        {% if mem_pct > 0 %}<div style="width:{{ mem_pct }}%;background:var(--success);" title="记忆注入 {{ latest.memory_tokens }}"></div>{% endif %}
+        {% if his_pct > 0 %}<div style="width:{{ his_pct }}%;background:var(--warning);" title="历史对话 {{ latest.history_tokens }}"></div>{% endif %}
+        {% if sum_pct > 0 %}<div style="width:{{ sum_pct }}%;background:var(--chart-info);" title="摘要 {{ latest.summary_tokens }}"></div>{% endif %}
     </div>
     <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:0.85rem;">
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:#6366f1;border-radius:2px;margin-right:0.3rem;"></i>系统提示 {{ latest.system_prompt_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:#22c55e;border-radius:2px;margin-right:0.3rem;"></i>记忆注入 {{ latest.memory_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:#f59e0b;border-radius:2px;margin-right:0.3rem;"></i>历史对话 {{ latest.history_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:#ec4899;border-radius:2px;margin-right:0.3rem;"></i>摘要 {{ latest.summary_tokens }}</span>
+        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--primary);border-radius:2px;margin-right:0.3rem;"></i>系统提示 {{ latest.system_prompt_tokens }}</span>
+        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--success);border-radius:2px;margin-right:0.3rem;"></i>记忆注入 {{ latest.memory_tokens }}</span>
+        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--warning);border-radius:2px;margin-right:0.3rem;"></i>历史对话 {{ latest.history_tokens }}</span>
+        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--chart-info);border-radius:2px;margin-right:0.3rem;"></i>摘要 {{ latest.summary_tokens }}</span>
         <span class="muted">合计约 {{ latest.total_tokens }} tokens</span>
     </div>
     {% if latest.current_topic or latest.mood_label %}
@@ -74,7 +74,7 @@
     <h4>逐轮注入明细</h4>
     {% if snapshots %}
         {% for snap in snapshots %}
-        <details style="border-bottom:1px solid var(--muted-border-color,#333);padding:0.5rem 0;">
+        <details style="border-bottom:1px solid var(--muted-border-color,var(--text));padding:0.5rem 0;">
             <summary style="cursor:pointer;">
                 <span title="{{ (snap.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ snap.created_at|relative_time }}</span>
                 · 注入 <strong>{{ snap.injected_facts|length }}</strong> 条记忆

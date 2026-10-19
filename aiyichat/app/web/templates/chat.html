@@ -51,7 +51,12 @@
 
         <div class="transcript-wrap">
             <div id="transcript" aria-live="polite">
-                <div class="transcript-inner" id="transcript-inner"></div>
+                <div class="transcript-inner" id="transcript-inner">
+                    <div class="transcript-empty" id="transcript-empty">
+                        <span class="kicker">Begin</span>
+                        <p>对话从这里开始，说点什么吧。</p>
+                    </div>
+                </div>
             </div>
 
             <form class="chat-input-bar" id="chat-form" data-stream-endpoint="/api/conversations/chat/stream">

@@ -308,7 +308,10 @@
             if (!headers.length) return;
             var tbody = table.querySelector('tbody');
             if (!tbody) return;
-            Array.prototype.forEach.call(headers, function (th, colIndex) {
+            Array.prototype.forEach.call(headers, function (th) {
+                // 用真实列序号（跳过不可排序列时序号会错位）
+                var colIndex = Array.prototype.indexOf.call(th.parentNode.children, th);
+                th.setAttribute('data-sortable', th.dataset.sortable || th.textContent.trim());
                 th.setAttribute('tabindex', '0');
                 var sort = function () {
                     var current = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';

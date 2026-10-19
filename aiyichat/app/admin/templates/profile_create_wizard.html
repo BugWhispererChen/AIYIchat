@@ -100,11 +100,11 @@
         <h4>方式一：上传声音复刻</h4>
         <p class="muted" style="font-size:0.85rem;">上传 10-20 秒清晰人声（WAV / MP3 / M4A），调用阿里云声音复刻生成专属音色。</p>
         {% if profile.voice_clone_status == 'active' %}
-        <p style="font-size:0.85rem;color:var(--success-text,#16a34a);">
+        <p style="font-size:0.85rem;color:var(--success-text,var(--success));">
             <strong>复刻已激活</strong>，音色 ID：<code>{{ profile.voice_id }}</code>
         </p>
         {% elif profile.voice_clone_status == 'failed' %}
-        <p style="font-size:0.85rem;color:var(--danger-text,#dc2626);">上次复刻失败，可重新上传</p>
+        <p style="font-size:0.85rem;color:var(--danger-text,var(--danger));">上次复刻失败，可重新上传</p>
         {% endif %}
         <div class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
             <input type="file" name="voice_file" form="wiz-voice-clone-form"
@@ -117,12 +117,12 @@
         </div>
 
         {# 录音面板（默认隐藏） #}
-        <div id="wiz-voice-record-panel" style="display:none;margin-top:0.8rem;padding:0.8rem;border:1px solid var(--border,#e5e7eb);border-radius:8px;background:var(--surface-2,#f9fafb);">
+        <div id="wiz-voice-record-panel" style="display:none;margin-top:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:8px;background:var(--surface-2,var(--surface-2));">
             <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
-                <div id="wiz-voice-record-status" style="font-size:0.9rem;color:var(--text-2,#374151);">
+                <div id="wiz-voice-record-status" style="font-size:0.9rem;color:var(--text-2,var(--text));">
                     点击"开始录音"按钮，录制 10-20 秒清晰人声
                 </div>
-                <div id="wiz-voice-record-timer" style="font-size:1.1rem;font-weight:600;color:var(--primary,#6366f1);min-width:60px;">
+                <div id="wiz-voice-record-timer" style="font-size:1.1rem;font-weight:600;color:var(--primary);min-width:60px;">
                     00:00
                 </div>
             </div>
@@ -274,9 +274,9 @@
     border:1px solid var(--border);
 }
 .wizard-step-label { font-size:0.85rem; color:var(--text-3); }
-.wizard-step.current .wizard-step-num { background:var(--primary,#6366f1); color:#fff; border-color:var(--primary,#6366f1); }
+.wizard-step.current .wizard-step-num { background:var(--primary); color:var(--primary-text); border-color:var(--primary); }
 .wizard-step.current .wizard-step-label { color:var(--text); font-weight:600; }
-.wizard-step.done .wizard-step-num { background:var(--success-bg,#dcfce7); color:var(--success-text,#16a34a); border-color:var(--success-text,#16a34a); }
+.wizard-step.done .wizard-step-num { background:var(--success-bg,var(--success-bg)); color:var(--success-text,var(--success)); border-color:var(--success-text,var(--success)); }
 .wizard-step-line { flex:0 0 28px; height:1px; background:var(--border); margin:0 0.2rem; }
 .wizard-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:1rem; align-items:start; }
 @media (max-width: 900px) { .wizard-layout { grid-template-columns:1fr; } }
@@ -286,14 +286,14 @@
     padding:0.6rem 0.7rem; border:1px solid var(--border);
     border-radius:8px; margin-bottom:0.5rem;
 }
-.wizard-voice-row.selected { border-color:var(--primary,#6366f1); background:var(--primary-soft,rgba(99,102,241,.08)); }
+.wizard-voice-row.selected { border-color:var(--primary); background:var(--primary-soft); }
 .wizard-nav { display:flex; align-items:center; gap:0.6rem; margin-top:1.2rem; }
-.wizard-nav .danger-outline { color:var(--danger-text,#dc2626); border-color:var(--danger-text,#dc2626); background:transparent; }
+.wizard-nav .danger-outline { color:var(--danger-text,var(--danger)); border-color:var(--danger-text,var(--danger)); background:transparent; }
 .wizard-confirm-head { display:flex; gap:1rem; align-items:center; margin-bottom:0.8rem; }
 .wizard-confirm-avatar { width:72px; height:72px; object-fit:cover; border-radius:10px; }
 .wizard-spinner {
     display:inline-block; width:12px; height:12px; margin-right:6px;
-    border:2px solid var(--border, #e5e7eb); border-top-color:var(--primary, #6366f1);
+    border:2px solid var(--border); border-top-color:var(--primary);
     border-radius:50%; animation:wizard-spin 0.8s linear infinite; vertical-align:-2px;
 }
 @keyframes wizard-spin { to { transform: rotate(360deg); } }

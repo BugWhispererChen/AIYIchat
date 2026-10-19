@@ -30,7 +30,7 @@
 {% if conversation.summary %}
 <div class="card" style="margin-bottom:1rem;">
     <h4>对话摘要</h4>
-    <p style="margin:0;color:#475569;">{{ conversation.summary }}</p>
+    <p style="margin:0;color:var(--text-2);">{{ conversation.summary }}</p>
 </div>
 {% endif %}
 
@@ -38,7 +38,7 @@
     {# 消息统计和分页导航 #}
     {% if total_messages is defined %}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <span style="color:#64748b;font-size:13px;">
+        <span style="color:var(--text-2);font-size:13px;">
             显示第 {{ (current_page - 1) * page_size + 1 }}–{{ [current_page * page_size, total_messages] | min }} 条 / 共 {{ total_messages }} 条消息
         </span>
         {% if total_pages > 1 %}
@@ -46,7 +46,7 @@
             {% if current_page > 1 %}
             <a href="?page={{ current_page - 1 }}" role="button" class="secondary outline" style="font-size:0.8rem;padding:0.25rem 0.75rem;">← 上一页</a>
             {% endif %}
-            <span style="font-size:13px;color:#64748b;">第 {{ current_page }} / {{ total_pages }} 页</span>
+            <span style="font-size:13px;color:var(--text-2);">第 {{ current_page }} / {{ total_pages }} 页</span>
             {% if current_page < total_pages %}
             <a href="?page={{ current_page + 1 }}" role="button" class="secondary outline" style="font-size:0.8rem;padding:0.25rem 0.75rem;">下一页 →</a>
             {% endif %}
@@ -90,7 +90,7 @@
     </div>
 
     {% if not messages %}
-    <p style="color:#64748b;text-align:center;padding:2rem 0;">暂无消息</p>
+    <p style="color:var(--text-2);text-align:center;padding:2rem 0;">暂无消息</p>
     {% endif %}
 </div>
 {% endblock %}

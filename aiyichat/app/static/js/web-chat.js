@@ -34,7 +34,13 @@
     function toLogin() { window.WebAuth.toLogin(); }
 
     /* 气泡一律走 textContent：模型输出与身份输入都不能被当作 HTML 解析 */
+    function dropEmpty() {
+        var hint = document.getElementById('transcript-empty');
+        if (hint) hint.remove();
+    }
+
     function addBubble(role, text, extraClass, name) {
+        dropEmpty();
         var div = document.createElement('div');
         div.className = 'bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-assistant')
             + (extraClass ? ' ' + extraClass : '');
@@ -53,6 +59,7 @@
     }
 
     function addNote(text) {
+        dropEmpty();
         var div = document.createElement('div');
         div.className = 'system-note';
         div.textContent = text;

@@ -449,8 +449,20 @@ details.sub summary { font-size: .8rem; color: var(--text-2); cursor: pointer; }
     color: var(--amber-ink);
     margin-bottom: .25rem;
 }
-.system-note {
-    align-self: center;
+/* 空对话引导：首条消息出现前占位，避免整屏空白 */
+.transcript-empty {
+    margin: auto;
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-3);
+}
+.transcript-empty p {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--text-2);
+    margin: .4rem 0 0;
+}
+.system-note {    align-self: center;
     font-size: .78rem;
     color: var(--text-3);
     text-align: center;
@@ -481,7 +493,17 @@ details.sub summary { font-size: .8rem; color: var(--text-2); cursor: pointer; }
     background: var(--surface);
     border-top: 1px solid var(--border);
 }
-.chat-input-bar .composer { width: 100%; max-width: 46rem; margin: 0 auto; display: flex; gap: .55rem; align-items: flex-end; }
+.chat-input-bar .composer {
+    width: 100%;
+    max-width: 46rem;
+    margin: 0 auto;
+    /* 用 grid 固定两列：文本框吃满剩余宽度、按钮按内容取宽，
+       避免 Pico 对 button 的默认宽度规则把输入框挤成一条 */
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: .55rem;
+}
 .chat-input-bar textarea {
     flex: 1;
     min-width: 0;

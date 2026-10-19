@@ -29,3 +29,13 @@ td.num, th.num {
 
 /* 徽标/按钮里的图标对齐 */
 .btn .ui-icon, a.badge .ui-icon { margin-right: 4px; }
+
+/* 徽标本身是链接时（如表情包分组筛选条），文字色必须跟随徽标语义色，
+   否则会被全局 a 取色规则盖成低对比的一档 */
+a.badge { text-decoration: none; color: var(--text-2); }
+a.badge-role-user      { color: var(--info-text); }
+a.badge-role-assistant { color: var(--amber-ink); }
+a.badge-active   { color: var(--success-text); }
+a.badge-inactive { color: var(--danger-text); }
+a.badge-warning  { color: var(--warning-text); }
+a.badge-neutral  { color: var(--text-2); }

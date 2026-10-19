@@ -1,5 +1,4 @@
 import logging
-from datetime import timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -13,6 +12,8 @@ from app.admin.auth import (
     verify_credentials,
 )
 from app.admin.routes.accounts import accounts_router
+from app.template_filters import configure_templates
+from app.template_filters import to_beijing as _to_beijing  # noqa: F401 - 既有测试与调用方仍从此模块引用该别名
 from app.admin.routes.billing import billing_router
 from app.admin.routes.conversations import conversations_router
 from app.admin.routes.features import features_router
@@ -29,26 +30,13 @@ from app.admin.routes.web_credentials import web_credentials_router
 from app.admin.routes.wechat_bots import wechat_bots_router
 from app.admin.stats import get_dashboard_charts, get_dashboard_stats
 from app.admin.system_metrics import get_all_metrics
-from app.utils.assets import asset
 
 logger = logging.getLogger(__name__)
 
 _template_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_template_dir))
-
-_beijing_tz = timezone(timedelta(hours=8))
-
-
-def _to_beijing(dt):
-    """UTC datetime → 北京时间"""
-    if dt is None:
-        return None
-    return dt.replace(tzinfo=timezone.utc).astimezone(_beijing_tz)
-
-
-templates.env.filters["to_beijing"] = _to_beijing
-# 静态资源 URL 版本戳：模板里用 asset('css/admin.css') 取带 ?v= 的本地路径
-templates.env.globals["asset"] = asset
+# 与 routes/common.py、web/router.py 共用同一套过滤器登记，避免实例间漂移
+configure_templates(templates.env)
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 

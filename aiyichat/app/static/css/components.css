@@ -310,7 +310,8 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     transition: color var(--transition), border-color var(--transition);
 }
 .ui-tab:hover { color: var(--text); }
-.ui-tab[aria-selected="true"], .ui-tab.is-active {
+/* .active 由 admin.js 的 initTabs 切换，.is-active / aria-selected 供静态页使用 */
+.ui-tab.active, .ui-tab[aria-selected="true"], .ui-tab.is-active {
     color: var(--primary);
     border-bottom-color: var(--primary);
 }
@@ -513,4 +514,191 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     font-weight: 600;
     line-height: 1.1;
     color: var(--text);
+}
+
+/* ══════════════════════════════════════════════════════
+   布局与节奏（页面结构的唯一来源）
+   约定：页面模板只负责填内容，间距一律由本节决定，
+   不得再往模板里写 style="margin/gap/display:flex"。
+   ══════════════════════════════════════════════════════ */
+
+/* ── 页面根容器：区块之间用 --section-gap 统一节奏 ───── */
+.ui-page {
+    display: grid;
+    gap: var(--section-gap);
+    align-content: start;
+}
+
+/* 内容列宽度档位：由 base.html 挂在 <main> 上 */
+.ui-container--wide  { max-width: var(--content-max-wide); }
+.ui-container--narrow { max-width: var(--content-max-narrow); }
+
+/* ── 同向竖排：卡片内的小块堆叠 ───────────────────────── */
+.ui-stack {
+    display: grid;
+    gap: var(--space-4);
+    align-content: start;
+}
+.ui-stack--tight { gap: var(--space-2); }
+
+/* ── 控件抱团：按钮行、筛选行、操作组 ─────────────────── */
+.ui-cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap);
+}
+.ui-cluster--end  { justify-content: flex-end; }
+.ui-cluster--start  { justify-content: flex-start; }
+.ui-cluster--between { justify-content: space-between; }
+
+/* ── 网格：一律 minmax(0,1fr) 防止子项内容撑破列 ──────── */
+.ui-grid {
+    display: grid;
+    gap: var(--grid-gap);
+    grid-template-columns: repeat(auto-fit, minmax(var(--grid-min), 1fr));
+    align-items: start;
+}
+.ui-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ui-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ui-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ui-grid--kpi   { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.ui-grid--tile  { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+/* 主从两栏：向导 / 详情页 */
+.ui-grid--split { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+/* 左锚点导航 + 右分区 */
+.ui-grid--aside { grid-template-columns: 200px minmax(0, 1fr); }
+.ui-span-2  { grid-column: span 2; }
+.ui-span-all { grid-column: 1 / -1; }
+
+/* ── 分隔线与横向滚动容器 ─────────────────────────────── */
+.ui-divider {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--space-2) 0;
+}
+.ui-scroll-x { overflow-x: auto; }
+
+/* ── 页头：眉题 + 一级标题 + 副标题，右侧动作区 ───────── */
+.ui-page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border);
+}
+.ui-page-head h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: .01em;
+    color: var(--text);
+}
+.ui-page-head .ui-page-head-text { flex: 1 1 auto; }
+.ui-page-head .subtitle {
+    margin: var(--space-1) 0 0;
+    color: var(--text-2);
+    font-size: .9rem;
+}
+.ui-kicker {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: var(--space-1);
+}
+
+/* ── 工具带：筛选 / 搜索 / 批量操作 ───────────────────── */
+.ui-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.ui-toolbar .ui-field,
+.ui-toolbar input,
+.ui-toolbar select { min-width: 160px; }
+
+/* ── 表格眉脚：左计数、右操作，列表页整齐度的关键 ─────── */
+.ui-table-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    font-size: .82rem;
+    color: var(--text-2);
+}
+
+/* ── 进度条：数值走自定义属性，不写内联 width ─────────── */
+.ui-bar {
+    --bar-pct: 0%;
+    height: 8px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    overflow: hidden;
+}
+.ui-bar__fill {
+    display: block;
+    height: 100%;
+    width: var(--bar-pct);
+    border-radius: inherit;
+    background: var(--primary);
+    transition: width var(--transition);
+}
+.ui-bar__fill--warn { background: var(--warning); }
+.ui-bar__fill--err  { background: var(--danger); }
+
+/* ── 折叠组表头 ───────────────────────────────────────── */
+.ui-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--primary-ink);
+    list-style: none;
+}
+.ui-summary::-webkit-details-marker { display: none; }
+.ui-summary::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform var(--transition);
+}
+details[open] > .ui-summary::before { transform: rotate(45deg); }
+
+/* ── 布局层响应式：只作用于 .ui-*，不与 admin.css 撞名 ── */
+@media (max-width: 1024px) {
+    .ui-grid--aside,
+    .ui-grid--split { grid-template-columns: 1fr; }
+    .ui-grid--4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+    .ui-page-head { align-items: stretch; flex-direction: column; }
+    .ui-grid--3,
+    .ui-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ui-span-2 { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+    .ui-grid--2,
+    .ui-grid--3,
+    .ui-grid--4 { grid-template-columns: 1fr; }
+    .ui-span-2,
+    .ui-span-all { grid-column: auto; }
 }

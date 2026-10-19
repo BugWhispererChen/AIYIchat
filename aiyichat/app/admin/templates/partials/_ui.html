@@ -1,73 +1,154 @@
 {# 共享组件宏：新代码一律走这里的宏，避免再往模板里写内联 style。
 
+   输出的类名全部来自 static/css/components.css：
+   布局层（.ui-page/.ui-grid/.ui-cluster/...）+ 组件层（.ui-card/.ui-table/.ui-badge/...）。
+   旧类（.card/.stat-card/.badge/.empty-state）只在尚未迁移的页面里继续存在，宏不再吐它们。
+
    用法：
-     {% from "partials/_ui.html" import page_header, kpi, card, badge, alert, empty %}
+     {% from "partials/_ui.html" import page_header, card, kpi, kpi_grid, badge, alert, empty, field, table_wrap %}
      {{ page_header('账号管理', '按使用者归集额度、身份与机器人绑定') }}
      {% call card('基础信息') %} … {% endcall %}
 #}
 {% from "partials/_icons.html" import icon %}
 
-{% macro page_header(title, subtitle='') -%}
-<div class="page-header">
-    <h3>{{ title }}</h3>
-    {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
-</div>
-{%- endmacro %}
-
-
-{% macro kpi(label, value, sub='', name='') -%}
-<div class="stat-card">
-    <div class="stat-head">
-        {% if name %}<span class="stat-icon">{{ icon(name) }}</span>{% endif %}
-        <span>{{ label }}</span>
+{# ── 页头：眉题 + h1 + 副标题，右侧可挂动作区 ─────────── #}
+{% macro page_header(title, subtitle='', kicker='', actions='') -%}
+<header class="ui-page-head">
+    <div class="ui-page-head-text">
+        {% if kicker %}<span class="ui-kicker">{{ kicker }}</span>{% endif %}
+        <h1>{{ title }}</h1>
+        {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
     </div>
-    <div class="value">{{ value }}{% if sub %} <small>{{ sub }}</small>{% endif %}</div>
-</div>
+    {% if actions %}<div class="ui-cluster">{{ actions | safe }}</div>{% endif %}
+</header>
 {%- endmacro %}
 
 
-{% macro card(title='', action='') -%}
-<section class="card">
-    {% if title or action %}
-    <div class="card-title-row">
-        <h4>{{ title }}</h4>
-        <div class="form-actions">{{ action | safe }}</div>
+{# ── KPI 数字块与网格 ─────────────────────────────────── #}
+{% macro kpi(label, value, sub='', name='') -%}
+<div class="ui-kpi">
+    <span class="ui-kpi-label">
+        {% if name %}{{ icon(name) }} {% endif %}{{ label }}
+    </span>
+    <span class="ui-kpi-value">{{ value }}{% if sub %} <small>{{ sub }}</small>{% endif %}</span>
+</div>
+{%- endmacro %}
+
+{% macro kpi_grid() -%}
+<div class="ui-grid ui-grid--kpi">{{ caller() }}</div>
+{%- endmacro %}
+
+
+{# ── 卡片与区块 ───────────────────────────────────────── #}
+{% macro card(title='', action='', kicker='', flush=false) -%}
+<section class="ui-card{% if flush %} ui-card--flush{% endif %}">
+    {% if title or action or kicker %}
+    <div class="ui-card-head">
+        <h4 class="ui-card-title">{{ title }}</h4>
+        {% if kicker %}<span class="ui-kicker">{{ kicker }}</span>{% endif %}
+        {% if action %}<div class="ui-cluster ui-cluster--end">{{ action | safe }}</div>{% endif %}
     </div>
     {% endif %}
     {{ caller() }}
 </section>
 {%- endmacro %}
 
+{# 卡片内分节：带眉题的堆叠块 #}
+{% macro section(title, kicker='', action='') -%}
+<div class="ui-stack">
+    <div class="ui-card-head">
+        <h4 class="ui-card-title">{{ title }}</h4>
+        {% if kicker %}<span class="ui-kicker">{{ kicker }}</span>{% endif %}
+        {% if action %}<div class="ui-cluster ui-cluster--end">{{ action | safe }}</div>{% endif %}
+    </div>
+    {{ caller() }}
+</div>
+{%- endmacro %}
 
-{# tone: active / inactive / warning / user / assistant / neutral #}
-{% macro badge(text, tone='neutral') -%}
-<span class="badge badge-{{ tone }}">{{ text }}</span>
+{% macro toolbar() -%}
+<div class="ui-toolbar">{{ caller() }}</div>
+{%- endmacro %}
+
+{# 动作区：按钮/链接抱团，靠右或两端对齐 #}
+{% macro actions(align='end') -%}
+<div class="ui-cluster ui-cluster--{{ align }}">{{ caller() }}</div>
 {%- endmacro %}
 
 
-{# kind: success / error / warning / info #}
+{# ── 表单字段 ─────────────────────────────────────────── #}
+{% macro field(label, name, type='text', value='', placeholder='', required=false, help='', attrs='') -%}
+<label class="ui-field">
+    <span class="ui-label">{{ label }}</span>
+    <input class="ui-input" type="{{ type }}" name="{{ name }}"
+           value="{{ value }}" placeholder="{{ placeholder }}"
+           {% if required %}required{% endif %} {{ attrs | safe }}>
+    {% if help %}<small class="ui-help">{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+
+
+{# ── 表格外壳与眉脚 ───────────────────────────────────── #}
+{% macro table_wrap(caption='') -%}
+<div class="ui-table-wrap">
+    {% if caption %}<div class="ui-table-meta">{{ caption | safe }}</div>{% endif %}
+    <table class="ui-table">{{ caller() }}</table>
+</div>
+{%- endmacro %}
+
+{% macro table_meta(count='', right='') -%}
+<div class="ui-table-meta">
+    <span>{{ count }}</span>
+    {% if right %}<div class="ui-cluster">{{ right | safe }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{# ── 徽章：tone = ok / warn / err / ink / amber / line / neutral #}
+{% macro badge(text, tone='neutral') -%}
+{% set map = {'active': 'ok', 'inactive': 'line', 'warning': 'warn',
+              'user': 'ink', 'assistant': 'amber', 'error': 'err', 'danger': 'err'} %}
+{% set mod = map.get(tone, '') %}
+<span class="ui-badge{% if mod %} ui-badge--{{ mod }}{% endif %}">{{ text }}</span>
+{%- endmacro %}
+
+
+{# ── 提示条：kind = success / error / warning / info ──── #}
 {% macro alert(kind, text) -%}
 {% if text %}
-<div class="alert alert-{{ kind}}" role="status">
-    {{ icon('alert') if kind == 'error' else icon('info') }}
+{% set map = {'success': 'ok', 'error': 'err', 'warning': 'warn'} %}
+{% set mod = map.get(kind, '') %}
+<div class="ui-alert{% if mod %} ui-alert--{{ mod }}{% endif %}" role="status">
+    {{ icon('alert') if kind in ('error', 'warning') else icon('info') }}
     <span>{{ text }}</span>
 </div>
 {% endif %}
 {%- endmacro %}
 
 
+{# ── 空态 ─────────────────────────────────────────────── #}
 {% macro empty(title, desc='', name='info', action='') -%}
-<div class="empty-state">
-    <div class="empty-icon">{{ icon(name) }}</div>
-    <div class="empty-title">{{ title }}</div>
-    {% if desc %}<div class="empty-desc">{{ desc }}</div>{% endif %}
-    {% if action %}<div class="form-actions u-mt-4">{{ action | safe }}</div>{% endif %}
+<div class="ui-empty">
+    {{ icon(name) }}
+    <strong>{{ title }}</strong>
+    {% if desc %}<span>{{ desc }}</span>{% endif %}
+    {% if action %}<div class="ui-cluster u-mt-4">{{ action | safe }}</div>{% endif %}
 </div>
 {%- endmacro %}
 
 
+{# ── 进度条：百分比通过 --bar-pct 自定义属性传入 ──────── #}
+{% macro bar(pct, tone='') -%}
+{% set capped = [pct, 100]|min %}
+<div class="ui-bar" role="progressbar" aria-valuenow="{{ capped }}">
+    <span class="ui-bar__fill{% if tone %} ui-bar__fill--{{ tone }}{% endif %}"
+          style="--bar-pct: {{ capped }}%;"></span>
+</div>
+{%- endmacro %}
+
+
+{# ── 骨架屏 ───────────────────────────────────────────── #}
 {% macro skeleton(rows=3) -%}
-<div aria-hidden="true">
-    {% for _ in range(rows) %}<div class="ui-skeleton ui-skeleton--row u-mt-2"></div>{% endfor %}
+<div class="ui-stack ui-stack--tight" aria-hidden="true">
+    {% for _ in range(rows) %}<div class="ui-skeleton ui-skeleton--row"></div>{% endfor %}
 </div>
 {%- endmacro %}

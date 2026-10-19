@@ -54,3 +54,28 @@
     </a>
 </div>
 {%- endmacro %}
+
+
+{# 面包屑：按 active_page 反查所属分组与栏目名，未登记时留空。
+   extra 传入下钻层级（如实体的显示名与链接），页面模板不再手写整段面包屑。 #}
+{% macro breadcrumb(active, extra=[]) -%}
+{% set crumb = namespace(group='', label='', href='') %}
+{% for g in NAV_GROUPS %}
+    {% for i in g['items'] %}
+        {% if i['key'] == active %}
+            {% set crumb.group = g.title %}
+            {% set crumb.label = i.label %}
+            {% set crumb.href = i.href %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+{% if crumb.label %}
+<a href="{{ crumb.href }}">{{ crumb.label }}</a>
+{% else %}
+<span class="current">{{ active }}</span>
+{% endif %}
+{% for x in extra %}
+<span class="sep">/</span>
+{% if x.href %}<a href="{{ x.href }}">{{ x.label }}</a>{% else %}<span class="current">{{ x.label }}</span>{% endif %}
+{% endfor %}
+{%- endmacro %}

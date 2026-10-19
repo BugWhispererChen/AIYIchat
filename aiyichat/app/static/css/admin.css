@@ -177,11 +177,20 @@ body.nav-collapsed .nav-collapse svg { transform: rotate(180deg); }
 
 .main-content {
     flex: 1;
-    padding: 1.75rem 2rem;
-    max-width: 1280px;
+    padding: var(--page-pad-y) var(--page-pad-x);
+    max-width: var(--content-max);
     width: 100%;
     margin: 0 auto;
 }
+/* 内容列同时是页面根栅格：区块间距由 --section-gap 统一供给，
+   因此顶层旧元素的自带 margin 必须让位，否则会与栅格沟槽叠加成双倍间距。 */
+.main-content.ui-page > .page-header,
+.main-content.ui-page > .card,
+.main-content.ui-page > .alert,
+.main-content.ui-page > .stats-grid,
+.main-content.ui-page > .table-wrap,
+.main-content.ui-page > .tabs,
+.main-content.ui-page > .empty-state { margin-bottom: 0; }
 /* 内容区入场：区块错峰浮现，一次性编排 */
 .main-content > * { animation: ui-rise .4s cubic-bezier(.22,.61,.36,1) both; }
 .main-content > *:nth-child(2) { animation-delay: 45ms; }

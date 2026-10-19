@@ -229,7 +229,8 @@
 [data-theme="dark"] .theme-btn .icon-moon { display: none; }
 
 /* ══ 管理页（角色 / 伙伴）══ */
-.page { max-width: 1040px; margin: 0 auto; padding: 1.4rem .9rem 3rem; }
+.page { max-width: var(--content-max); margin: 0 auto; padding: 1.4rem var(--page-pad-x) 3rem; }
+.page--narrow { max-width: var(--content-max-narrow); }
 .page > h1 {
     font-family: var(--font-display);
     font-size: 1.5rem;

@@ -57,11 +57,12 @@
     });
 
     /* ══ 标签页 + sessionStorage 记忆 ══
-       用法：.tabs[data-tabs-key] > .tab-label[data-tab] + .tab-content[data-tab-content] */
+       用法：.tabs/.ui-tabs[data-tabs-key] > .tab-label/.ui-tab[data-tab] + .tab-content[data-tab-content]
+       双类并列：迁移中的页面仍用旧类，新页面用 .ui-*，行为一致。 */
     function initTabs() {
-        document.querySelectorAll('.tabs').forEach(function (tabs) {
+        document.querySelectorAll('.tabs, .ui-tabs').forEach(function (tabs) {
             var key = tabs.dataset.tabsKey || 'tabs';
-            var labels = tabs.querySelectorAll('.tab-label');
+            var labels = tabs.querySelectorAll('.tab-label, .ui-tab');
             var contents = tabs.querySelectorAll('.tab-content');
             if (!labels.length) return;
 
@@ -96,7 +97,7 @@
         msgEl.style.display = opts.message ? '' : 'none';
         okBtn.textContent = opts.confirmText || '确认';
         cancelBtn.textContent = opts.cancelText || '取消';
-        okBtn.className = 'btn-sm' + (opts.danger ? ' danger' : '');
+        okBtn.className = 'ui-btn ui-btn--sm ui-btn--primary' + (opts.danger ? ' ui-btn--danger' : '');
 
         if (opts.input) {
             inputEl.style.display = '';

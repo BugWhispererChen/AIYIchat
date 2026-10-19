@@ -6,7 +6,7 @@
     <title>{% block title %}管理后台{% endblock %} - 爱易聊</title>
     <link rel="icon" href="data:,">
     {% include "partials/_assets_core.html" %}
-    {% from "partials/_nav.html" import sidebar %}
+    {% from "partials/_nav.html" import sidebar, breadcrumb as nav_breadcrumb %}
     {% from "partials/_icons.html" import icon %}
     <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
     <script src="{{ asset('vendor/htmx.min.js') }}"></script>
@@ -30,13 +30,14 @@
                 <button class="nav-collapse" id="navCollapseBtn" aria-label="收起或展开侧边栏" title="收起/展开侧边栏">
                     {{ icon('chevron-left') }}
                 </button>
-                <nav class="breadcrumb" aria-label="当前位置">{% block breadcrumb %}{% endblock %}</nav>
+                <nav class="breadcrumb ui-breadcrumb" aria-label="当前位置">{% block breadcrumb %}{{ nav_breadcrumb(active_page | default('')) }}{% endblock %}</nav>
                 <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
                     {{ icon('sun', 'icon-sun') }}
                     {{ icon('moon', 'icon-moon') }}
                 </button>
             </div>
-            <main class="main-content">
+            {# main 同时是页面根栅格：区块间距由布局层统一供给，页面模板只平铺内容 #}
+            <main class="main-content ui-page {{ content_width | default('') }}">
                 {% block content %}{% endblock %}
             </main>
         </div>
@@ -49,8 +50,8 @@
             <p class="modal-message" id="adminModalMessage"></p>
             <input type="text" class="modal-input" id="adminModalInput" style="display:none;">
             <div class="modal-actions">
-                <button type="button" class="ghost btn-sm" id="adminModalCancel">取消</button>
-                <button type="button" class="btn-sm" id="adminModalConfirm">确认</button>
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="adminModalCancel">取消</button>
+                <button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="adminModalConfirm">确认</button>
             </div>
         </div>
     </div>

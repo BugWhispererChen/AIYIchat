@@ -146,6 +146,19 @@
     --pico-form-element-active-background-color: var(--surface);
     --pico-form-element-active-border-color: var(--primary-ink);
     --pico-table-border-color: var(--border);
+
+    /* ── 布局尺度：页面结构与节奏的唯一来源 ───────────── */
+    /* 满屏（1920×1080）下内容列的三档宽度：常规 / 表格密集 / 单列表单 */
+    --content-max: 1400px;
+    --content-max-wide: 1640px;
+    --content-max-narrow: 880px;
+    --page-pad-x: var(--space-8);
+    --page-pad-y: 28px;
+    /* 区块之间、控件抱团、网格沟槽的三种间距语义 */
+    --section-gap: var(--space-6);
+    --cluster-gap: var(--space-3);
+    --grid-gap: var(--space-4);
+    --grid-min: 220px;
 }
 
 /* Pico 主色覆写：用与 Pico 同等特性的选择器，确保原生按钮也采用靛蓝墨 */

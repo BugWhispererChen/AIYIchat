@@ -318,6 +318,43 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     color: var(--text-2);
 }
 
+/* 资源瓦片：缩略图 + 文案 + 底部操作行（表情包、贴纸一类的图库） */
+.ui-tile { display: flex; gap: var(--space-4); align-items: flex-start; }
+.ui-tile__thumb {
+    width: 72px; height: 72px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    flex: none;
+}
+.ui-tile__body { min-width: 0; flex: 1 1 auto; }
+.ui-tile__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+/* 就地改分组的下拉吃掉剩余宽度，但必须允许收缩，
+   否则其内部 width:100% 的 select 会把右侧按钮挤到文字竖排 */
+.ui-tile__actions > .ui-cluster--fill { min-width: 0; flex: 1 1 auto; }
+.ui-tile__actions > form:not(.ui-cluster--fill) { flex: none; }
+/* 分组胶囊：名称 + 计数 + 行内操作，横向自适应排布 */
+.ui-chip-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+}
+.ui-chip-name { font-weight: 600; font-size: .88rem; text-decoration: none; }
+/* 图库网格：比通用 tile 更窄，便于缩略图密集陈列 */
+.ui-grid--asset { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+/* 弱化态：已停用的分组/表情，整块降透明但不隐藏 */
+.u-dim { opacity: .55; }
+/* 极小号的行内下拉/按钮，用于卡片内的就地操作 */
+.ui-select--xs { min-height: 28px; padding: 2px var(--space-2); font-size: .78rem; margin: 0; width: 100%; }
+.ui-btn--xs { height: 26px; padding: 0 var(--space-2); font-size: .78rem; }
+
 /* 开关行：左侧文案、右侧开关，用于功能实验室一类的设置清单 */
 .ui-switch-row {
     display: flex;
@@ -549,6 +586,13 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     transition: all var(--transition);
 }
 .ui-chip:hover { border-color: var(--primary-ink); color: var(--primary); }
+/* 当前选中的筛选项 */
+.ui-chip--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-text);
+}
+.ui-chip--active:hover { color: var(--primary-text); }
 .ui-chip.is-active {
     background: var(--primary-soft);
     border-color: var(--primary-ink);

@@ -1,84 +1,89 @@
 {% extends "base.html" %}
 {% set active_page = "stickers" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}表情包管理{% endblock %}
 
+{% from "partials/_ui.html" import page_header, alert, badge %}
+
 {% block content %}
-<div class="page-header">
-    <h3>表情包管理</h3>
-    <p class="subtitle">管理 AI 对话中可发送的表情包库；发送能力需在「功能实验室」开启「表情包发送」</p>
-</div>
+{{ page_header('表情包管理',
+               '管理 AI 对话中可发送的表情包库；发送能力需在「功能实验室」开启「表情包发送」', '角色内容') }}
 
-{% if request.query_params.get('error') %}
-<div class="alert alert-error">{{ request.query_params.get('error') }}</div>
-{% endif %}
-
+{{ alert('error', request.query_params.get('error')) }}
 {% if not sticker_enabled %}
-<div class="alert alert-warn">
-    「表情包发送」开关未开启：请前往 <a href="/admin/features">功能实验室</a> 启用后，AI 才会在对话中发送表情包。
+<div class="ui-alert ui-alert--warn" role="status">
+    <span>「表情包发送」开关未开启：请前往 <a href="/admin/features">功能实验室</a> 启用后，AI 才会在对话中发送表情包。</span>
 </div>
 {% endif %}
 
 {# ── 分组管理区 ── #}
-<details  {% if not groups %}open{% endif %} class="u-mb-4">
-    <summary class="link-strong" >+ 创建表情包分组</summary>
-    <form method="post" action="/admin/stickers/groups/create" class="inset-block" >
-        <div class="grid">
-            <label>分组名称（唯一）
-                <input type="text" name="name" placeholder="如：萌猫日常" required>
+<details {% if not groups %}open{% endif %} class="ui-card">
+    <summary class="ui-summary">+ 创建表情包分组</summary>
+    <form method="post" action="/admin/stickers/groups/create" class="inset-block ui-stack">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">分组名称（唯一）</span>
+                <input class="ui-input" type="text" name="name" placeholder="如：萌猫日常" required>
             </label>
-            <label>分组说明
-                <input type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
+            <label class="ui-field">
+                <span class="ui-label">分组说明</span>
+                <input class="ui-input" type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
             </label>
         </div>
-        <button type="submit" class="u-mt-3 u-mw-160" >创建</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">创建</button>
+        </div>
     </form>
 </details>
 
 {% if groups %}
-<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;">
-    <a href="/admin/stickers" class="badge {{ 'badge-role-user' if not group_filter else 'badge-neutral' }} chip-link"
-       >全部</a>
+<div class="ui-cluster">
+    <a href="/admin/stickers" class="ui-chip{% if not group_filter %} ui-chip--active{% endif %}">全部</a>
     {% for g in groups %}
-    <div class="card" style="padding:0.55rem 0.75rem;margin:0;display:flex;align-items:center;gap:0.5rem;{% if not g.enabled %}opacity:0.55;{% endif %}">
-        <a href="/admin/stickers?group={{ g.id }}" style="text-decoration:none;font-weight:600;font-size:0.88rem;">
-            {{ g.name }}
-        </a>
-        <span class="muted" style="font-size:0.78rem;">{{ group_counts.get(g.id, 0) }} 张</span>
-        {% if not g.enabled %}<span class="badge badge-role-neutral">已停用</span>{% endif %}
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0" >
-            <button type="submit" class="ghost" style="padding:0.15rem 0.5rem;font-size:0.75rem;">
+    <div class="ui-card ui-chip-row{% if not g.enabled %} u-dim{% endif %}">
+        <a href="/admin/stickers?group={{ g.id }}" class="ui-chip-name">{{ g.name }}</a>
+        <span class="muted u-fs-80">{{ group_counts.get(g.id, 0) }} 张</span>
+        {% if not g.enabled %}{{ badge('已停用', 'line') }}{% endif %}
+        <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0">
+            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
                 {{ '停用' if g.enabled else '启用' }}
             </button>
         </form>
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete" 
+        <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete"
               onsubmit="return confirm('删除后该分组内表情将转为未归组（仅后台可见不参与发送），确认删除？');" class="u-m0">
-            <button type="submit" class="ghost" style="padding:0.15rem 0.5rem;font-size:0.75rem;color:var(--danger-text);">删除</button>
+            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
         </form>
     </div>
     {% endfor %}
-    <a href="/admin/stickers?group=none" class="badge {{ 'badge-role-user' if group_filter == 'none' else 'badge-neutral' }} chip-link"
-       >未归组 {{ group_counts.get('', 0) }} 张</a>
+    <a href="/admin/stickers?group=none" class="ui-chip{% if group_filter == 'none' %} ui-chip--active{% endif %}">
+        未归组 {{ group_counts.get('', 0) }} 张
+    </a>
 </div>
 {% endif %}
 
-<details class="u-mb-4" >
-    <summary class="link-strong" >+ 上传表情包</summary>
-    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data" class="inset-block" >
-        <div class="grid">
-            <label>图片文件（GIF / PNG / JPEG / WebP，≤2MB，GIF 保留动画）
-                <input type="file" name="file" accept="image/gif,image/png,image/jpeg,image/webp" required>
+<details class="ui-card">
+    <summary class="ui-summary">+ 上传表情包</summary>
+    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data" class="inset-block ui-stack">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">图片文件（GIF / PNG / JPEG / WebP，≤2MB，GIF 保留动画）</span>
+                <input class="ui-input" type="file" name="file" accept="image/gif,image/png,image/jpeg,image/webp" required>
             </label>
-            <label>名称
-                <input type="text" name="name" placeholder="如：委屈猫猫">
+            <label class="ui-field">
+                <span class="ui-label">名称</span>
+                <input class="ui-input" type="text" name="name" placeholder="如：委屈猫猫">
             </label>
-            <label>标签（逗号分隔，用于无向量化时的关键词匹配）
-                <input type="text" name="tags" placeholder="如：委屈,撒娇,求抱抱">
+            <label class="ui-field">
+                <span class="ui-label">标签（逗号分隔，用于无向量化时的关键词匹配）</span>
+                <input class="ui-input" type="text" name="tags" placeholder="如：委屈,撒娇,求抱抱">
             </label>
-            <label>语义描述（留空则由 Vision 自动生成，决定语义检索精准度）
-                <input type="text" name="description" placeholder="如：一只猫委屈巴巴地撒娇求安慰">
+            <label class="ui-field">
+                <span class="ui-label">语义描述（留空则由 Vision 自动生成，决定语义检索精准度）</span>
+                <input class="ui-input" type="text" name="description" placeholder="如：一只猫委屈巴巴地撒娇求安慰">
             </label>
-            <label>所属分组（未归组表情仅后台可见，不参与发送）
-                <select name="group_id">
+            <label class="ui-field">
+                <span class="ui-label">所属分组（未归组表情仅后台可见，不参与发送）</span>
+                <select class="ui-select" name="group_id">
                     <option value="">未归组</option>
                     {% for g in groups %}
                     <option value="{{ g.id }}" {% if not g.enabled %}disabled{% endif %}>{{ g.name }}</option>
@@ -86,75 +91,64 @@
                 </select>
             </label>
         </div>
-        <button type="submit" class="u-mt-3 u-mw-160" >上传</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">上传</button>
+        </div>
     </form>
 </details>
 
 {% if not stickers %}
-<div class="card">
+<section class="ui-card">
     <p class="muted">表情库为空。请上传表情包，或确认部署包中携带了预置资源（data/stickers/）且「启动自动导入」未被关闭。</p>
-</div>
+</section>
 {% else %}
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0.9rem;">
+<div class="ui-grid ui-grid--asset">
     {% for s in stickers %}
-    <div class="card" style="padding:0.9rem;{% if not s.enabled %}opacity:0.55;{% endif %}">
-        <div style="display:flex;gap:0.8rem;align-items:flex-start;">
-            <img src="{{ s.media_url }}" alt="{{ s.name }}"
-                 style="width:72px;height:72px;object-fit:cover;border-radius:var(--radius-sm);background:var(--surface-2);flex-shrink:0;">
-            <div style="min-width:0;flex:1;">
-                <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
-                    <strong style="font-size:0.92rem;word-break:break-all;">{{ s.name }}</strong>
-                    {% if s.source == 'upload' %}
-                    <span class="badge badge-role-user">上传</span>
-                    {% else %}
-                    <span class="badge badge-neutral">预置</span>
-                    {% endif %}
+    <section class="ui-card{% if not s.enabled %} u-dim{% endif %}">
+        <div class="ui-tile">
+            {# 200 张图一次性解码会让整页迟迟不可用，交给浏览器按视口惰性加载 #}
+            <img class="ui-tile__thumb" src="{{ s.media_url }}" alt="{{ s.name }}" loading="lazy">
+            <div class="ui-tile__body ui-stack ui-stack--tight">
+                <div class="ui-cluster">
+                    <strong class="u-break">{{ s.name }}</strong>
+                    {{ badge('上传' if s.source == 'upload' else '预置', 'ink' if s.source == 'upload' else 'line') }}
                     {% set ns = namespace(group_name='') %}
                     {% for g in groups %}{% if g.id == s.group_id %}{% set ns.group_name = g.name %}{% endif %}{% endfor %}
-                    {% if ns.group_name %}
-                    <span class="badge badge-role-assistant">{{ ns.group_name }}</span>
-                    {% else %}
-                    <span class="badge badge-role-neutral">未归组</span>
-                    {% endif %}
-                    {% if not s.enabled %}
-                    <span class="badge badge-role-neutral">已停用</span>
-                    {% endif %}
+                    {% if ns.group_name %}{{ badge(ns.group_name, 'amber') }}
+                    {% else %}{{ badge('未归组', 'line') }}{% endif %}
+                    {% if not s.enabled %}{{ badge('已停用', 'line') }}{% endif %}
                 </div>
                 {% if s.tags %}
-                <p style="font-size:0.78rem;margin:0.3rem 0 0;color:var(--text-2);">
-                    {{ s.tags | join(' / ') }}
-                </p>
+                <p class="ui-note">{{ s.tags | join(' / ') }}</p>
                 {% endif %}
                 {% if s.description %}
-                <p class="muted" style="font-size:0.78rem;margin:0.3rem 0 0;">{{ s.description[:60] }}</p>
+                <p class="ui-note">{{ s.description[:60] }}</p>
                 {% endif %}
-                <p style="font-size:0.75rem;margin:0.35rem 0 0;color:var(--text-3);">
+                <p class="ui-note u-fs-75">
                     使用 {{ s.usage_count }} 次{% if not s.embedding %} · 无向量{% endif %}
                 </p>
             </div>
         </div>
-        <div class="btn-row" style="display:flex;gap:0.5rem;margin-top:0.7rem;">
-            <form method="post" action="/admin/stickers/{{ s.id }}/set-group" style="margin:0;flex:1;">
-                <select name="group_id" onchange="this.form.submit()" style="font-size:0.78rem;padding:0.25rem 0.5rem;margin:0;">
+        <div class="ui-tile__actions">
+            <form method="post" action="/admin/stickers/{{ s.id }}/set-group" class="u-m0 ui-cluster--fill">
+                <select class="ui-select ui-select--xs" name="group_id" onchange="this.form.submit()">
                     <option value="" {% if not s.group_id %}selected{% endif %}>未归组</option>
                     {% for g in groups %}
                     <option value="{{ g.id }}" {% if s.group_id == g.id %}selected{% endif %} {% if not g.enabled %}disabled{% endif %}>{{ g.name }}</option>
                     {% endfor %}
                 </select>
             </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/toggle" class="u-m0" >
-                <button type="submit" class="ghost" style="padding:0.25rem 0.7rem;font-size:0.8rem;">
+            <form method="post" action="/admin/stickers/{{ s.id }}/toggle" class="u-m0">
+                <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
                     {{ '停用' if s.enabled else '启用' }}
                 </button>
             </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/delete" 
+            <form method="post" action="/admin/stickers/{{ s.id }}/delete"
                   onsubmit="return confirm('确认删除该表情包？');" class="u-m0">
-                <button type="submit" class="ghost" style="padding:0.25rem 0.7rem;font-size:0.8rem;color:var(--danger-text);">
-                    删除
-                </button>
+                <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
             </form>
         </div>
-    </div>
+    </section>
     {% endfor %}
 </div>
 {% endif %}

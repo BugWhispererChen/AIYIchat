@@ -178,6 +178,9 @@ a:hover { color: var(--primary-hover); }
 .u-fw-normal { font-weight: 400; }
 .u-fw-600 { font-weight: 600; }
 .u-fs-80 { font-size: .8rem; }
+.u-fs-75 { font-size: .75rem; }
+/* 无空格长串（中文名等）允许折行，不撑破窄列 */
+.u-break { word-break: break-all; }
 .u-fs-82 { font-size: .82rem; }
 .u-fs-85 { font-size: .85rem; }
 .u-fs-88 { font-size: .88rem; }

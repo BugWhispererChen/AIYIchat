@@ -12,40 +12,38 @@
 <body>
     {% include "partials/_web_topbar.html" %}
 
-    <div class="page">
-        <h1>我的角色</h1>
-        <p class="lede">在这里创建属于自己的人设。自建角色只有你自己可见可用；公共角色可以直接使用但不能修改。</p>
+    {% from "partials/_ui.html" import page_header, card %}
+    <div class="page ui-page">
+        {{ page_header('我的角色', '在这里创建属于自己的人设。自建角色只有你自己可见可用；公共角色可以直接使用但不能修改。') }}
 
-        <div id="banner" class="notice" hidden></div>
+        <div id="banner" class="ui-alert" hidden></div>
 
-        <section class="card">
-            <h2>可用角色</h2>
-            <div class="meta" id="quota-line" style="margin-bottom:.5rem"></div>
-            <div class="actions" style="margin-top:0">
-                <button type="button" id="new-btn">+ 新建角色</button>
-            </div>
-            <div id="profile-list"><div class="empty">正在读取角色列表…</div></div>
-        </section>
+        {% call card('可用角色',
+             action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="new-btn">+ 新建角色</button>') %}
+            <span class="u-muted u-fs-82" id="quota-line"></span>
+            <div id="profile-list"><div class="ui-empty">正在读取角色列表…</div></div>
+        {% endcall %}
 
-        <section class="card" id="editor-card" hidden>
-            <h2 id="editor-title">新建角色</h2>
-            <p class="hint" style="margin-top:0">带 * 为必填。留空的分组保持原样，不会清空已有描述。</p>
+        {# 编辑卡要挂 id 与 hidden 钩子，宏不提供这两个参数，交给外层 div #}
+        <div id="editor-card" hidden>
+            {% call card('新建角色') %}
+            <p class="ui-note">带 * 为必填。留空的分组保持原样，不会清空已有描述。</p>
 
-            <div class="grid">
-                <div>
+            <div class="ui-grid ui-grid--3">
+                <div class="ui-field">
                     <label for="f-name">角色名称 *</label>
-                    <input id="f-name" maxlength="30" placeholder="例如：林清和">
+                    <input class="ui-input" id="f-name" maxlength="30" placeholder="例如：林清和">
                 </div>
-                <div>
+                <div class="ui-field">
                     <label for="f-category">分类</label>
-                    <select id="f-category">
+                    <select class="ui-select" id="f-category">
                         <option value="original">原创角色</option>
                         <option value="custom">自定义设定</option>
                     </select>
                 </div>
-                <div>
+                <div class="ui-field">
                     <label for="f-verbosity">回复风格</label>
-                    <select id="f-verbosity">
+                    <select class="ui-select" id="f-verbosity">
                         <option value="standard">标准</option>
                         <option value="concise">凝练</option>
                         <option value="verbose">健谈</option>
@@ -53,123 +51,125 @@
                 </div>
             </div>
 
-            <details class="sub" open>
-                <summary>人设背景</summary>
-                <div class="grid">
-                    <div>
+            <details class="ui-inset" open>
+                <summary class="ui-summary">人设背景</summary>
+                <div class="ui-grid ui-grid--2 u-mt-3">
+                    <div class="ui-field">
                         <label for="f-background">背景经历</label>
-                        <textarea id="f-background" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-background" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-appearance">外貌形象</label>
-                        <textarea id="f-appearance" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-appearance" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-era">时代</label>
-                        <input id="f-era" maxlength="600">
+                        <input class="ui-input" id="f-era" maxlength="600">
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-age-appearance">年龄与体态</label>
-                        <input id="f-age-appearance" maxlength="600">
+                        <input class="ui-input" id="f-age-appearance" maxlength="600">
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-core-values">核心价值观（每行一条）</label>
-                        <textarea id="f-core-values"></textarea>
+                        <textarea class="ui-textarea" id="f-core-values"></textarea>
                     </div>
                 </div>
             </details>
 
-            <details class="sub">
-                <summary>语言风格</summary>
-                <div class="grid">
-                    <div>
+            <details class="ui-inset">
+                <summary class="ui-summary">语言风格</summary>
+                <div class="ui-grid ui-grid--2 u-mt-3">
+                    <div class="ui-field">
                         <label for="f-tone">语气基调</label>
-                        <textarea id="f-tone" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-tone" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-vocabulary">常用词汇（每行一条）</label>
-                        <textarea id="f-vocabulary"></textarea>
+                        <textarea class="ui-textarea" id="f-vocabulary"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-sentence">句式习惯（每行一条）</label>
-                        <textarea id="f-sentence"></textarea>
+                        <textarea class="ui-textarea" id="f-sentence"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-emoji">表情习惯（每行一条）</label>
-                        <textarea id="f-emoji"></textarea>
+                        <textarea class="ui-textarea" id="f-emoji"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-forbidden">避免用词（每行一条）</label>
-                        <textarea id="f-forbidden"></textarea>
+                        <textarea class="ui-textarea" id="f-forbidden"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-example">示例台词（每行一条）</label>
-                        <textarea id="f-example"></textarea>
+                        <textarea class="ui-textarea" id="f-example"></textarea>
                     </div>
                 </div>
             </details>
 
-            <details class="sub">
-                <summary>性格与对话策略</summary>
-                <div class="grid">
-                    <div>
+            <details class="ui-inset">
+                <summary class="ui-summary">性格与对话策略</summary>
+                <div class="ui-grid ui-grid--2 u-mt-3">
+                    <div class="ui-field">
                         <label for="f-mbti">MBTI 倾向</label>
-                        <input id="f-mbti" maxlength="60">
+                        <input class="ui-input" id="f-mbti" maxlength="60">
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-care-style">关怀方式</label>
-                        <input id="f-care-style" maxlength="600">
+                        <input class="ui-input" id="f-care-style" maxlength="600">
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-traits">性格特质（每行"名称=0.5"，0~1）</label>
-                        <textarea id="f-traits"></textarea>
+                        <textarea class="ui-textarea" id="f-traits"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-greeting">开场白</label>
-                        <textarea id="f-greeting" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-greeting" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-negative">对方情绪低落时</label>
-                        <textarea id="f-negative" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-negative" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-positive">对方心情好时</label>
-                        <textarea id="f-positive" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-positive" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-silence">对方沉默时</label>
-                        <textarea id="f-silence" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-silence" maxlength="600"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-boundaries">话题边界（每行一条）</label>
-                        <textarea id="f-boundaries"></textarea>
+                        <textarea class="ui-textarea" id="f-boundaries"></textarea>
                     </div>
-                    <div>
+                    <div class="ui-field">
                         <label for="f-guardrails">安全底线</label>
-                        <textarea id="f-guardrails" maxlength="600"></textarea>
+                        <textarea class="ui-textarea" id="f-guardrails" maxlength="600"></textarea>
                     </div>
                 </div>
             </details>
 
-            <details class="sub">
-                <summary>补充指令</summary>
-                <label for="f-meta">额外给模型的指令（最多 4000 字）</label>
-                <textarea id="f-meta" maxlength="4000"></textarea>
+            <details class="ui-inset">
+                <summary class="ui-summary">补充指令</summary>
+                <div class="ui-field u-mt-3">
+                    <label for="f-meta">额外给模型的指令（最多 4000 字）</label>
+                    <textarea class="ui-textarea" id="f-meta" maxlength="4000"></textarea>
+                </div>
             </details>
 
-            <div class="actions">
-                <button type="button" id="save-btn">保存角色</button>
-                <button type="button" class="btn-ghost" id="cancel-btn">取消</button>
+            <div class="ui-cluster ui-cluster--bar">
+                <button type="button" class="ui-btn ui-btn--primary" id="save-btn">保存角色</button>
+                <button type="button" class="ui-btn ui-btn--ghost" id="cancel-btn">取消</button>
             </div>
-        </section>
+            {% endcall %}
+        </div>
 
-        <section class="card">
-            <h2>使用说明</h2>
-            <p class="hint" style="margin-top:0">
+        {% call card('使用说明') %}
+            <p class="ui-note">
                 保存后，请到「我的伙伴」为这个角色创建一个伙伴服务，再回到对话页选择它即可开始聊天。<br>
                 请勿创建涉及真实名人、政治人物或其他违规内容的人设，违规角色会被管理员停用并可能封禁账号。
             </p>
-        </section>
+        {% endcall %}
     </div>
 
     <script>
@@ -180,7 +180,7 @@
         const quotaEl = document.getElementById('quota-line');
         const bannerEl = document.getElementById('banner');
         const editorEl = document.getElementById('editor-card');
-        const titleEl = document.getElementById('editor-title');
+        const titleEl = editorEl.querySelector('.ui-card-title');
         const saveBtn = document.getElementById('save-btn');
 
         let items = [];          // 后端返回的角色条目
@@ -291,7 +291,7 @@
         /* ── 列表渲染（一律 textContent，禁止把后端文本当 HTML 解析）── */
         function show(kind, text) {
             bannerEl.hidden = false;
-            bannerEl.className = 'notice' + (kind === 'err' ? ' notice-err' : kind === 'ok' ? ' notice-ok' : '');
+            bannerEl.className = 'ui-alert' + (kind === 'err' ? ' ui-alert--err' : kind === 'ok' ? ' ui-alert--ok' : '');
             bannerEl.textContent = text;
         }
 
@@ -299,22 +299,22 @@
             listEl.textContent = '';
             if (!items.length) {
                 const e = document.createElement('div');
-                e.className = 'empty';
+                e.className = 'ui-empty';
                 e.textContent = '还没有可用角色，请联系管理员开放公共角色，或先自建一个。';
                 listEl.appendChild(e);
                 return;
             }
             items.forEach(function (it) {
                 const row = document.createElement('div');
-                row.className = 'item';
+                row.className = 'ui-list-row ui-cluster';
 
                 const grow = document.createElement('div');
-                grow.className = 'grow';
+                grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
                 const t = document.createElement('div');
-                t.className = 'title';
+                t.className = 'u-fw-600';
                 t.textContent = it.name;
                 const m = document.createElement('div');
-                m.className = 'meta';
+                m.className = 'u-muted u-fs-82';
                 m.textContent = (it.owned ? '自建 · ' : '公共 · ')
                     + (it.category === 'custom' ? '自定义设定' : '原创角色');
                 grow.appendChild(t);
@@ -322,16 +322,16 @@
                 row.appendChild(grow);
 
                 const tag = document.createElement('span');
-                tag.className = 'tag ' + (it.is_active ? 'tag-on' : 'tag-off');
+                tag.className = 'ui-badge ' + (it.is_active ? 'ui-badge--ok' : 'ui-badge--err');
                 tag.textContent = it.is_active ? '启用中' : '已停用';
                 row.appendChild(tag);
 
                 const acts = document.createElement('div');
-                acts.className = 'row-actions';
+                acts.className = 'ui-cluster ui-cluster--nowrap';
                 if (it.owned) {
                     acts.appendChild(mkBtn('编辑', function () { openEditor(it.id); }));
                     acts.appendChild(mkBtn(it.is_active ? '停用' : '启用', function () { toggle(it); }));
-                    acts.appendChild(mkBtn('删除', function () { remove(it); }));
+                    acts.appendChild(mkBtn('删除', function () { remove(it); }, true));
                 } else {
                     acts.appendChild(mkBtn('查看', function () { preview(it); }));
                 }
@@ -340,10 +340,10 @@
             });
         }
 
-        function mkBtn(text, handler) {
+        function mkBtn(text, handler, danger) {
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = 'btn-ghost';
+            b.className = 'ui-btn ui-btn--ghost ui-btn--sm' + (danger ? ' ui-btn--danger' : '');
             b.textContent = text;
             b.addEventListener('click', handler);
             return b;

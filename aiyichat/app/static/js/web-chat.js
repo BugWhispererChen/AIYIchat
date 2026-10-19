@@ -76,6 +76,38 @@
         streamBox.textContent = '';
     }
 
+    /* 流式回复按 ||| 拆成多条气泡：与非流式链路的消息拆分一致，
+       也让分隔符本身不再原样出现在页面上（落库存的是拆分后文本，重进页面时看不到 |||）。 */
+    var MSG_DELIM = '|||';
+
+    function renderReply(bubble, extras, text, done) {
+        if (!done) {
+            // 网络分片可能把 ||| 切成 | 或 ||：尾部残缺分隔符先藏起来，避免闪烁
+            text = text.replace(/\|{1,2}$/, '');
+        }
+        var parts = [];
+        text.split(MSG_DELIM).forEach(function (piece) {
+            var trimmed = piece.replace(/^\s+|\s+$/g, '');
+            if (trimmed) parts.push(trimmed);
+        });
+        for (var i = 0; i < parts.length; i += 1) {
+            var node = i === 0 ? bubble : extras[i - 1];
+            if (!node) {
+                // 同一条回复拆出的后续气泡不再重复署名：真人连发也不会每句报一次名字
+                node = addBubble('assistant', '', '', '');
+                extras.push(node);
+            }
+            node.lastChild.textContent = parts[i];
+        }
+        scrollToEnd();
+    }
+
+    /* 出错/中止时收回已拆出的后续气泡：首条会被改写为错误说明，留下半截回复只会更乱 */
+    function dropExtras(extras) {
+        extras.forEach(function (node) { node.remove(); });
+        extras.length = 0;
+    }
+
     function partnerLabel() {
         if (!serviceSelect.options.length) return '';
         var index = serviceSelect.selectedIndex;
@@ -249,7 +281,9 @@
         addBubble('user', text);
         input.value = '';
         autoGrow();
-        var bubble = addBubble('assistant', '', 'typing', partnerLabel());
+        var name = partnerLabel();
+        var bubble = addBubble('assistant', '', 'typing', name);
+        var extras = [];
         var reply = '';
         var buffer = '';
         try {
@@ -262,6 +296,7 @@
             if (resp.status === 401) { toLogin(); return; }
             if (!resp.ok) {
                 var data = await resp.json().catch(function () { return {}; });
+                dropExtras(extras);
                 bubble.classList.remove('typing');
                 bubble.classList.add('bubble-error');
                 bubble.lastChild.textContent = data.detail || '发送失败，请稍后重试。';
@@ -280,24 +315,26 @@
                     payloadOf(frame).forEach(function (payload) {
                         if (payload === '[DONE]') return;
                         if (payload.indexOf('[ERROR]') === 0) {
+                            dropExtras(extras);
                             bubble.classList.remove('typing');
                             bubble.classList.add('bubble-error');
                             bubble.lastChild.textContent = payload.slice(7).trim() || '对话服务返回异常。';
                             return;
                         }
                         reply += payload;
-                        bubble.lastChild.textContent = reply;
-                        scrollToEnd();
+                        renderReply(bubble, extras, reply, false);
                     });
                 });
             }
             bubble.classList.remove('typing');
+            renderReply(bubble, extras, reply, true);
             if (!reply && !bubble.classList.contains('bubble-error')) {
                 bubble.lastChild.textContent = '（本次没有收到回复，可能是额度已用尽）';
             }
             await loadMe();       // 回复落库后再刷新余量，额度显示才跟手
             await loadSessions(); // 会话计数与时间同步更新
         } catch (err) {
+            dropExtras(extras);
             bubble.classList.remove('typing');
             bubble.classList.add('bubble-error');
             bubble.lastChild.textContent = err && err.name === 'AbortError'

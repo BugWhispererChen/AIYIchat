@@ -12,51 +12,49 @@
 <body>
     {% include "partials/_web_topbar.html" %}
 
-    <div class="page">
-        <h1>我的伙伴</h1>
-        <p class="lede">一个"伙伴"就是你在对话页可以选择的一个角色。想同时拥有多个聊天对象，就在这里各建一个。</p>
+    {% from "partials/_ui.html" import page_header, card %}
+    <div class="page ui-page">
+        {{ page_header('我的伙伴', '一个"伙伴"就是你在对话页可以选择的一个角色。想同时拥有多个聊天对象，就在这里各建一个。') }}
 
-        <div id="banner" class="notice" hidden></div>
+        <div id="banner" class="ui-alert" hidden></div>
 
-        <section class="card">
-            <h2>我的伙伴列表</h2>
-            <div class="meta" id="quota-line" style="margin-bottom:.5rem"></div>
-            <div class="actions" style="margin-top:0">
-                <button type="button" id="new-btn">+ 新建伙伴</button>
-            </div>
-            <div id="service-list"><div class="empty">正在读取伙伴列表…</div></div>
-        </section>
+        {% call card('我的伙伴列表',
+             action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="new-btn">+ 新建伙伴</button>') %}
+            <span class="u-muted u-fs-82" id="quota-line"></span>
+            <div id="service-list"><div class="ui-empty">正在读取伙伴列表…</div></div>
+        {% endcall %}
 
-        <section class="card" id="editor-card" hidden>
-            <h2 id="editor-title">新建伙伴</h2>
-            <div class="grid">
-                <div>
-                    <label for="f-name">伙伴名称</label>
-                    <input id="f-name" maxlength="60" placeholder="留空自动按角色命名">
+        {# 编辑卡要挂 id 与 hidden 钩子，宏不提供这两个参数，交给外层 div #}
+        <div id="editor-card" hidden>
+            {% call card('新建伙伴') %}
+                <div class="ui-grid ui-grid--3">
+                    <div class="ui-field">
+                        <label for="f-name">伙伴名称</label>
+                        <input class="ui-input" id="f-name" maxlength="60" placeholder="留空自动按角色命名">
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-profile">扮演的角色 *</label>
+                        <select class="ui-select" id="f-profile"></select>
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-tz">时区（选填）</label>
+                        <input class="ui-input" id="f-tz" placeholder="例如 Asia/Shanghai">
+                        <div class="ui-help">影响主动问候与作息判断，留空用系统默认。</div>
+                    </div>
                 </div>
-                <div>
-                    <label for="f-profile">扮演的角色 *</label>
-                    <select id="f-profile"></select>
+                <div class="ui-cluster ui-cluster--bar">
+                    <button type="button" class="ui-btn ui-btn--primary" id="save-btn">保存</button>
+                    <button type="button" class="ui-btn ui-btn--ghost" id="cancel-btn">取消</button>
                 </div>
-                <div>
-                    <label for="f-tz">时区（选填）</label>
-                    <input id="f-tz" placeholder="例如 Asia/Shanghai">
-                    <div class="hint">影响主动问候与作息判断，留空用系统默认。</div>
-                </div>
-            </div>
-            <div class="actions">
-                <button type="button" id="save-btn">保存</button>
-                <button type="button" class="btn-ghost" id="cancel-btn">取消</button>
-            </div>
-        </section>
+            {% endcall %}
+        </div>
 
-        <section class="card">
-            <h2>使用说明</h2>
-            <p class="hint" style="margin-top:0">
+        {% call card('使用说明') %}
+            <p class="ui-note">
                 新建或修改后，回到「对话」页顶部的角色下拉框选择要聊的伙伴即可；每个伙伴各自保留自己的对话与记忆。<br>
                 至少需要保留一个启用中的伙伴，否则无法继续聊天。
             </p>
-        </section>
+        {% endcall %}
     </div>
 
     <script>
@@ -67,7 +65,7 @@
         const quotaEl = document.getElementById('quota-line');
         const bannerEl = document.getElementById('banner');
         const editorEl = document.getElementById('editor-card');
-        const titleEl = document.getElementById('editor-title');
+        const titleEl = editorEl.querySelector('.ui-card-title');
         const saveBtn = document.getElementById('save-btn');
         const nameEl = document.getElementById('f-name');
         const profileEl = document.getElementById('f-profile');
@@ -79,14 +77,14 @@
 
         function show(kind, text) {
             bannerEl.hidden = false;
-            bannerEl.className = 'notice' + (kind === 'err' ? ' notice-err' : kind === 'ok' ? ' notice-ok' : '');
+            bannerEl.className = 'ui-alert' + (kind === 'err' ? ' ui-alert--err' : kind === 'ok' ? ' ui-alert--ok' : '');
             bannerEl.textContent = text;
         }
 
-        function mkBtn(text, handler) {
+        function mkBtn(text, handler, danger) {
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = 'btn-ghost';
+            b.className = 'ui-btn ui-btn--ghost ui-btn--sm' + (danger ? ' ui-btn--danger' : '');
             b.textContent = text;
             b.addEventListener('click', handler);
             return b;
@@ -120,22 +118,22 @@
             listEl.textContent = '';
             if (!services.length) {
                 const e = document.createElement('div');
-                e.className = 'empty';
+                e.className = 'ui-empty';
                 e.textContent = '还没有伙伴。新建一个即可开始与指定角色对话。';
                 listEl.appendChild(e);
                 return;
             }
             services.forEach(function (sv) {
                 const row = document.createElement('div');
-                row.className = 'item';
+                row.className = 'ui-list-row ui-cluster';
 
                 const grow = document.createElement('div');
-                grow.className = 'grow';
+                grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
                 const t = document.createElement('div');
-                t.className = 'title';
+                t.className = 'u-fw-600';
                 t.textContent = sv.name;
                 const m = document.createElement('div');
-                m.className = 'meta';
+                m.className = 'u-muted u-fs-82';
                 m.textContent = '扮演：' + sv.profile_name + (sv.timezone ? ' · ' + sv.timezone : '');
                 grow.appendChild(t);
                 grow.appendChild(m);
@@ -143,20 +141,20 @@
 
                 if (sv.current) {
                     const cur = document.createElement('span');
-                    cur.className = 'tag tag-own';
+                    cur.className = 'ui-badge ui-badge--ink';
                     cur.textContent = '当前对话';
                     row.appendChild(cur);
                 }
                 const tag = document.createElement('span');
-                tag.className = 'tag ' + (sv.is_active ? 'tag-on' : 'tag-off');
+                tag.className = 'ui-badge ' + (sv.is_active ? 'ui-badge--ok' : 'ui-badge--err');
                 tag.textContent = sv.is_active ? '启用中' : '已停用';
                 row.appendChild(tag);
 
                 const acts = document.createElement('div');
-                acts.className = 'row-actions';
+                acts.className = 'ui-cluster ui-cluster--nowrap';
                 acts.appendChild(mkBtn('编辑', function () { openEditor(sv); }));
                 acts.appendChild(mkBtn(sv.is_active ? '停用' : '启用', function () { toggle(sv); }));
-                acts.appendChild(mkBtn('删除', function () { remove(sv); }));
+                acts.appendChild(mkBtn('删除', function () { remove(sv); }, true));
                 row.appendChild(acts);
 
                 listEl.appendChild(row);

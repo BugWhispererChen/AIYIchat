@@ -231,79 +231,11 @@
 /* ══ 管理页（角色 / 伙伴）══ */
 .page { max-width: var(--content-max); margin: 0 auto; padding: 1.4rem var(--page-pad-x) 3rem; }
 .page--narrow { max-width: var(--content-max-narrow); }
-.page > h1 {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin: .2rem 0 .35rem;
-}
-.page > .lede { font-size: .84rem; color: var(--text-2); margin: 0 0 1.2rem; }
-.card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 1.15rem;
-    margin-bottom: 1rem;
-}
-.card h2 {
-    font-family: var(--font-display);
-    font-size: 1.02rem;
-    font-weight: 600;
-    margin: 0 0 .7rem;
-}
-.card .hint { font-size: .78rem; color: var(--text-3); margin: .5rem 0 0; }
-.item {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: .45rem .6rem;
-    padding: .7rem 0;
-    border-top: 1px solid var(--border);
-}
-.item:first-of-type { border-top: none; }
-.item .title { font-size: .92rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-.item .meta { font-size: .76rem; color: var(--text-2); overflow-wrap: anywhere; }
-.item .grow { flex: 1; min-width: 8rem; }
-.tag {
-    font-size: .7rem;
-    padding: .12rem .48rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--border-strong);
-    color: var(--text-2);
-    white-space: nowrap;
-}
-.tag-on { background: var(--success-bg); color: var(--success-text); border-color: var(--success); }
-.tag-off { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger); }
-.tag-own { background: var(--primary-soft); color: var(--info-text); border-color: var(--primary-ink); }
-.row-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
-.row-actions button, .row-actions a {
-    width: auto; margin: 0; padding: .25rem .6rem; font-size: .76rem;
-    border-radius: var(--radius-sm);
-}
-.empty { font-size: .84rem; color: var(--text-3); padding: .8rem 0; text-align: center; }
+/* C 端列表页的卡片、栅格、徽标、提示条一律走 components.css 的 .ui-* 原语，
+   本页只保留外壳与场景组件（会话页、登录注册页） */
 label { font-size: .8rem; color: var(--text-2); }
 input, textarea, select { font-size: .88rem; }
 textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
-.grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
-.notice {
-    font-size: .82rem;
-    padding: .6rem .8rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-strong);
-    border-left-width: 3px;
-    background: var(--surface-2);
-    color: var(--text-2);
-    margin-bottom: .8rem;
-    overflow-wrap: anywhere;
-}
-.notice-err { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger); border-left-color: var(--danger); }
-.notice-ok { background: var(--success-bg); color: var(--success-text); border-color: var(--success); border-left-color: var(--success); }
-.actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .8rem; }
-.actions button { width: auto; margin: 0; padding: .45rem .95rem; font-size: .85rem; }
-.btn-ghost { background: var(--surface) !important; color: var(--text-2) !important; border: 1px solid var(--border-strong) !important; }
-details.sub { border-top: 1px solid var(--border); padding-top: .5rem; margin-top: .5rem; }
-details.sub summary { font-size: .8rem; color: var(--text-2); cursor: pointer; }
 
 /* ══ 会话页骨架 ══ */
 .chat-body {
@@ -633,8 +565,3 @@ details.sub summary { font-size: .8rem; color: var(--text-2); cursor: pointer; }
 .strength-level.lvl-weak { color: var(--danger-text); }
 .strength-level.lvl-mid { color: var(--warning-text); }
 .strength-level.lvl-strong { color: var(--success-text); }
-.notice-minor {
-    border-left-color: var(--amber);
-    background: var(--amber-soft);
-    color: var(--amber-ink);
-}

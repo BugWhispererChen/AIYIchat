@@ -788,8 +788,9 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-cluster--end  { justify-content: flex-end; }
 .ui-cluster--start  { justify-content: flex-start; }
 .ui-cluster--between { justify-content: space-between; }
-/* 让某个控件组吃掉剩余宽度（搜索框常配此用） */
-.ui-cluster--fill { flex: 1 1 auto; }
+/* 让某个控件组吃掉剩余宽度（搜索框常配此用）；
+   min-width:0 是 flex 子项能继续收缩的前提，缺了它长名称会把同行控件挤出滚动条 */
+.ui-cluster--fill { flex: 1 1 auto; min-width: 0; }
 /* 表格行内的操作组不换行，避免窄列里按钮竖排 */
 .ui-cluster--nowrap { flex-wrap: nowrap; }
 /* 动作条：页面/向导底部的操作行，用上分隔线把它与上方区块连成一体，

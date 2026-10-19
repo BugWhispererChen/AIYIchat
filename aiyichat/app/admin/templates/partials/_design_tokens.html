@@ -1,14 +1,8 @@
 {# 设计令牌引导层。
 
-   令牌的真实取值已外置到 static/css/tokens.css（由 partials/_assets.html 引入），
-   本 partial 仍被后台与 C 端共同 include，用途有二：
-   1) 保留"设计系统 Design Tokens"的渲染标记，作为配色唯一来源的可追溯说明；
-   2) 承载少数必须压过页面内联硬编码的暗色针对性微调。
+   令牌的真实取值已外置到 static/css/tokens.css（由 partials/_assets_core.html 引入），
+   本 partial 仍被后台与 C 端共同 include，只保留一件事：
+   在渲染出的 HTML 里留下"设计系统 Design Tokens"标记，
+   让任何一张页面都能就地追溯到配色的唯一来源。
 #}
 <!-- 设计系统 Design Tokens —— 取值见 /static/css/tokens.css，全局唯一样式来源 -->
-<style>
-    /* 暗色下少量硬编码组件的针对性微调（浅底/半透明背景重定义） */
-    [data-theme="dark"] .topbar { background: rgba(35, 32, 27, .85); }
-    [data-theme="dark"] table tbody tr:nth-child(even) { background: rgba(255, 255, 255, .03); }
-    [data-theme="dark"] .badge-role-assistant { background: #2b2740; color: #c7d2fe; }
-</style>

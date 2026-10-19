@@ -1,0 +1,73 @@
+{# 共享组件宏：新代码一律走这里的宏，避免再往模板里写内联 style。
+
+   用法：
+     {% from "partials/_ui.html" import page_header, kpi, card, badge, alert, empty %}
+     {{ page_header('账号管理', '按使用者归集额度、身份与机器人绑定') }}
+     {% call card('基础信息') %} … {% endcall %}
+#}
+{% from "partials/_icons.html" import icon %}
+
+{% macro page_header(title, subtitle='') -%}
+<div class="page-header">
+    <h3>{{ title }}</h3>
+    {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{% macro kpi(label, value, sub='', name='') -%}
+<div class="stat-card">
+    <div class="stat-head">
+        {% if name %}<span class="stat-icon">{{ icon(name) }}</span>{% endif %}
+        <span>{{ label }}</span>
+    </div>
+    <div class="value">{{ value }}{% if sub %} <small>{{ sub }}</small>{% endif %}</div>
+</div>
+{%- endmacro %}
+
+
+{% macro card(title='', action='') -%}
+<section class="card">
+    {% if title or action %}
+    <div class="card-title-row">
+        <h4>{{ title }}</h4>
+        <div class="form-actions">{{ action | safe }}</div>
+    </div>
+    {% endif %}
+    {{ caller() }}
+</section>
+{%- endmacro %}
+
+
+{# tone: active / inactive / warning / user / assistant / neutral #}
+{% macro badge(text, tone='neutral') -%}
+<span class="badge badge-{{ tone }}">{{ text }}</span>
+{%- endmacro %}
+
+
+{# kind: success / error / warning / info #}
+{% macro alert(kind, text) -%}
+{% if text %}
+<div class="alert alert-{{ kind}}" role="status">
+    {{ icon('alert') if kind == 'error' else icon('info') }}
+    <span>{{ text }}</span>
+</div>
+{% endif %}
+{%- endmacro %}
+
+
+{% macro empty(title, desc='', name='info', action='') -%}
+<div class="empty-state">
+    <div class="empty-icon">{{ icon(name) }}</div>
+    <div class="empty-title">{{ title }}</div>
+    {% if desc %}<div class="empty-desc">{{ desc }}</div>{% endif %}
+    {% if action %}<div class="form-actions u-mt-4">{{ action | safe }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{% macro skeleton(rows=3) -%}
+<div aria-hidden="true">
+    {% for _ in range(rows) %}<div class="ui-skeleton ui-skeleton--row u-mt-2"></div>{% endfor %}
+</div>
+{%- endmacro %}

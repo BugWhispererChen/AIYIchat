@@ -9,4 +9,6 @@
 <link rel="stylesheet" href="{{ asset('css/base.css') }}">
 <link rel="stylesheet" href="{{ asset('css/components.css') }}">
 <link rel="stylesheet" href="{{ asset('css/compat.css') }}">
+{# 主题需在首帧前落定，故同步加载：避免深浅色切换时的白屏闪烁 #}
+<script src="{{ asset('js/theme.js') }}"></script>
 {% include "partials/_design_tokens.html" %}

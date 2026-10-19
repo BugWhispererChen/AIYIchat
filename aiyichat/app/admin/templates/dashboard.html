@@ -1,101 +1,69 @@
 {% extends "base.html" %}
 {% set active_page = "dashboard" %}
+{% from "partials/_ui.html" import page_header, kpi %}
 
 {% block title %}仪表盘{% endblock %}
 
 {% block extra_head %}
 {# Chart.js 只有仪表盘与资源指标分片用到，故不随所有后台页面加载 #}
 <script src="{{ asset('vendor/chart.umd.min.js') }}"></script>
+<script src="{{ asset('js/dashboard-charts.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>系统仪表盘</h3>
-    <p class="subtitle">平台核心业务数据与服务器运行状态总览</p>
-</div>
+{{ page_header('系统仪表盘', '平台核心业务数据与服务器运行状态总览') }}
 
 <!-- 语义检索降级告警：embedding 开启但有失败记录时提醒运营排查 -->
 {% if embedding_status.degraded %}
-<div class="card" style="border-left:4px solid var(--warning-color,#e6a23c);margin-bottom:1rem;">
-    <strong>⚠ 语义检索处于降级态</strong>
-    <p class="subtitle" style="margin:0.25rem 0 0;">
+<div class="card card--warn">
+    <div class="card-title-row">
+        <h4>语义检索处于降级态</h4>
+    </div>
+    <p class="muted">
         Embedding 请求累计失败 {{ embedding_status.fail_count }} 次，记忆检索已自动回退到规则排序。
-        最近错误：<code style="font-size:0.8rem;">{{ embedding_status.last_error[:120] }}</code>
+    </p>
+    <p class="mono-block">
+        最近错误：<code>{{ embedding_status.last_error[:120] }}</code>
         {% if embedding_status.last_error_at %}
         <small class="muted">（{{ embedding_status.last_error_at.strftime('%Y-%m-%d %H:%M') }} UTC）</small>
         {% endif %}
-        请检查「AI 模型」页的 embedding 基础配置与密钥。
     </p>
+    <p class="muted">请检查「AI 模型」页的 embedding 基础配置与密钥。</p>
 </div>
 {% elif not embedding_status.enabled %}
-<div class="card" style="margin-bottom:1rem;">
-    <small class="muted">ℹ 语义检索未启用（embedding 关闭或未配密钥），长期记忆使用规则排序。</small>
-</div>
+<p class="muted u-mb-4">ℹ 语义检索未启用（embedding 关闭或未配密钥），长期记忆使用规则排序。</p>
 {% endif %}
 
 <!-- 业务统计 -->
 <div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-head">
-            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6z"/></svg></span>
-            <span>角色总数 / 活跃</span>
-        </div>
-        <div class="value">{{ stats.profile_count }} <small>/ {{ stats.active_profile_count }}</small></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head">
-            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-            <span>身份总数</span>
-        </div>
-        <div class="value">{{ stats.identity_count }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head">
-            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-            <span>对话总数</span>
-        </div>
-        <div class="value">{{ stats.conversation_count }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head">
-            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.17L4 17.17z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg></span>
-            <span>消息总数 / 今日</span>
-        </div>
-        <div class="value">{{ stats.message_total }} <small>/ {{ stats.message_today }}</small></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head">
-            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg></span>
-            <span>在线 Bot</span>
-        </div>
-        <div class="value">{{ stats.bot_count }}</div>
-    </div>
+    {{ kpi('角色总数 / 活跃', stats.profile_count, '/ ' ~ stats.active_profile_count, 'star') }}
+    {{ kpi('身份总数', stats.identity_count, '', 'globe') }}
+    {{ kpi('对话总数', stats.conversation_count, '', 'chat') }}
+    {{ kpi('消息总数 / 今日', stats.message_total, '/ ' ~ stats.message_today, 'bell') }}
+    {{ kpi('在线 Bot', stats.bot_count, '', 'dashboard') }}
 </div>
 
 <!-- 经营趋势图表 -->
-<div class="card" style="margin-bottom:1rem;">
-    <h3 style="margin-top:0;">近 14 天经营趋势</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;">
+<section class="card">
+    <div class="card-title-row">
+        <h4>近 14 天经营趋势</h4>
+        <span class="kicker">14-day trend</span>
+    </div>
+    <div class="chart-grid">
         <div>
-            <div class="chart-label" style="text-align:center;margin-bottom:0.5rem;color:var(--text-2);">每日消息量</div>
-            <div style="position:relative;height:220px;">
-                <canvas id="msgDailyChart"></canvas>
-            </div>
+            <div class="chart-label">每日消息量</div>
+            <div class="chart-box"><canvas id="msgDailyChart"></canvas></div>
         </div>
         <div>
-            <div class="chart-label" style="text-align:center;margin-bottom:0.5rem;color:var(--text-2);">AI 回复平均延迟 (ms)</div>
-            <div style="position:relative;height:220px;">
-                <canvas id="latencyChart"></canvas>
-            </div>
+            <div class="chart-label">AI 回复平均延迟 (ms)</div>
+            <div class="chart-box"><canvas id="latencyChart"></canvas></div>
         </div>
         <div>
-            <div class="chart-label" style="text-align:center;margin-bottom:0.5rem;color:var(--text-2);">近 7 天情绪分布</div>
-            <div style="position:relative;height:220px;">
-                <canvas id="emotionChart"></canvas>
-            </div>
+            <div class="chart-label">近 7 天情绪分布</div>
+            <div class="chart-box"><canvas id="emotionChart"></canvas></div>
         </div>
     </div>
-</div>
+</section>
 
 <!-- 系统资源监控 (HTMX 动态加载) -->
 <div id="system-metrics"
@@ -104,104 +72,17 @@
      hx-swap="innerHTML">
     <div class="monitor-panel">
         <h3>服务器状态监控</h3>
-        <p style="color:var(--text-2);font-size:0.9rem;text-align:center;padding:2rem 0;">加载中...</p>
+        <div class="ui-skeleton ui-skeleton--card"></div>
+        <div class="ui-skeleton ui-skeleton--card u-mt-2"></div>
     </div>
 </div>
 
+{# 图表数据交给静态脚本消费，模板里不再内联渲染逻辑 #}
 <script>
-(function() {
-    // Chart.js 在 base.html 底部加载，需等 window load 后再渲染，避免 Chart 未定义
-    function renderCharts() {
-        if (typeof Chart === 'undefined') return;
-
-    var msgLabels = {{ charts.msg_daily_labels | tojson }};
-    var msgValues = {{ charts.msg_daily_values | tojson }};
-    var latLabels = {{ charts.latency_labels | tojson }};
-    var latValues = {{ charts.latency_values | tojson }};
-    var emoLabels = {{ charts.emotion_labels | tojson }};
-    var emoValues = {{ charts.emotion_values | tojson }};
-
-    var css = getComputedStyle(document.documentElement);
-    var chartPrimary = css.getPropertyValue('--chart-primary').trim() || '#6366f1';
-    var chartPrimarySoft = css.getPropertyValue('--chart-primary-soft').trim() || 'rgba(99,102,241,0.12)';
-    var chartSuccess = css.getPropertyValue('--chart-success').trim() || '#10b981';
-    var chartSuccessSoft = css.getPropertyValue('--chart-success-soft').trim() || 'rgba(16,185,129,0.12)';
-    var chartWarning = css.getPropertyValue('--chart-warning').trim() || '#f59e0b';
-    var chartDanger = css.getPropertyValue('--chart-danger').trim() || '#ef4444';
-    var chartInfo = css.getPropertyValue('--chart-info').trim() || '#8b5cf6';
-    var chartTrack = css.getPropertyValue('--chart-track').trim() || '#e2e8f0';
-    var chartText = css.getPropertyValue('--chart-text').trim() || '#94a3b8';
-
-    var lineOpts = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
-    };
-
-    function showEmpty(el, text) {
-        // 无数据时用居中提示替换固定高度画布容器，避免空图表并保持盒子高度
-        el.parentNode.innerHTML = '<div style="display:flex;align-items:center;'
-            + 'justify-content:center;height:100%;color:' + chartText
-            + ';font-size:0.85rem;">' + text + '</div>';
-    }
-
-    var msgEl = document.getElementById('msgDailyChart');
-    if (msgEl) {
-        if (msgValues.length === 0) {
-            showEmpty(msgEl, '暂无数据');
-        } else {
-            new Chart(msgEl, {
-                type: 'line',
-                data: { labels: msgLabels, datasets: [{
-                    data: msgValues, borderColor: chartPrimary,
-                    backgroundColor: chartPrimarySoft, fill: true, tension: 0.3
-                }] },
-                options: lineOpts
-            });
-        }
-    }
-
-    var latEl = document.getElementById('latencyChart');
-    if (latEl) {
-        if (latValues.length === 0) {
-            showEmpty(latEl, '暂无数据');
-        } else {
-            new Chart(latEl, {
-                type: 'line',
-                data: { labels: latLabels, datasets: [{
-                    data: latValues, borderColor: chartSuccess,
-                    backgroundColor: chartSuccessSoft, fill: true, tension: 0.3
-                }] },
-                options: lineOpts
-            });
-        }
-    }
-
-    var emoEl = document.getElementById('emotionChart');
-    if (emoEl) {
-        if (emoValues.length === 0) {
-            showEmpty(emoEl, '暂无情绪数据');
-        } else {
-            new Chart(emoEl, {
-                type: 'doughnut',
-                data: { labels: emoLabels, datasets: [{
-                    data: emoValues,
-                    backgroundColor: [chartDanger, chartWarning, chartPrimary, chartSuccess, chartInfo, chartTrack]
-                }] },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom' } }
-                }
-            });
-        }
-    }
-    }
-    if (document.readyState === 'complete') {
-        renderCharts();
-    } else {
-        window.addEventListener('load', renderCharts);
-    }
-})();
+window.DASHBOARD_CHARTS = {{ {
+    "msg":     {"labels": charts.msg_daily_labels,  "values": charts.msg_daily_values},
+    "latency": {"labels": charts.latency_labels,    "values": charts.latency_values},
+    "emotion": {"labels": charts.emotion_labels,    "values": charts.emotion_values}
+} | tojson }};
 </script>
 {% endblock %}

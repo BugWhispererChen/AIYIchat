@@ -40,6 +40,7 @@
     --surface: #fffdf9;            /* 卡片表面：微暖白，避免纯白刺眼 */
     --surface-2: #f4f1ea;          /* 次级表面（表头/浅底区/悬停） */
     --surface-3: #ebe6dc;          /* 三级表面（分隔块、代码底） */
+    --surface-translucent: rgba(255, 253, 249, .86);  /* 粘顶栏：需压在内容之上 */
     --border: #e6e1d6;             /* 常规边框 */
     --border-strong: #d3ccbd;      /* 强调边框 */
 
@@ -178,6 +179,7 @@
     --surface: #23201b;
     --surface-2: #2b2721;
     --surface-3: #343028;
+    --surface-translucent: rgba(35, 32, 27, .86);
     --border: #3a342c;
     --border-strong: #4c453a;
 

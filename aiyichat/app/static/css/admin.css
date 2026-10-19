@@ -589,6 +589,8 @@ fieldset, .card, article { margin-bottom: 1.25rem; }
 .search-bar { display: flex; align-items: center; gap: .5rem; margin-bottom: 0; }
 .search-bar input[type="search"] { flex: 1; min-width: 0; width: auto !important; margin: 0; }
 .search-bar button, .search-bar [role="button"] { white-space: nowrap; flex-shrink: 0; width: auto !important; }
+/* 本页即时过滤框：与服务端搜索并列，宽度固定不参与拉伸 */
+.search-bar .filter-input { flex: none; width: 200px; margin-left: var(--space-2); }
 
 /* ══ HTMX 指示器 ══ */
 .htmx-indicator { display: none; opacity: 0; transition: opacity .2s ease-in; }

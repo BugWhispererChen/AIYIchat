@@ -18,13 +18,16 @@
             <a href="/admin/conversations" role="button" class="ghost">重置</a>
             {% endif %}
         </form>
+        {# 本页快速过滤：不改查询条件，只在已渲染的行里即时筛，配合表头排序使用 #}
+        <input type="search" class="filter-input" placeholder="本页快速过滤"
+               data-filter="#conv-table" aria-label="本页快速过滤">
     </div>
 </div>
 
 {% if conv_infos %}
 <div class="card">
     <div class="table-wrap">
-    <table>
+    <table id="conv-table">
         <thead>
             <tr>
                 <th data-sortable="对话 ID">对话 ID</th>

@@ -104,12 +104,6 @@
 }
 .auth-foot a { color: var(--primary); text-decoration: none; font-weight: 550; }
 .auth-foot a:hover { text-decoration: underline; }
-.auth-legal {
-    margin-top: 1.1rem;
-    font-size: .74rem;
-    line-height: 1.7;
-    color: var(--text-3);
-}
 .captcha-row { display: flex; align-items: flex-end; gap: var(--space-3); }
 .captcha-row .ui-fill { min-width: 0; }
 .captcha-img {
@@ -230,7 +224,6 @@
 
 /* ══ 管理页（角色 / 伙伴）══ */
 .page { max-width: var(--content-max); margin: 0 auto; padding: 1.4rem var(--page-pad-x) 3rem; }
-.page--narrow { max-width: var(--content-max-narrow); }
 /* C 端列表页的卡片、栅格、徽标、提示条一律走 components.css 的 .ui-* 原语，
    本页只保留外壳与场景组件（会话页、登录注册页） */
 label { font-size: .8rem; color: var(--text-2); }

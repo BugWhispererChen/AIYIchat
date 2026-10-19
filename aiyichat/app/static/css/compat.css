@@ -8,15 +8,6 @@
    （页面内联样式在级联中晚于本文件，重定义会被覆盖而无意义）。
    ══════════════════════════════════════════════════════ */
 
-/* 命名守卫豁免：badge-role-user 是后台通用的强调色徽标，
-   与使用者称谓无关（详见 tools/test/test_naming_conventions.py），
-   新代码请改用 .ui-badge--ink 或本层的 .badge--ink */
-.badge--ink  { background: var(--info-bg);    color: var(--info-text); }
-.badge--ok   { background: var(--success-bg); color: var(--success-text); }
-.badge--warn { background: var(--warning-bg); color: var(--warning-text); }
-.badge--err  { background: var(--danger-bg);  color: var(--danger-text); }
-.badge--amber { background: var(--amber-soft); color: var(--amber-ink); }
-
 /* 旧 muted/text-secondary 文本档统一吃到新暖墨次级色 */
 .muted { color: var(--text-2); }
 
@@ -26,16 +17,3 @@ td.num, th.num {
     font-variant-numeric: tabular-nums;
     text-align: right;
 }
-
-/* 徽标/按钮里的图标对齐 */
-.btn .ui-icon, a.badge .ui-icon { margin-right: 4px; }
-
-/* 徽标本身是链接时（如表情包分组筛选条），文字色必须跟随徽标语义色，
-   否则会被全局 a 取色规则盖成低对比的一档 */
-a.badge { text-decoration: none; color: var(--text-2); align-self: center; }
-a.badge-role-user      { color: var(--info-text); }
-a.badge-role-assistant { color: var(--amber-ink); }
-a.badge-active   { color: var(--success-text); }
-a.badge-inactive { color: var(--danger-text); }
-a.badge-warning  { color: var(--warning-text); }
-a.badge-neutral  { color: var(--text-2); }

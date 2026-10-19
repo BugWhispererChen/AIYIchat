@@ -283,6 +283,9 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 }
 .ui-select--sm { max-width: 220px; }
 .ui-input--sm { max-width: 200px; }
+/* 表格行内的窄输入位（审核备注、额度数字） */
+.ui-input--tight { max-width: 8rem; }
+.ui-input--num { max-width: 5rem; }
 
 /* 次级行：附属于上一行的编辑带，去掉上边框以与主行连成一块 */
 .ui-table tbody tr.ui-row-sub > td {
@@ -871,6 +874,8 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     transition: transform var(--transition);
 }
 details[open] > .ui-summary::before { transform: rotate(45deg); }
+/* 表格行内的小号折叠头 */
+.ui-summary--sm { font-size: .78rem; font-weight: 500; }
 
 /* ── 布局层响应式：只作用于 .ui-*，不与 admin.css 撞名 ── */
 @media (max-width: 1024px) {

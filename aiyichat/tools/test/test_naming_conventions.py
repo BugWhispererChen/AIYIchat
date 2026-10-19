@@ -166,11 +166,19 @@ class TestTemplateConsistency:
                     hits.append(f"{tpl.name}: {s}")
         assert not hits, "模板残留改名前的字段名:\n" + "\n".join(hits)
 
-    def test_badge_role_user_class_kept(self) -> None:
-        """badge-role-user 是后台通用蓝色徽标，与"用户"语义无关，保留不改。"""
-        assert "badge-role-user" in (TEMPLATES / "web_credentials.html").read_text(
-            encoding="utf-8"
-        )
+    def test_status_badge_uses_semantic_tone_class(self) -> None:
+        """网页身份的状态徽标必须走设计系统的语义档，不得回退到旧命名。
+
+        旧断言盯的是 `badge-role-user`：它当年是后台通用蓝色徽标，与"用户"语义无关，
+        立此断言是为了防止身份改名那次清理把它误当成术语改掉。
+        前端结构收敛已把 legacy `badge-*` 全量迁到 `.ui-badge--*` 语义档，
+        该类别名在本页不复存在，故守卫改为盯新的语义档出口，意图不变：
+        状态色是通用视觉档，不是"用户/身份"术语，不许再被改掉。
+        """
+        text = (TEMPLATES / "web_credentials.html").read_text(encoding="utf-8")
+        assert "{{ badge(" in text, "状态徽标应走 partials/_ui.html 的 badge 宏（出口为 .ui-badge 语义档）"
+        assert 'class="badge ' not in text, "legacy badge-* 类已收敛，不应再出现在本页"
+        assert "badge-role-user" not in text, "legacy badge-* 类已收敛，不应再出现在本页"
 
 
 class TestStickerTranscriptionSingleSource:

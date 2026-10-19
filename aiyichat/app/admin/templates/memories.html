@@ -1,204 +1,49 @@
 {% extends "base.html" %}
 {% set active_page = "memories" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}记忆管理{% endblock %}
 
+{% from "partials/_ui.html" import page_header, badge, empty, table_meta %}
+
 {% block content %}
-{% if detail %}
-<!-- ── 详情视图：单个服务的记忆 ─────────────────────── -->
-<div class="page-header">
-    <h3>记忆详情 · {{ detail.service_display }}</h3>
-    <p class="subtitle">该服务的话题脉络、记忆事实与待跟进事件（只读 + 删除）</p>
-</div>
-
-{% if saved %}
-<div class="card"><p style="color:var(--success-color,green);margin:0;">✓ 已删除</p></div>
-{% endif %}
-
-<div class="card">
-    <h4>话题脉络</h4>
-    <p>当前话题：{% if detail.memory.current_topic %}<span class="badge badge-role-user">{{ detail.memory.current_topic }}</span>{% else %}<small class="muted">无</small>{% endif %}</p>
-    {% if detail.memory.topic_history %}
-    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        {% for topic in detail.memory.topic_history %}
-        <span class="badge badge-neutral">{{ topic }}</span>
-        {% endfor %}
-    </div>
-    {% endif %}
-</div>
-
-<div class="card">
-    <h4>记忆事实（{{ detail.facts|length }} 条）</h4>
-    {% if detail.facts %}
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>内容</th>
-                <th>类别</th>
-                <th>最后引用</th>
-                <th>向量</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for fact in detail.facts %}
-            <tr>
-                <td>{{ fact.content }}</td>
-                <td>
-                    <span class="badge badge-neutral">{{ fact.category or '-' }}</span>
-                    {% if fact.tier == 'core' %}<span class="badge badge-warning" title="核心层：常驻注入，永不淘汰">核心</span>{% endif %}
-                </td>
-                <td><span title="{{ (fact.last_referenced_at|to_beijing).strftime('%Y-%m-%d %H:%M') }}">{{ fact.last_referenced_at|relative_time }}</span></td>
-                <td>{% if fact.embedding %}✓{% else %}<small class="muted">—</small>{% endif %}</td>
-                <td>
-                    <form method="post" action="/admin/memories/{{ detail.memory.service_id }}/delete-fact"
-                          onsubmit="return confirm('确定删除这条记忆事实？');" style="margin:0;">
-                        <input type="hidden" name="content" value="{{ fact.content }}">
-                        <button type="submit" class="btn-sm ghost" style="color:var(--danger-color);">删除</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    {% else %}
-    <small class="muted">暂无记忆事实</small>
-    {% endif %}
-</div>
-
-<div class="card">
-    <h4>待跟进事件（{{ detail.memory.pending_events|length }} 条）</h4>
-    {% if detail.memory.pending_events %}
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr><th>内容</th><th>状态</th></tr>
-        </thead>
-        <tbody>
-            {% for ev in detail.memory.pending_events %}
-            <tr>
-                <td>{{ ev.content }}</td>
-                <td>
-                    {% if ev.followed_up %}
-                    <span class="badge badge-neutral">已跟进</span>
-                    {% else %}
-                    <span class="badge badge-warning">待跟进</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    {% else %}
-    <small class="muted">暂无待跟进事件</small>
-    {% endif %}
-</div>
-
-{% if detail.memory.entities %}
-<div class="card">
-    <h4>实体关系（{{ detail.memory.entities|length }} 个）</h4>
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr><th>名称</th><th>类型</th><th>别名</th><th>与身份关系</th><th>情感</th><th>提及次数</th><th>实体间关系</th><th>属性</th><th>最近提及</th></tr>
-        </thead>
-        <tbody>
-            {% for ent in detail.memory.entities %}
-            <tr>
-                <td>{{ ent.name }}</td>
-                <td>
-                    {% if ent.entity_type == "person" %}<span class="badge badge-primary">人物</span>
-                    {% elif ent.entity_type == "pet" %}<span class="badge badge-success">宠物</span>
-                    {% else %}<span class="badge badge-neutral">事物</span>{% endif %}
-                </td>
-                <td>
-                    {% if ent.aliases %}
-                    {% for alias in ent.aliases %}<span class="badge badge-neutral">{{ alias }}</span> {% endfor %}
-                    {% else %}-{% endif %}
-                </td>
-                <td>{{ ent.relation_to_identity or '-' }}</td>
-                <td>{{ ent.sentiment or '-' }}</td>
-                <td>{{ ent.mention_count }}</td>
-                <td>
-                    {% if ent.relations %}
-                    {% for rel in ent.relations %}
-                    <span class="badge {% if rel.valid %}badge-primary{% else %}badge-neutral{% endif %}" {% if not rel.valid %}style="opacity:0.5;text-decoration:line-through;" title="已失效"{% endif %}>
-                        {{ rel.relation }}: {{ rel.target }}
-                    </span>
-                    {% endfor %}
-                    {% else %}-{% endif %}
-                </td>
-                <td>
-                    {% if ent.attributes %}
-                    {% for k, v in ent.attributes.items() %}<span class="badge badge-neutral">{{ k }}: {{ v }}</span> {% endfor %}
-                    {% else %}-{% endif %}
-                </td>
-                <td><span title="{{ (ent.last_mentioned_at|to_beijing).strftime('%Y-%m-%d %H:%M') }}">{{ ent.last_mentioned_at|relative_time }}</span></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endif %}
-
-<div class="btn-row" style="gap:0.5rem;">
-    <a href="/admin/memories" role="button" class="ghost btn-sm">← 返回列表</a>
-    <a href="/admin/memories/{{ detail.memory.service_id }}/injections" role="button" class="ghost btn-sm">注入观测</a>
-    <form method="post" action="/admin/memories/{{ detail.memory.service_id }}/clear"
-          onsubmit="return confirm('确定清空该服务的全部记忆？此操作不可恢复。');" style="margin:0;">
-        <button type="submit" class="btn-sm" style="background:var(--danger-color);border-color:var(--danger-color);">清空全部记忆</button>
-    </form>
-</div>
-
-{% else %}
-<!-- ── 列表视图：所有存在记忆的服务 ─────────────────── -->
-<div class="page-header">
-    <h3>记忆管理</h3>
-    <p class="subtitle">查看各对话服务"记住了什么"，支持删除单条事实与清空记忆（隐私删除诉求）</p>
-</div>
+{{ page_header('记忆管理',
+               '查看各对话服务"记住了什么"，支持删除单条事实与清空记忆（隐私删除诉求）', '运营管理') }}
 
 {% if memory_infos %}
-<div class="card">
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>服务</th>
-                <th>当前话题</th>
-                <th>事实数</th>
-                <th>已向量化</th>
-                <th>待跟进</th>
-                <th>更新时间</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for info in memory_infos %}
-            <tr>
-                <td>{{ info.service_display }}</td>
-                <td>{{ info.memory.current_topic or '-' }}</td>
-                <td>{{ info.fact_count }}</td>
-                <td>{{ info.embedded_count }}</td>
-                <td>{% if info.pending_open %}<span class="badge badge-warning">{{ info.pending_open }}</span>{% else %}0{% endif %}</td>
-                <td><span title="{{ (info.memory.updated_at|to_beijing).strftime('%Y-%m-%d %H:%M') }}">{{ info.memory.updated_at|relative_time }}</span></td>
-                <td><a href="/admin/memories/{{ info.memory.service_id }}" role="button" class="btn-sm ghost">查看</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<section class="ui-card ui-card--flush">
+    {{ table_meta('共 ' ~ memory_infos|length ~ ' 个服务有长期记忆') }}
+    <div class="ui-table-wrap">
+        <table class="ui-table">
+            <thead>
+                <tr>
+                    <th>服务</th>
+                    <th>当前话题</th>
+                    <th class="num">事实数</th>
+                    <th class="num">已向量化</th>
+                    <th class="num">待跟进</th>
+                    <th>更新时间</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for info in memory_infos %}
+                <tr>
+                    <td>{{ info.service_display }}</td>
+                    <td>{{ info.memory.current_topic or '-' }}</td>
+                    <td class="num">{{ info.fact_count }}</td>
+                    <td class="num">{{ info.embedded_count }}</td>
+                    <td class="num">
+                        {% if info.pending_open %}{{ badge(info.pending_open, 'warn') }}{% else %}0{% endif %}
+                    </td>
+                    <td><span title="{{ (info.memory.updated_at|to_beijing).strftime('%Y-%m-%d %H:%M') }}">{{ info.memory.updated_at|relative_time }}</span></td>
+                    <td><a href="/admin/memories/{{ info.memory.service_id }}" class="ui-btn ui-btn--outline ui-btn--sm">查看</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-</div>
+</section>
 {% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"/></svg></div>
-        <div class="empty-title">暂无长期记忆</div>
-        <div class="empty-desc">对话达到提取条件后，焦点追踪会自动生成服务级记忆</div>
-    </div>
-</div>
-{% endif %}
+{{ empty('暂无长期记忆', '对话达到提取条件后，焦点追踪会自动生成服务级记忆', 'memory') }}
 {% endif %}
 {% endblock %}

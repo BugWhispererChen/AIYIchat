@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% set active_page = "memories" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}记忆注入观测{% endblock %}
+
+{% from "partials/_ui.html" import page_header, badge, empty %}
 
 {% block breadcrumb %}
 <a href="/admin/memories">记忆管理</a>
@@ -11,108 +14,104 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>记忆注入观测 · {{ service_display }}</h3>
-    <p class="subtitle">每轮对话注入了哪些记忆、各占多少 token、上下文信号（最近 {{ snapshots|length }} 轮）</p>
-</div>
+{{ page_header('记忆注入观测 · ' ~ service_display,
+               '每轮对话注入了哪些记忆、各占多少 token、上下文信号（最近 ' ~ snapshots|length ~ ' 轮）',
+               '运营管理') }}
 
 {% if metrics and metrics.total_injected %}
 <!-- ── 记忆质量评估指标 ─────────────────────────────── -->
-<div class="card">
-    <h4>记忆质量评估</h4>
-    <div class="u-row u-gap-8" >
-        <div>
-            <div style="font-size:1.6rem;font-weight:600;color:var(--primary);">
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">记忆质量评估</h4></div>
+    <div class="ui-grid ui-grid--2">
+        <div class="ui-stack ui-stack--tight">
+            <div class="ui-metric">
                 {% if metrics.hit_rate is not none %}{{ (metrics.hit_rate * 100) | round(1) }}%{% else %}-{% endif %}
             </div>
-            <div class="muted u-fs-85" >记忆命中率（{{ metrics.hit_count }}/{{ metrics.total_injected }} 条被回复引用）</div>
+            <div class="muted u-fs-85">记忆命中率（{{ metrics.hit_count }}/{{ metrics.total_injected }} 条被回复引用）</div>
         </div>
-        <div>
-            <div style="font-size:1.6rem;font-weight:600;color:var(--success);">
+        <div class="ui-stack ui-stack--tight">
+            <div class="ui-metric ui-metric--ok">
                 {% if metrics.active_rate is not none %}{{ (metrics.active_rate * 100) | round(1) }}%{% else %}-{% endif %}
             </div>
-            <div class="muted u-fs-85" >记忆有效率（近 7 天 {{ metrics.active_facts }}/{{ metrics.total_facts }} 条被注入）</div>
+            <div class="muted u-fs-85">记忆有效率（近 7 天 {{ metrics.active_facts }}/{{ metrics.total_facts }} 条被注入）</div>
         </div>
     </div>
-    <p class="muted" style="font-size:0.8rem;margin:0.6rem 0 0;">命中率偏低可适当调低检索条数或提高语义权重；有效率偏低说明存在“死记忆”，可考虑清理。</p>
-</div>
+    <p class="ui-note">命中率偏低可适当调低检索条数或提高语义权重；有效率偏低说明存在“死记忆”，可考虑清理。</p>
+</section>
 {% endif %}
 
 {% if latest %}
+{% set total = latest.total_tokens if latest.total_tokens > 0 else 1 %}
+{% set sys_pct = (latest.system_prompt_tokens / total * 100) | round(1) %}
+{% set mem_pct = (latest.memory_tokens / total * 100) | round(1) %}
+{% set his_pct = (latest.history_tokens / total * 100) | round(1) %}
+{% set sum_pct = (latest.summary_tokens / total * 100) | round(1) %}
 <!-- ── Prompt Breakdown：最新一轮 token 占比堆叠 ─────────── -->
-<div class="card">
-    <h4>Prompt 构成（最新一轮）</h4>
-    {% set total = latest.total_tokens if latest.total_tokens > 0 else 1 %}
-    <div style="display:flex;height:2rem;border-radius:6px;overflow:hidden;margin:0.6rem 0;">
-        {% set sys_pct = (latest.system_prompt_tokens / total * 100) | round(1) %}
-        {% set mem_pct = (latest.memory_tokens / total * 100) | round(1) %}
-        {% set his_pct = (latest.history_tokens / total * 100) | round(1) %}
-        {% set sum_pct = (latest.summary_tokens / total * 100) | round(1) %}
-        {% if sys_pct > 0 %}<div style="width:{{ sys_pct }}%;background:var(--primary);" title="系统提示 {{ latest.system_prompt_tokens }}"></div>{% endif %}
-        {% if mem_pct > 0 %}<div style="width:{{ mem_pct }}%;background:var(--success);" title="记忆注入 {{ latest.memory_tokens }}"></div>{% endif %}
-        {% if his_pct > 0 %}<div style="width:{{ his_pct }}%;background:var(--warning);" title="历史对话 {{ latest.history_tokens }}"></div>{% endif %}
-        {% if sum_pct > 0 %}<div style="width:{{ sum_pct }}%;background:var(--chart-info);" title="摘要 {{ latest.summary_tokens }}"></div>{% endif %}
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">Prompt 构成（最新一轮）</h4></div>
+    <div class="ui-stackbar">
+        {% if sys_pct > 0 %}<div class="ui-stackbar__seg ui-stackbar__seg--sys" style="--seg-pct: {{ sys_pct }}%;" title="系统提示 {{ latest.system_prompt_tokens }}"></div>{% endif %}
+        {% if mem_pct > 0 %}<div class="ui-stackbar__seg ui-stackbar__seg--mem" style="--seg-pct: {{ mem_pct }}%;" title="记忆注入 {{ latest.memory_tokens }}"></div>{% endif %}
+        {% if his_pct > 0 %}<div class="ui-stackbar__seg ui-stackbar__seg--his" style="--seg-pct: {{ his_pct }}%;" title="历史对话 {{ latest.history_tokens }}"></div>{% endif %}
+        {% if sum_pct > 0 %}<div class="ui-stackbar__seg ui-stackbar__seg--sum" style="--seg-pct: {{ sum_pct }}%;" title="摘要 {{ latest.summary_tokens }}"></div>{% endif %}
     </div>
-    <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:0.85rem;">
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--primary);border-radius:2px;margin-right:0.3rem;"></i>系统提示 {{ latest.system_prompt_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--success);border-radius:2px;margin-right:0.3rem;"></i>记忆注入 {{ latest.memory_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--warning);border-radius:2px;margin-right:0.3rem;"></i>历史对话 {{ latest.history_tokens }}</span>
-        <span><i style="display:inline-block;width:0.7rem;height:0.7rem;background:var(--chart-info);border-radius:2px;margin-right:0.3rem;"></i>摘要 {{ latest.summary_tokens }}</span>
+    <div class="ui-legend">
+        <span><i class="ui-legend__swatch ui-legend__swatch--sys"></i>系统提示 {{ latest.system_prompt_tokens }}</span>
+        <span><i class="ui-legend__swatch ui-legend__swatch--mem"></i>记忆注入 {{ latest.memory_tokens }}</span>
+        <span><i class="ui-legend__swatch ui-legend__swatch--his"></i>历史对话 {{ latest.history_tokens }}</span>
+        <span><i class="ui-legend__swatch ui-legend__swatch--sum"></i>摘要 {{ latest.summary_tokens }}</span>
         <span class="muted">合计约 {{ latest.total_tokens }} tokens</span>
     </div>
     {% if latest.current_topic or latest.mood_label %}
-    <p style="margin:0.6rem 0 0;">
-        {% if latest.current_topic %}当前话题：<span class="badge badge-role-user">{{ latest.current_topic }}</span>{% endif %}
-        {% if latest.mood_label %}角色心情：<span class="badge badge-neutral">{{ latest.mood_label }}</span>{% endif %}
-    </p>
+    <div class="ui-cluster u-mt-3">
+        {% if latest.current_topic %}<span>当前话题：{{ badge(latest.current_topic, 'ink') }}</span>{% endif %}
+        {% if latest.mood_label %}<span>角色心情：{{ badge(latest.mood_label, 'line') }}</span>{% endif %}
+    </div>
     {% endif %}
-</div>
+</section>
 {% endif %}
 
 <!-- ── 逐轮注入明细 ─────────────────────────────────── -->
-<div class="card">
-    <h4>逐轮注入明细</h4>
+<section class="ui-card">
+    <div class="ui-card-head"><h4 class="ui-card-title">逐轮注入明细</h4></div>
     {% if snapshots %}
         {% for snap in snapshots %}
-        <details style="border-bottom:1px solid var(--muted-border-color,var(--text));padding:0.5rem 0;">
-            <summary class="u-pointer" >
+        <details class="ui-list-row">
+            <summary class="u-pointer">
                 <span title="{{ (snap.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ snap.created_at|relative_time }}</span>
                 · 注入 <strong>{{ snap.injected_facts|length }}</strong> 条记忆
                 · 记忆 {{ snap.memory_tokens }} tok / 共 {{ snap.total_tokens }} tok
-                {% if snap.current_topic %}· <span class="badge badge-neutral">{{ snap.current_topic }}</span>{% endif %}
+                {% if snap.current_topic %}· {{ badge(snap.current_topic, 'line') }}{% endif %}
             </summary>
             {% if snap.injected_facts %}
-            <div class="table-wrap u-mt-2" >
-            <table>
-                <thead>
-                    <tr><th>记忆内容</th><th>类别</th><th>评分</th><th>token</th></tr>
-                </thead>
-                <tbody>
-                    {% for f in snap.injected_facts %}
-                    <tr>
-                        <td>{{ f.content }}</td>
-                        <td><span class="badge badge-neutral">{{ f.category or '-' }}</span></td>
-                        <td>{{ '%.3f' | format(f.score) }}</td>
-                        <td>{{ f.token_cost }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="ui-table-wrap u-mt-2">
+                <table class="ui-table">
+                    <thead>
+                        <tr><th>记忆内容</th><th>类别</th><th class="num">评分</th><th class="num">token</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for f in snap.injected_facts %}
+                        <tr>
+                            <td>{{ f.content }}</td>
+                            <td>{{ badge(f.category or '-', 'line') }}</td>
+                            <td class="num">{{ '%.3f' | format(f.score) }}</td>
+                            <td class="num">{{ f.token_cost }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
             {% else %}
-            <p style="margin:0.4rem 0;"><small class="muted">本轮未注入任何记忆</small></p>
+            <p class="ui-note"><small class="muted">本轮未注入任何记忆</small></p>
             {% endif %}
         </details>
         {% endfor %}
     {% else %}
-    <div class="empty-state">
-        <div class="empty-title">暂无注入快照</div>
-        <div class="empty-desc">该服务产生对话后，将自动记录每轮的记忆注入明细</div>
-    </div>
+    {{ empty('暂无注入快照', '该服务产生对话后，将自动记录每轮的记忆注入明细', 'memory') }}
     {% endif %}
-</div>
+</section>
 
-<div class="btn-row" style="gap:0.5rem;">
-    <a href="/admin/memories/{{ service_id }}" role="button" class="ghost btn-sm">← 返回记忆详情</a>
+<div class="ui-cluster ui-cluster--bar">
+    <a href="/admin/memories/{{ service_id }}" class="ui-btn ui-btn--ghost ui-btn--sm">← 返回记忆详情</a>
 </div>
 {% endblock %}

@@ -63,7 +63,6 @@ async def memories_page(
 
     return _render(request, "memories.html", {
         "memory_infos": memory_infos,
-        "detail": None,
         "active_page": "memories",
     })
 
@@ -86,8 +85,7 @@ async def memory_detail(
         memory.facts, key=lambda f: f.last_referenced_at, reverse=True
     )
 
-    return _render(request, "memories.html", {
-        "memory_infos": [],
+    return _render(request, "memory_detail.html", {
         "detail": {
             "memory": memory,
             "facts": facts,

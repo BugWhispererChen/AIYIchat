@@ -88,6 +88,16 @@
     color: var(--danger-text);
 }
 .ui-btn--outline.ui-btn--danger:hover { background: var(--danger-bg); }
+/* 幽灵式危险按钮：密集表格行（如记忆事实列表）里的删除，
+   26 行实心红会形成一片红色噪声，这里只保留红色文字 */
+.ui-btn--ghost.ui-btn--danger {
+    background: transparent;
+    border-color: transparent;
+    color: var(--danger-text);
+}
+.ui-btn--ghost.ui-btn--danger:hover { background: var(--danger-bg); }
+/* Pico 让 button 在任意容器里撑满，表格单元格内的操作按钮必须收回自身宽度 */
+.ui-table .ui-btn { width: auto; }
 .ui-btn--sm {
     height: var(--btn-sm-height);
     padding: 0 var(--space-3);
@@ -154,6 +164,8 @@
 .ui-badge--ink   { background: var(--info-bg);    color: var(--info-text); }
 .ui-badge--amber { background: var(--amber-soft); color: var(--amber-ink); }
 .ui-badge--line  { background: transparent; border-color: var(--border-strong); color: var(--text-2); }
+/* 失效项：保留可见但不参与强调（如已失效的实体间关系） */
+.ui-badge--void  { opacity: .55; text-decoration: line-through; }
 
 /* 状态光点：琥珀脉冲仅用于"对方"的在线/作息氛围，不承载可达性信息 */
 .ui-dot {
@@ -314,6 +326,53 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     font-weight: 600;
     color: var(--primary);
 }
+
+/* ── 堆叠占比条与图例（Prompt token 构成一类的组成可视化） ── */
+.ui-stackbar {
+    display: flex;
+    height: 2rem;
+    margin: var(--space-2) 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+/* 各段宽度由 --seg-pct 自定义属性供给，模板里不写死 width */
+.ui-stackbar__seg { width: var(--seg-pct, 0%); height: 100%; }
+.ui-stackbar__seg--sys { background: var(--primary); }
+.ui-stackbar__seg--mem { background: var(--success); }
+.ui-stackbar__seg--his { background: var(--warning); }
+.ui-stackbar__seg--sum { background: var(--chart-info); }
+
+.ui-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-5);
+    font-size: .85rem;
+}
+.ui-legend__swatch {
+    display: inline-block;
+    width: .7rem; height: .7rem;
+    margin-right: var(--space-1);
+    border-radius: 2px;
+}
+.ui-legend__swatch--sys { background: var(--primary); }
+.ui-legend__swatch--mem { background: var(--success); }
+.ui-legend__swatch--his { background: var(--warning); }
+.ui-legend__swatch--sum { background: var(--chart-info); }
+
+/* 卡片内的列表行（逐轮明细一类的折叠条目）：用分隔线代替条目外框 */
+.ui-list-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.ui-list-row:last-child { border-bottom: 0; padding-bottom: 0; }
+
+/* 卡片内的大号指标数字 */.ui-metric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--primary);
+}
+.ui-metric--ok { color: var(--success); }
 
 /* ── 空 / 加载 / 错误 三态 ───────────────────────────── */
 .ui-empty, .ui-error-state {

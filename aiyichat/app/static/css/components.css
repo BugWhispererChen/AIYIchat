@@ -295,6 +295,17 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     padding-bottom: var(--space-2);
 }
 
+/* 示例代码块：格式说明一类的 JSON 样例 */
+.ui-code-block {
+    margin: var(--space-2) 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: .85rem;
+}
+
 /* 卡中卡：带边框的次级面板（Bot 扫码区、表单折叠区等） */
 .ui-inset {
     padding: var(--space-4);
@@ -751,6 +762,9 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     gap: var(--section-gap);
     align-content: start;
 }
+
+/* 单列窄表单（改密码一类只有两三个字段的操作卡） */
+.ui-form--narrow { max-width: 480px; }
 
 /* 内容列宽度档位：由 base.html 挂在 <main> 上 */
 .ui-container--wide  { max-width: var(--content-max-wide); }

@@ -2,6 +2,8 @@
 {% set active_page = "chat_import" %}
 {% block title %}角色克隆{% endblock %}
 
+{% from "partials/_ui.html" import page_header, card, alert %}
+
 {% block breadcrumb %}
 <a href="/admin/profiles">角色管理</a>
 <span class="sep">/</span>
@@ -9,10 +11,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h3>角色克隆</h3>
-    <p class="subtitle">上传聊天记录 JSON 文件，AI 自动分析生成虚拟角色档案</p>
-</div>
+{{ page_header('角色克隆', '上传聊天记录 JSON 文件，AI 自动分析生成虚拟角色档案', '角色内容') }}
 
 <!-- 步骤条：准备 JSON → 上传记录 → AI 分析 → 预览入库 -->
 <div class="steps">
@@ -22,78 +21,75 @@
     <div class="step"><span class="step-num">4</span> 预览入库</div>
 </div>
 
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('error', error) }}
 
 {% if analyzing and task_id %}
 <!-- 分析进度区域 -->
-<div class="card u-mb-4" >
-    <h4>解析结果</h4>
+{% call card('解析结果') %}
     {% if parse_result %}
-    <div class="grid-min-150 u-mb-4" >
-        <div><strong>总消息数</strong><br>{{ parse_result.total_count }}</div>
-        <div><strong>目标消息</strong><br>{{ parse_result.target_count }}</div>
-        <div><strong>对话方消息</strong><br>{{ parse_result.other_count }}</div>
-        <div><strong>时间跨度</strong><br>{{ parse_result.time_span }}</div>
+    <div class="ui-grid">
+        <div class="ui-stack ui-stack--tight"><strong>总消息数</strong><span>{{ parse_result.total_count }}</span></div>
+        <div class="ui-stack ui-stack--tight"><strong>目标消息</strong><span>{{ parse_result.target_count }}</span></div>
+        <div class="ui-stack ui-stack--tight"><strong>对话方消息</strong><span>{{ parse_result.other_count }}</span></div>
+        <div class="ui-stack ui-stack--tight"><strong>时间跨度</strong><span>{{ parse_result.time_span }}</span></div>
     </div>
     {% if parse_result.target_name %}
-    <p>目标联系人: <strong>{{ parse_result.target_name }}</strong></p>
+    <p class="ui-note">目标联系人: <strong>{{ parse_result.target_name }}</strong></p>
     {% endif %}
     {% endif %}
-</div>
+{% endcall %}
 
-<div class="card" id="progress-container"
-     hx-get="/admin/chat-import/status/{{ task_id }}"
-     hx-trigger="load, every 2s"
-     hx-swap="innerHTML">
+<section class="ui-card" id="progress-container"
+         hx-get="/admin/chat-import/status/{{ task_id }}"
+         hx-trigger="load, every 2s"
+         hx-swap="innerHTML">
     <p>正在启动分析...</p>
-</div>
+</section>
 
 {% else %}
 <!-- JSON 格式说明区域 -->
-<div class="card u-mb-4" >
-    <details>
-        <summary class="u-pointer" ><strong>第一步：准备聊天记录 JSON 文件</strong></summary>
-        <div class="u-pt-2" >
-            <p>请自行将聊天记录整理为如下格式的 JSON 数组后上传：</p>
-            <pre style="padding:0.8rem 1rem;background:var(--surface-2);border-radius:8px;overflow-x:auto;font-size:0.85rem;margin:0.5rem 0;"><code>[
+<details class="ui-card">
+    <summary class="ui-summary">第一步：准备聊天记录 JSON 文件</summary>
+    <div class="u-pt-2">
+        <p>请自行将聊天记录整理为如下格式的 JSON 数组后上传：</p>
+        <pre class="ui-code-block"><code>[
   {"timestamp": "2024-03-15T14:23:01", "sender": "张三", "content": "在忙吗？", "is_target": true},
   {"timestamp": "2024-03-15T14:23:40", "sender": "我", "content": "刚开完会", "is_target": false}
 ]</code></pre>
-            <ul class="u-my-2" >
-                <li><code>timestamp</code>：消息时间，ISO 格式（<code>YYYY-MM-DDTHH:MM:SS</code>）；按导出时的本地墙钟时间填写，需与导入时区偏移配置一致，否则整体错位</li>
-                <li><code>sender</code>：发送者名称，用于区分对话双方</li>
-                <li><code>content</code>：消息文本内容</li>
-                <li><code>is_target</code>：是否为克隆对象发送的消息，<code>true</code> 标记需要学习风格的那一方</li>
-            </ul>
-            <p class="muted u-mb0" >仅支持导入本人聊天记录，请遵守所用平台的服务条款与当地法律法规；分析完成后可在后台删除导入数据。</p>
-        </div>
-    </details>
-</div>
+        <ul class="u-my-2">
+            <li><code>timestamp</code>：消息时间，ISO 格式（<code>YYYY-MM-DDTHH:MM:SS</code>）；按导出时的本地墙钟时间填写，需与导入时区偏移配置一致，否则整体错位</li>
+            <li><code>sender</code>：发送者名称，用于区分对话双方</li>
+            <li><code>content</code>：消息文本内容</li>
+            <li><code>is_target</code>：是否为克隆对象发送的消息，<code>true</code> 标记需要学习风格的那一方</li>
+        </ul>
+        <p class="ui-note">仅支持导入本人聊天记录，请遵守所用平台的服务条款与当地法律法规；分析完成后可在后台删除导入数据。</p>
+    </div>
+</details>
 
 <!-- 上传表单 -->
-<div class="card">
-    <h4>第二步：上传聊天记录JSON</h4>
-    <form method="post" action="/admin/chat-import/upload" enctype="multipart/form-data">
-        <label>选择JSON文件 <small>(格式见上方说明，最大50MB)</small>
-            <input type="file" name="file" accept=".json" required>
+{% call card('第二步：上传聊天记录JSON') %}
+    <form method="post" action="/admin/chat-import/upload" enctype="multipart/form-data" class="ui-stack">
+        <label class="ui-field">
+            <span class="ui-label">选择JSON文件 <small>(格式见上方说明，最大50MB)</small></span>
+            <input class="ui-input" type="file" name="file" accept=".json" required>
         </label>
 
-        <div class="grid">
-            <label>角色名称 <small>(选填，默认使用联系人名)</small>
-                <input type="text" name="role_name" placeholder="如：小明">
-            </label>
+        <label class="ui-field">
+            <span class="ui-label">角色名称 <small>(选填，默认使用联系人名)</small></span>
+            <input class="ui-input" type="text" name="role_name" placeholder="如：小明">
+        </label>
+
+        <label class="ui-field">
+            <span class="ui-label">额外描述信息 <small>(选填，补充角色的背景、性格等，AI会融入角色设定)</small></span>
+            <textarea class="ui-textarea" name="extra_description" rows="3" placeholder="例如：她是一个90后程序员，性格温柔开朗，喜欢看动漫和打游戏..."></textarea>
+        </label>
+
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary">开始分析</button>
         </div>
-
-        <label>额外描述信息 <small>(选填，补充角色的背景、性格等，AI会融入角色设定)</small>
-            <textarea name="extra_description" rows="3" placeholder="例如：她是一个90后程序员，性格温柔开朗，喜欢看动漫和打游戏..."></textarea>
-        </label>
-
-        <button type="submit">开始分析</button>
     </form>
-</div>
+{% endcall %}
 {% endif %}
 
-<p class="u-mt-4" ><a href="/admin/profiles">&larr; 返回角色列表</a></p>
+<p class="u-mt-4"><a href="/admin/profiles">&larr; 返回角色列表</a></p>
 {% endblock %}

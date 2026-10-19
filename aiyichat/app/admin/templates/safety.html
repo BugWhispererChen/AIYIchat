@@ -1,120 +1,96 @@
 {% extends "base.html" %}
 {% set active_page = "safety" %}
+{% set content_width = "ui-container--wide" %}
 {% block title %}内容安全{% endblock %}
 
+{% from "partials/_ui.html" import page_header, card, kpi, alert, badge, empty, table_meta %}
+
 {% block content %}
-<div class="page-header">
-    <h3>内容安全审计</h3>
-    <p class="subtitle">心理危机干预与违禁内容拦截的留痕记录，用于合规追溯</p>
-</div>
+{{ page_header('内容安全审计', '心理危机干预与违禁内容拦截的留痕记录，用于合规追溯', '系统设置') }}
 
 <!-- 近7天统计卡片 -->
-<div class="stats-grid" style="margin-bottom:1rem;">
-    <div class="stat-card">
-        <div class="stat-head"><span>近7天 · 危机干预</span></div>
-        <div class="value" style="color:var(--danger-color);">{{ crisis_7d }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>近7天 · 违禁拦截</span></div>
-        <div class="value" style="color:var(--warning-color);">{{ forbidden_7d }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>近7天 · 未成年拦截</span></div>
-        <div class="value">{{ minor_block_7d }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-head"><span>累计事件</span></div>
-        <div class="value">{{ total }}</div>
-    </div>
+<div class="ui-grid ui-grid--kpi">
+    {{ kpi('近7天 · 危机干预', crisis_7d, '', '', 'err') }}
+    {{ kpi('近7天 · 违禁拦截', forbidden_7d, '', '', 'warn') }}
+    {{ kpi('近7天 · 未成年拦截', minor_block_7d) }}
+    {{ kpi('累计事件', total) }}
 </div>
 
 <!-- 词表维护 -->
-<div class="card">
-    <h4 style="margin-bottom:0.25rem;">词表维护</h4>
-    <p class="subtitle" style="margin-bottom:0.75rem;">
+{% call card('词表维护') %}
+    <p class="ui-note">
         内置词库：危机词 {{ builtin_crisis_count }} 条 / 违禁词 {{ builtin_forbidden_count }} 条（代码内置，不可删除）。
         下方追加词与内置词库合并生效，每行一个词（也支持逗号分隔），保存即热生效。
     </p>
-    {% if saved %}
-    <p style="color:var(--success-color,green);">✓ 词表已保存并热生效</p>
-    {% endif %}
-    <form method="post" action="/admin/safety/wordlists">
-        <div class="grid">
-            <label>
-                追加危机词（命中触发心理援助引导）
-                <textarea name="crisis_extra" rows="6" placeholder="每行一个词">{{ crisis_extra_text }}</textarea>
+    {{ alert('success', '✓ 词表已保存并热生效' if saved else '') }}
+    <form method="post" action="/admin/safety/wordlists" class="ui-stack">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">追加危机词（命中触发心理援助引导）</span>
+                <textarea class="ui-textarea" name="crisis_extra" rows="6" placeholder="每行一个词">{{ crisis_extra_text }}</textarea>
             </label>
-            <label>
-                追加违禁词（命中婉拒回复）
-                <textarea name="forbidden_extra" rows="6" placeholder="每行一个词">{{ forbidden_extra_text }}</textarea>
+            <label class="ui-field">
+                <span class="ui-label">追加违禁词（命中婉拒回复）</span>
+                <textarea class="ui-textarea" name="forbidden_extra" rows="6" placeholder="每行一个词">{{ forbidden_extra_text }}</textarea>
             </label>
         </div>
-        <button type="submit" class="btn-sm">保存词表</button>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存词表</button>
+        </div>
     </form>
-</div>
+{% endcall %}
 
 <!-- 类型筛选 -->
-<div class="card">
-    <div class="btn-row" style="gap:0.5rem;">
-        <a href="/admin/safety" role="button" class="{% if not event_type %}{% else %}ghost{% endif %} btn-sm">全部</a>
-        <a href="/admin/safety?event_type=crisis" role="button" class="{% if event_type == 'crisis' %}{% else %}ghost{% endif %} btn-sm">危机干预</a>
-        <a href="/admin/safety?event_type=forbidden" role="button" class="{% if event_type == 'forbidden' %}{% else %}ghost{% endif %} btn-sm">违禁拦截</a>
-    </div>
+<div class="ui-toolbar">
+    <a href="/admin/safety" class="ui-btn ui-btn--sm{% if not event_type %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">全部</a>
+    <a href="/admin/safety?event_type=crisis" class="ui-btn ui-btn--sm{% if event_type == 'crisis' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">危机干预</a>
+    <a href="/admin/safety?event_type=forbidden" class="ui-btn ui-btn--sm{% if event_type == 'forbidden' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">违禁拦截</a>
 </div>
 
 {% if event_infos %}
-<div class="card">
-    <div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>时间</th>
-                <th>类型</th>
-                <th>平台</th>
-                <th>身份</th>
-                <th>命中词</th>
-                <th>处置</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for info in event_infos %}
-            {% set ev = info.event %}
-            <tr>
-                <td><span title="{{ (ev.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ ev.created_at|relative_time }}</span></td>
-                <td>
-                    {% if ev.event_type == 'crisis' %}
-                    <span class="badge badge-inactive">危机干预</span>
-                    {% elif ev.event_type == 'forbidden' %}
-                    <span class="badge badge-warning">违禁拦截</span>
-                    {% else %}
-                    <span class="badge badge-neutral">未成年拦截</span>
-                    {% endif %}
-                </td>
-                <td><span class="badge {% if ev.platform == 'qq' %}badge-role-user{% else %}badge-role-assistant{% endif %}">{{ ev.platform or '-' }}</span></td>
-                <td>{{ info.identity_display or '-' }}</td>
-                <td><code style="font-size:0.8rem;">{{ ev.matched or '-' }}</code></td>
-                <td><small class="muted">{{ ev.handled or '-' }}</small></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<section class="ui-card ui-card--flush">
+    {{ table_meta('共 ' ~ event_infos|length ~ ' 条事件') }}
+    <div class="ui-table-wrap">
+        <table class="ui-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>类型</th>
+                    <th>平台</th>
+                    <th>身份</th>
+                    <th>命中词</th>
+                    <th>处置</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for info in event_infos %}
+                {% set ev = info.event %}
+                <tr>
+                    <td><span title="{{ (ev.created_at|to_beijing).strftime('%Y-%m-%d %H:%M:%S') }}">{{ ev.created_at|relative_time }}</span></td>
+                    <td>
+                        {% if ev.event_type == 'crisis' %}{{ badge('危机干预', 'err') }}
+                        {% elif ev.event_type == 'forbidden' %}{{ badge('违禁拦截', 'warn') }}
+                        {% else %}{{ badge('未成年拦截', 'line') }}{% endif %}
+                    </td>
+                    <td>{{ badge(ev.platform or '-', 'line') }}</td>
+                    <td>{{ info.identity_display or '-' }}</td>
+                    <td><code class="u-fs-80">{{ ev.matched or '-' }}</code></td>
+                    <td><small class="muted">{{ ev.handled or '-' }}</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
     {% if total_pages > 1 %}
-    <div class="pagination">
+    <div class="ui-pagination">
         {% for p in range(1, total_pages + 1) %}
-        <a href="/admin/safety?page={{ p }}{% if event_type %}&event_type={{ event_type }}{% endif %}" class="{% if p == page %}current{% endif %}">{{ p }}</a>
+        <a href="/admin/safety?page={{ p }}{% if event_type %}&event_type={{ event_type }}{% endif %}" class="{% if p == page %}is-current{% endif %}">{{ p }}</a>
         {% endfor %}
     </div>
     {% endif %}
-</div>
+</section>
 {% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-        <div class="empty-title">暂无安全事件</div>
-        <div class="empty-desc">当身份消息触发危机信号或违禁内容时，将在此留痕</div>
-    </div>
-</div>
+{{ empty('暂无安全事件', '当身份消息触发危机信号或违禁内容时，将在此留痕', 'shield') }}
 {% endif %}
 {% endblock %}

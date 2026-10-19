@@ -2,128 +2,119 @@
 {% set active_page = "features" %}
 {% block title %}功能实验室{% endblock %}
 
+{% from "partials/_ui.html" import page_header, alert, badge %}
+
 {% block content %}
-<div class="page-header">
-    <h3>功能实验室</h3>
-    <p class="subtitle">灰度控制对话引擎的进阶能力，保存后即时生效</p>
-</div>
+{{ page_header('功能实验室', '灰度控制对话引擎的进阶能力，保存后即时生效', '系统设置') }}
 
-{% if success %}
-<div class="alert alert-success">{{ success }}</div>
-{% endif %}
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{{ alert('success', success) }}
+{{ alert('error', error) }}
 
-<form method="post" action="/admin/features">
-    <div class="card">
-        <p class="muted" style="font-size:0.85rem;margin:0 0 1rem;">
-            标注 <span class="badge badge-active">零成本</span> 的能力为纯规则实现，建议常开；
-            标注 <span class="badge badge-warning">LLM</span> 的能力会增加模型调用；
-            标注 <span class="badge badge-role-assistant">Embedding</span> 的能力需先在「AI 模型配置」配置 OpenAI 兼容的向量化服务。
+<form method="post" action="/admin/features" class="ui-page">
+    <section class="ui-card">
+        <p class="ui-note">
+            标注 {{ badge('零成本', 'ok') }} 的能力为纯规则实现，建议常开；
+            标注 {{ badge('LLM', 'warn') }} 的能力会增加模型调用；
+            标注 {{ badge('Embedding', 'line') }} 的能力需先在「AI 模型配置」配置 OpenAI 兼容的向量化服务。
         </p>
 
-        <div style="display:flex;flex-direction:column;gap:0.9rem;">
+        <div class="ui-stack">
             {% for t in toggles %}
-            <div class="entity-tile">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
-                    <div style="flex:1;">
-                        <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                            <strong style="font-size:0.98rem;">{{ t.label }}</strong>
-                            {% if t.cost == 'free' %}
-                            <span class="badge badge-active">零成本</span>
-                            {% elif t.cost == 'llm' %}
-                            <span class="badge badge-warning">LLM</span>
-                            {% elif t.cost == 'dashscope' %}
-                            <span class="badge badge-role-assistant">Embedding</span>
-                            {% endif %}
-                        </div>
-                        <p class="muted" style="font-size:0.85rem;margin:0.4rem 0 0;">{{ t.desc }}</p>
-                        {% if t.dependency %}
-                        <p style="font-size:0.8rem;margin:0.35rem 0 0;color:var(--warning-text);">依赖：{{ t.dependency }}</p>
-                        {% endif %}
+            <div class="entity-tile ui-switch-row">
+                <div class="ui-switch-row__text ui-stack ui-stack--tight">
+                    <div class="ui-cluster">
+                        <strong>{{ t.label }}</strong>
+                        {% if t.cost == 'free' %}{{ badge('零成本', 'ok') }}
+                        {% elif t.cost == 'llm' %}{{ badge('LLM', 'warn') }}
+                        {% elif t.cost == 'dashscope' %}{{ badge('Embedding', 'line') }}{% endif %}
                     </div>
-                    <label style="margin:0;white-space:nowrap;">
-                        <input type="checkbox" name="{{ t.key }}" role="switch" {{ 'checked' if t.enabled }}>
-                    </label>
+                    <p class="ui-note">{{ t.desc }}</p>
+                    {% if t.dependency %}
+                    <p class="ui-note ui-note--warn">依赖：{{ t.dependency }}</p>
+                    {% endif %}
                 </div>
+                <label class="ui-switch-row__ctl">
+                    <input type="checkbox" name="{{ t.key }}" role="switch" {{ 'checked' if t.enabled }}>
+                </label>
             </div>
             {% endfor %}
         </div>
 
-        <button type="submit" style="margin-top:1.2rem;max-width:200px;">保存设置</button>
-    </div>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary">保存设置</button>
+        </div>
+    </section>
 
-    <div class="card">
-        <h4 style="margin-bottom:0.25rem;">对话时间感知参数</h4>
-        <p class="subtitle" style="margin-bottom:0.75rem;">
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">对话时间感知参数</h4></div>
+        <p class="ui-note">
             与上方时间感知类开关配合生效，保存即热生效；时区为全系统单一配置源，
             同时影响对话时间注入、历史摘要日期与主动关怀免打扰时段。
         </p>
-        <div class="grid">
-            <label>
-                历史消息时间标签间隔阈值（分钟，0=每条都打）
-                <input type="number" name="gap_minutes" min="0" max="1440" value="{{ gap_minutes }}">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">历史消息时间标签间隔阈值（分钟，0=每条都打）</span>
+                <input class="ui-input" type="number" name="gap_minutes" min="0" max="1440" value="{{ gap_minutes }}">
             </label>
-            <label>
-                会话间隔软档阈值（小时，1~72）
-                <input type="number" name="time_session_gap_hours" min="1" max="72" value="{{ time_session_gap_hours }}">
+            <label class="ui-field">
+                <span class="ui-label">会话间隔软档阈值（小时，1~72）</span>
+                <input class="ui-input" type="number" name="time_session_gap_hours" min="1" max="72" value="{{ time_session_gap_hours }}">
             </label>
-            <label>
-                久别重逢强档阈值（小时，软档值~720）
-                <input type="number" name="time_reunion_gap_hours" min="1" max="720" value="{{ time_reunion_gap_hours }}">
+            <label class="ui-field">
+                <span class="ui-label">久别重逢强档阈值（小时，软档值~720）</span>
+                <input class="ui-input" type="number" name="time_reunion_gap_hours" min="1" max="720" value="{{ time_reunion_gap_hours }}">
             </label>
-            <label>
-                默认时区（UTC 偏移小时，北京=8）
-                <input type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
+            <label class="ui-field">
+                <span class="ui-label">默认时区（UTC 偏移小时，北京=8）</span>
+                <input class="ui-input" type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
             </label>
         </div>
-        <p class="muted" style="font-size:0.8rem;margin:0.5rem 0 0;">
+        <p class="ui-note">
             提示：两条消息间隔超过阈值、或自然日发生变化时，才会给历史消息打时间标签并插入跨天分隔符。
             软档提示会话已间隔较久，强档提示久别重逢；强档不得低于软档，保存时自动校正。
         </p>
-    </div>
+    </section>
 
-    <div class="card">
-        <h4 style="margin-bottom:0.25rem;">表情包触发参数</h4>
-        <p class="subtitle" style="margin-bottom:0.75rem;">
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">表情包触发参数</h4></div>
+        <p class="ui-note">
             控制表情包发送的触发概率，需先开启上方「表情包发送」开关。
         </p>
-        <div class="grid">
-            <label>
-                随机穿插概率（0~1，普通聊天时按此概率随机插入表情包）
-                <input type="number" name="sticker_casual_probability" min="0" max="1" step="0.01" value="{{ sticker_casual_probability }}">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">随机穿插概率（0~1，普通聊天时按此概率随机插入表情包）</span>
+                <input class="ui-input" type="number" name="sticker_casual_probability" min="0" max="1" step="0.01" value="{{ sticker_casual_probability }}">
             </label>
-            <label>
-                以图回图概率（0~1，身份仅发表情包时按此概率回复）
-                <input type="number" name="sticker_reply_probability" min="0" max="1" step="0.01" value="{{ sticker_reply_probability }}">
+            <label class="ui-field">
+                <span class="ui-label">以图回图概率（0~1，身份仅发表情包时按此概率回复）</span>
+                <input class="ui-input" type="number" name="sticker_reply_probability" min="0" max="1" step="0.01" value="{{ sticker_reply_probability }}">
             </label>
         </div>
-        <p class="muted" style="font-size:0.8rem;margin:0.5rem 0 0;">
+        <p class="ui-note">
             提示：随机穿插概率建议 0.1~0.2，过高会导致表情包过于频繁；以图回图概率建议 0.3~0.5。
         </p>
-    </div>
+    </section>
 
-    <div class="card">
-        <h4 style="margin-bottom:0.25rem;">语音动态触发参数</h4>
-        <p class="subtitle" style="margin-bottom:0.75rem;">
+    <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">语音动态触发参数</h4></div>
+        <p class="ui-note">
             控制语音动态触发窗口的随机时长，需先开启上方「语音动态触发窗口」开关。
         </p>
-        <div class="grid">
-            <label>
-                窗口最短时长（分钟）
-                <input type="number" name="voice_window_min_minutes" min="1" max="1440" value="{{ voice_window_min_minutes }}">
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">窗口最短时长（分钟）</span>
+                <input class="ui-input" type="number" name="voice_window_min_minutes" min="1" max="1440" value="{{ voice_window_min_minutes }}">
             </label>
-            <label>
-                窗口最长时长（分钟）
-                <input type="number" name="voice_window_max_minutes" min="1" max="1440" value="{{ voice_window_max_minutes }}">
+            <label class="ui-field">
+                <span class="ui-label">窗口最长时长（分钟）</span>
+                <input class="ui-input" type="number" name="voice_window_max_minutes" min="1" max="1440" value="{{ voice_window_max_minutes }}">
             </label>
         </div>
-        <p class="muted" style="font-size:0.8rem;margin:0.5rem 0 0;">
+        <p class="ui-note">
             提示：身份发语音触发语音回复后，系统在「最短~最长」之间随机抽取一个固定窗口时长；
             窗口内文字消息也以语音回复，窗口到期自动回落，且窗口内不续期。
             若最短值大于最长值，保存时会自动交换。
         </p>
-    </div>
+    </section>
 </form>
 {% endblock %}

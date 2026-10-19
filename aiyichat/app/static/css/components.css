@@ -307,6 +307,7 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-note { font-size: .82rem; color: var(--text-2); margin: var(--space-1) 0 0; }
 .ui-note--err { color: var(--danger-text); }
 .ui-note--ok { color: var(--success-text); }
+.ui-note--warn { color: var(--warning-text); }
 
 /* 滑块右侧的数值回显（性格特质） */
 .ui-trait-val {
@@ -316,6 +317,15 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     font-size: .82rem;
     color: var(--text-2);
 }
+
+/* 开关行：左侧文案、右侧开关，用于功能实验室一类的设置清单 */
+.ui-switch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+}
+.ui-switch-row__text { flex: 1 1 auto; min-width: 0; }
+.ui-switch-row__ctl { flex: none; white-space: nowrap; margin: 0; }
 
 /* 卡片内的小节标题（比 ui-card-title 低一档） */
 .ui-subhead {
@@ -682,6 +692,7 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 }
 /* 语义着色档：成功/失败计数需要一眼可辨，不再往模板里写 color */
 .ui-kpi-value--ok  { color: var(--success-text); }
+.ui-kpi-value--warn { color: var(--warning-text); }
 .ui-kpi-value--err { color: var(--danger-text); }
 
 /* ══════════════════════════════════════════════════════

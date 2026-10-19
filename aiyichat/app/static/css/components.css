@@ -593,6 +593,8 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-cluster--between { justify-content: space-between; }
 /* 让某个控件组吃掉剩余宽度（搜索框常配此用） */
 .ui-cluster--fill { flex: 1 1 auto; }
+/* 表格行内的操作组不换行，避免窄列里按钮竖排 */
+.ui-cluster--nowrap { flex-wrap: nowrap; }
 
 /* ── 网格：一律 minmax(0,1fr) 防止子项内容撑破列 ──────── */
 .ui-grid {

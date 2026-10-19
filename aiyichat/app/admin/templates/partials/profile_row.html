@@ -5,29 +5,28 @@
     <td><span class="text-ellipsis" title="{{ p.category }}">{{ p.category }}</span></td>
     <td>
         {% if p.visibility == 'private' %}
-        <span class="badge badge-role-assistant">私有</span>
+        <span class="ui-badge ui-badge--amber">私有</span>
         {% if p.account_id and accounts is defined and accounts.get(p.account_id) %}
-        <div style="font-size:.72rem;color:var(--text-3);margin-top:.15rem;"
-             title="归属账号">{{ accounts[p.account_id].name }}</div>
+        <div class="ui-note text-ellipsis" title="归属账号">{{ accounts[p.account_id].name }}</div>
         {% endif %}
         {% else %}
-        <span class="badge badge-role-user">公共</span>
+        <span class="ui-badge ui-badge--ink">公共</span>
         {% endif %}
     </td>
     <td>
-        <span class="badge {% if p.is_active %}badge-active{% else %}badge-inactive{% endif %}">
+        <span class="ui-badge {% if p.is_active %}ui-badge--ok{% else %}ui-badge--line{% endif %}">
             {{ '活跃' if p.is_active else '已禁用' }}
         </span>
     </td>
     <td>
-        <div class="btn-row" style="gap:0.4rem;flex-wrap:nowrap;">
-            <a href="/admin/profiles/{{ p.slug }}" role="button" class="ghost btn-sm">详情</a>
+        <div class="ui-cluster ui-cluster--nowrap">
+            <a href="/admin/profiles/{{ p.slug }}" class="ui-btn ui-btn--ghost ui-btn--sm">详情</a>
             <button
                 hx-post="/admin/profiles/{{ p.slug }}/toggle"
                 hx-target="#profile-{{ p.slug }}"
                 hx-swap="outerHTML"
                 data-error-msg="操作失败：该角色可能仍被对话服务引用"
-                class="btn-sm {% if p.is_active %}danger outline{% endif %}"
+                class="ui-btn ui-btn--sm {% if p.is_active %}ui-btn--outline ui-btn--danger{% else %}ui-btn--primary{% endif %}"
             >
                 {{ '禁用' if p.is_active else '启用' }}
             </button>

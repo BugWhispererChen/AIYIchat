@@ -125,13 +125,29 @@ def inverted_ops(ops: list[Op]) -> list[Op]:
     return inv
 
 
-def _has_collection(db: Any, name: str) -> bool:
-    return name in db.list_collection_names()
+def _planned_name(coll: str) -> str:
+    """集合在本次迁移完成后的最终名字。
+
+    dry-run 不真正改名，索引与字段仍挂在旧集合名下；按最终名匹配目标，
+    预演才能与真实执行报出同样的工作量（否则"待改名的集合"会被显示成"集合不存在"，
+    让操作者误判为无数据可迁）。
+    """
+    return ALIAS_COLLECTIONS.get(coll, coll)
 
 
-def _rename_in_array(db: Any, op: RenameFields, dry: bool) -> None:
+def _resolve_existing(db: Any, coll: str, simulated: dict[str, str]) -> str | None:
+    """返回该集合在当前库里的真实名字；dry-run 中被模拟改名的走 simulated 映射。"""
+    names = db.list_collection_names()
+    if coll in names:
+        return coll
+    if coll in simulated and simulated[coll] in names:
+        return simulated[coll]
+    return None
+
+
+def _rename_in_array(db: Any, op: RenameFields, dry: bool, real_name: str) -> None:
     """改写数组字段元素内的键名（$rename 不支持无数组下标的元素内改名）。"""
-    coll = db[op.collection]
+    coll = db[real_name]
     query = {f"{op.array_field}.{old}": {"$exists": True} for old, _ in op.pairs}
     changed = 0
     for doc in coll.find(query):
@@ -147,15 +163,18 @@ def _rename_in_array(db: Any, op: RenameFields, dry: bool) -> None:
         changed += 1
     for old, new in op.pairs:
         suffix = "（dry-run 未落库）" if dry else ""
-        print(f"    {op.collection}.{op.array_field}[].{old} -> {new}: {changed} 个文档{suffix}")
+        print(f"    {real_name}.{op.array_field}[].{old} -> {new}: {changed} 个文档{suffix}")
 
 
-def _run_op(db: Any, database: str, op: Op, dry: bool) -> None:
+def _run_op(db: Any, database: str, op: Op, dry: bool, simulated: dict[str, str]) -> None:
     """执行单个操作。重复执行为幂等（靠 $exists 判定跳过已改名的文档）。"""
     if isinstance(op, RenameCollection):
         names = db.list_collection_names()
         if op.old not in names:
-            print(f"    {op.old}: 不存在，跳过")
+            if op.new in names:
+                print(f"    {op.old} -> {op.new}: 已完成，跳过")
+            else:
+                print(f"    {op.old}: 不存在，跳过")
             return
         if op.new in names:
             # 绝不允许静默覆盖已存在的目标集合，交人工判断
@@ -168,33 +187,38 @@ def _run_op(db: Any, database: str, op: Op, dry: bool) -> None:
                 f"{database}.{op.old}",
                 to=f"{database}.{op.new}",
             )
+        else:
+            # 预演：记下"新名字将来对应这个旧集合"，供后续操作换算
+            simulated[op.new] = op.old
         suffix = "（dry-run 未落库）" if dry else ""
         print(f"    集合 {op.old} -> {op.new}: {count} 个文档{suffix}")
         return
 
-    if not _has_collection(db, op.collection):
+    real_name = _resolve_existing(db, op.collection, simulated)
+    if real_name is None:
         print(f"    {op.collection}: 集合不存在，跳过")
         return
     if op.array_field:
-        _rename_in_array(db, op, dry)
+        _rename_in_array(db, op, dry, real_name)
         return
     for old, new in op.pairs:
-        count = db[op.collection].count_documents({old: {"$exists": True}})
+        count = db[real_name].count_documents({old: {"$exists": True}})
         if count == 0:
-            print(f"    {op.collection}.{old}: 无需处理（0 个文档）")
+            print(f"    {real_name}.{old}: 无需处理（0 个文档）")
             continue
         if not dry:
-            db[op.collection].update_many(
+            db[real_name].update_many(
                 {old: {"$exists": True}, new: {"$exists": False}},
                 {"$rename": {old: new}},
             )
         suffix = "（dry-run 未落库）" if dry else ""
-        print(f"    {op.collection}.{old} -> {new}: {count} 个文档{suffix}")
+        print(f"    {real_name}.{old} -> {new}: {count} 个文档{suffix}")
 
 
 def _run_ops(db: Any, database: str, ops: list[Op], dry: bool) -> None:
+    simulated: dict[str, str] = {}
     for op in ops:
-        _run_op(db, database, op, dry)
+        _run_op(db, database, op, dry, simulated)
 
 
 def _drop_deprecated_indexes(db: Any, dry: bool) -> None:
@@ -210,7 +234,10 @@ def _drop_deprecated_indexes(db: Any, dry: bool) -> None:
                 continue
             raw = spec.get("key")
             keys: set[str] = set(raw.keys()) if isinstance(raw, dict) else {k for k, _ in raw}
-            if any((coll_name, k) in DEPRECATED_INDEX_TARGETS for k in keys):
+            # 按"迁移完成后的集合名"匹配：dry-run 不真改名，索引还挂在旧集合名下，
+            # 直接拿旧名比对会漏报，让操作者以为没有僵尸索引需要清理
+            planned = _planned_name(coll_name)
+            if any((planned, k) in DEPRECATED_INDEX_TARGETS for k in keys):
                 print(f"    drop {coll_name}.{name} keys={sorted(keys)}")
                 if not dry:
                     coll.drop_index(name)

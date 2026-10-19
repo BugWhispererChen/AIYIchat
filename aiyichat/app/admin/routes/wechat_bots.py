@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.admin.auth import require_admin
-from app.admin.routes.common import _bot_config_repo
+from app.admin.routes.common import _bot_config_repo, render_qr_fragment
 
 logger = logging.getLogger(__name__)
 wechat_bots_router = APIRouter(tags=["admin"])
@@ -52,18 +52,13 @@ async def get_wechat_qrcode(
         qrcode_url = qr_data.get("qrcode_url", "")
         qrcode = qr_data.get("qrcode", "")
 
-        img_style = (
-            "max-width: 200px; border: 1px solid #ddd; border-radius: 8px;"
-        )
-        p_style = (
-            "font-size: 0.85rem; color: var(--pico-muted-color); margin-top: 0.5rem;"
-        )
-        html = f"""
-        <div class="qr-container">
-            <p style="margin-bottom: 0.5rem;">请使用微信扫码登录：</p>
-            <img src="{qrcode_url}" alt="登录二维码" style="{img_style}" data-qrcode="{qrcode}">
-            <p style="{p_style}">扫码后自动刷新状态...</p>
-        </div>
+        html = render_qr_fragment(
+            lead="请使用微信扫码登录：",
+            image_src=qrcode_url,
+            alt="登录二维码",
+            hint="扫码后自动刷新状态...",
+            data_qrcode=qrcode,
+        ) + f"""
         <script>
             setTimeout(() => pollQRStatus('{config_id}', '{qrcode}'), 2000);
         </script>

@@ -20,7 +20,7 @@ from app.adapters.qq_bind import (
     poll_bind_result,
 )
 from app.admin.auth import require_admin
-from app.admin.routes.common import _bot_config_repo
+from app.admin.routes.common import _bot_config_repo, render_qr_fragment
 from app.models.bot_config import BotConfigUpdate
 from app.services.temp_service import verify_bot_binding
 
@@ -96,20 +96,13 @@ async def get_qq_bind_qrcode(
     _pending_sessions[config_id] = session
     qrcode_data_uri = _render_qr_image(session.qr_url)
 
-    img_style = (
-        "max-width: 200px; border: 1px solid #ddd; border-radius: 8px;"
+    html = render_qr_fragment(
+        lead="请使用手机QQ扫码，选择要绑定的机器人：",
+        image_src=qrcode_data_uri,
+        alt="绑定二维码",
+        hint="扫码确认后自动填入凭据...",
+        data_bind_task=session.task_id,
     )
-    p_style = (
-        "font-size: 0.85rem; color: var(--pico-muted-color); margin-top: 0.5rem;"
-    )
-    html = f"""
-    <div class="qr-container">
-        <p style="margin-bottom: 0.5rem;">请使用手机QQ扫码，选择要绑定的机器人：</p>
-        <img src="{qrcode_data_uri}" alt="绑定二维码" style="{img_style}"
-             data-bind-task="{session.task_id}">
-        <p style="{p_style}">扫码确认后自动填入凭据...</p>
-    </div>
-    """
     return HTMLResponse(html)
 
 

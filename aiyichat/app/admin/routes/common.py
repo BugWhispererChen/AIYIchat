@@ -75,6 +75,25 @@ templates.env.filters["relative_time"] = _relative_time
 templates.env.globals["asset"] = asset
 
 
+def render_qr_fragment(
+    lead: str,
+    image_src: str,
+    alt: str,
+    hint: str,
+    data_bind_task: str = "",
+    data_qrcode: str = "",
+) -> str:
+    """渲染扫码二维码 HTML 片段，供 QQ / 微信 Bot 的 htmx 局部返回复用。"""
+    return templates.get_template("partials/qr_fragment.html").render(
+        lead=lead,
+        image_src=image_src,
+        alt=alt,
+        hint=hint,
+        data_bind_task=data_bind_task,
+        data_qrcode=data_qrcode,
+    )
+
+
 # ── Repository 实例（重构第二阶段再消除单例）───────────────
 
 _profile_repo = ProfileRepository()

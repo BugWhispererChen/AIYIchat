@@ -827,6 +827,30 @@ body.nav-collapsed .content-area { margin-left: 0; }
     table { font-size: .8rem; }
 }
 
+/* ══ 扫码绑定片段（QQ / 微信 Bot） ══ */
+.qr-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-align: center;
+}
+.qr-lead { margin: 0; font-size: .86rem; color: var(--text); }
+.qr-image {
+    width: 200px;
+    max-width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: #fff;      /* 二维码必须保持白底才可被识别 */
+    padding: 6px;
+    box-sizing: content-box;
+}
+.qr-hint { margin: 0; font-size: .8rem; color: var(--text-2); }
+
 /* ══ 暗色下的少量针对性微调（压过历史内联硬编码） ══ */
 [data-theme="dark"] table tbody tr:nth-child(even) { background: rgba(255, 255, 255, .022); }
 

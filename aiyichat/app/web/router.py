@@ -37,19 +37,52 @@ _DISABLED_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
 <title>未开放 - 爱易聊</title>
 <style>
-    :root { color-scheme: light dark; }
+    :root {
+        color-scheme: light dark;
+        --paper: #f7f5f1;
+        --ink: #2a2622;
+        --ink-soft: #6b6258;
+        --hairline: #e6e1d6;
+        --amber: #e08a2b;
+        --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+                        "Songti SC", STSong, serif;
+        --font-body: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --paper: #1a1714;
+            --ink: #f0e9df;
+            --ink-soft: #b9ada0;
+            --hairline: #3a342c;
+        }
+    }
     body {
         margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--paper); color: var(--ink);
+        font-family: var(--font-body); line-height: 1.8;
     }
-    .notice-card { max-width: 90vw; padding: 2rem 1rem; text-align: center; }
-    p { color: gray; font-size: 0.92rem; }
+    .notice-card { max-width: 34rem; padding: 2.5rem 1.5rem; text-align: center; }
+    .wordmark {
+        font-family: var(--font-display);
+        font-size: 1.9rem; letter-spacing: .04em; margin: 0 0 .3rem;
+    }
+    .wordmark::before {
+        content: ""; display: inline-block; width: 7px; height: 7px; margin-right: .5rem;
+        border-radius: 50%; background: var(--amber); vertical-align: middle;
+    }
+    h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; margin: 1.4rem 0 .4rem; }
+    p { color: var(--ink-soft); font-size: .9rem; margin: 0; }
+    hr { border: 0; border-top: 1px solid var(--hairline); margin: 1.6rem auto; width: 3rem; }
 </style>
 </head>
 <body>
     <div class="notice-card">
+        <p class="wordmark">爱易聊</p>
+        <hr>
         <h2>网页身份功能未开放</h2>
         <p>本实例未开启网页注册与登录，请通过 QQ / 微信机器人与 AI 角色对话。</p>
     </div>

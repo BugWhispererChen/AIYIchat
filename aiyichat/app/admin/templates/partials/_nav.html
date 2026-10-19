@@ -1,7 +1,6 @@
 {# 侧边导航：由数据表驱动，新增页面只需在此登记一行，不必再改 base.html。
 
-   key 与各路由传入的 active_page 字符串一一对应；
-   角色克隆页刻意沿用 profiles 作为高亮键（与改造前行为一致）。
+   key 与各路由传入的 active_page 字符串一一对应。
 #}
 {% from "partials/_icons.html" import icon %}
 
@@ -19,7 +18,7 @@
     ]},
     {'title': '角色内容', 'items': [
         {'key': 'profiles', 'href': '/admin/profiles', 'label': '角色管理', 'icon': 'star'},
-        {'key': 'profiles', 'href': '/admin/chat-import', 'label': '角色克隆', 'icon': 'clone'},
+        {'key': 'chat_import', 'href': '/admin/chat-import', 'label': '角色克隆', 'icon': 'clone'},
         {'key': 'stickers', 'href': '/admin/stickers', 'label': '表情包管理', 'icon': 'sticker'},
     ]},
     {'title': '系统设置', 'items': [

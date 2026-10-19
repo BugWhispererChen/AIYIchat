@@ -2,7 +2,7 @@
 
 覆盖计划 P1：
 - app/utils/password_hashing：哈希生成/验算/格式判定，以及 app/admin/auth 的 re-export 不断链
-- WebCredentialRepository：登录名唯一占位、状态流转、登录失败锁定、拒绝冷却查询
+- WebCredentialRepository：用户名唯一占位、状态流转、登录失败锁定、拒绝冷却查询
 - WebSessionRepository：令牌校验、滑动过期、并发上限踢出、按身份清理
 - 索引：web_credentials.username 唯一、web_sessions.token 唯一 + expires_at TTL
 """
@@ -90,7 +90,7 @@ class TestPasswordHashing:
 
 
 class TestUsernameNormalization:
-    """登录名规范化测试集。"""
+    """用户名规范化测试集。"""
 
     def test_normalize(self) -> None:
         """去空白并转小写。"""
@@ -130,7 +130,7 @@ class TestWebCredentialRepository:
         run_with_db(body)
 
     def test_insert_and_find(self) -> None:
-        """写入后可按登录名/ID/user_id 查询，默认状态为 pending。"""
+        """写入后可按用户名/ID/user_id 查询，默认状态为 pending。"""
 
         async def body():
             repo = WebCredentialRepository()
@@ -212,7 +212,7 @@ class TestWebCredentialRepository:
         run_with_db(body)
 
     def test_find_recent_rejected(self) -> None:
-        """拒绝冷却期内可按登录名命中，超期或不符状态则放行。"""
+        """拒绝冷却期内可按用户名命中，超期或不符状态则放行。"""
 
         async def body():
             repo = WebCredentialRepository()
@@ -521,11 +521,11 @@ class TestExperienceQuotaCoversFirstTurn:
 
 
 class TestValidationRules:
-    """登录名与密码策略测试集（不依赖数据库）。"""
+    """用户名与密码策略测试集（不依赖数据库）。"""
 
     @pytest.mark.parametrize("raw", ["ab", "a" * 33, "has space", "admin", "root", "_lead"])
     def test_bad_usernames(self, raw: str) -> None:
-        """非法登录名：长度越界、含空格、保留名、下划线开头。"""
+        """非法用户名：长度越界、含空格、保留名、下划线开头。"""
         with pytest.raises(AuthError) as err:
             auth_service.validate_username(raw)
         assert err.value.code == "invalid_username"
@@ -533,7 +533,7 @@ class TestValidationRules:
 
     @pytest.mark.parametrize("raw", ["Alice01 ", " BOB_2 ", "user_123"])
     def test_good_usernames(self, raw: str) -> None:
-        """合法登录名返回规范化小写值。"""
+        """合法用户名返回规范化小写值。"""
         assert auth_service.validate_username(raw) == raw.strip().lower()
 
     @pytest.mark.parametrize(
@@ -544,7 +544,7 @@ class TestValidationRules:
             "12345678",         # 无字母（且在黑名单）
             "password123",      # 黑名单
             "iloveyou",         # 黑名单
-            "xiaochen123",      # 与登录名相同
+            "xiaochen123",      # 与用户名相同
         ],
     )
     def test_weak_passwords(self, pwd: str) -> None:
@@ -575,7 +575,7 @@ class TestRegistration:
 
             identity = await IdentityRepository().find_by_id(ident.identity_id)
             assert identity.platform == "web"
-            assert identity.platform_id == "xiaochen"  # 登录名而非 openid：_is_uuid 判定自洽拒绝绑 QQ
+            assert identity.platform_id == "xiaochen"  # 用户名而非 openid：_is_uuid 判定自洽拒绝绑 QQ
             service = await ServiceRepository().find_by_identity_and_bot(identity.id, bot_id)
             assert service is not None
             assert service.profile_id == "lin-yu"
@@ -603,7 +603,7 @@ class TestRegistration:
         run_with_db(body)
 
     def test_duplicate_username(self) -> None:
-        """重复登录名（含大小写变体）返回 409。"""
+        """重复用户名（含大小写变体）返回 409。"""
 
         async def body():
             await _seed_web_env()
@@ -639,7 +639,7 @@ class TestRegistration:
         run_with_db(body)
 
     def test_rollback_when_bot_missing(self) -> None:
-        """依赖配置缺失 → 回滚删除已占登录名，配置修复后可重新注册。"""
+        """依赖配置缺失 → 回滚删除已占用户名，配置修复后可重新注册。"""
 
         async def body():
             await _seed_web_env()
@@ -864,7 +864,7 @@ class TestLoginProtection:
     """登录防暴力破解与会话并发测试集。"""
 
     def test_unknown_user_and_wrong_password(self) -> None:
-        """未知登录名与错误密码返回同一提示，避免账号枚举。"""
+        """未知用户名与错误密码返回同一提示，避免账号枚举。"""
 
         async def body():
             await _seed_web_env()
@@ -874,7 +874,7 @@ class TestLoginProtection:
                 await _login("nobody-here")
             with pytest.raises(AuthError) as wrong:
                 await _login("enumtest", "wrongpass123")
-            assert missing.value.message == wrong.value.message == "登录名或密码错误"
+            assert missing.value.message == wrong.value.message == "用户名或密码错误"
 
         run_with_db(body)
 

@@ -130,9 +130,9 @@
             <div id="form-alert" class="alert-error" hidden></div>
 
             <form id="login-form" autocomplete="on">
-                <label for="username">登录名</label>
+                <label for="username">用户名</label>
                 <input type="text" id="username" name="username" required maxlength="32"
-                       placeholder="请输入登录名" autocomplete="username" autofocus>
+                       placeholder="请输入用户名" autocomplete="username" autofocus>
 
                 <label for="password">密码</label>
                 <input type="password" id="password" name="password" required maxlength="64"
@@ -226,7 +226,7 @@
                         document.getElementById('captcha-answer').value = '';
                         await loadCaptcha();
                     }
-                    showAlert(data.detail || '登录失败，请检查登录名与密码。');
+                    showAlert(data.detail || '登录失败，请检查用户名与密码。');
                     return;
                 }
                 localStorage.setItem(TOKEN_KEY, data.token);

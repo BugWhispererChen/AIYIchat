@@ -64,13 +64,13 @@ async def web_credentials_page(
     q: str = "",
     _session: str = Depends(require_admin),
 ):
-    """网页身份列表：默认展示待审核，支持状态筛选与登录名搜索。"""
+    """网页身份列表：默认展示待审核，支持状态筛选与用户名搜索。"""
     from app.config import settings
 
     repo = WebCredentialRepository()
     keyword = q.strip().lower()
     if keyword:
-        # 前缀搜索覆盖全部状态，便于定位被漏看的账号（登录名已规范化，无需正则匹配）
+        # 前缀搜索覆盖全部状态，便于定位被漏看的账号（用户名已规范化，无需正则匹配）
         pool = [i for i in await repo.list_all(limit=200) if i.username.startswith(keyword)]
     else:
         pool = await repo.list_all(limit=_PAGE_SIZE)

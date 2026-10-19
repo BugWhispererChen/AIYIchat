@@ -17,9 +17,9 @@ class WebCredentialRepository:
         return get_database().web_credentials
 
     async def insert(self, credential: WebCredentialCreate) -> Optional[WebCredentialInDB]:
-        """写入新身份；登录名已被占用时返回 None。
+        """写入新身份；用户名已被占用时返回 None。
 
-        依赖 `username` 唯一索引做原子占位：并发注册同一登录名时只有一个人成功，
+        依赖 `username` 唯一索引做原子占位：并发注册同一用户名时只有一个人成功，
         另一个在此处得到 None（上层转 409），无需先查后插的竞态判断。
         """
         now = datetime.now(timezone.utc)
@@ -34,7 +34,7 @@ class WebCredentialRepository:
         return WebCredentialInDB.from_mongo(doc)
 
     async def find_by_username(self, username: str) -> Optional[WebCredentialInDB]:
-        """按规范化登录名查询身份。"""
+        """按规范化用户名查询身份。"""
         doc = await self._collection().find_one({"username": username})
         if doc is None:
             return None
@@ -170,7 +170,7 @@ class WebCredentialRepository:
     async def find_recent_by_username(
         self, username: str, within_hours: int, status: CredentialStatus
     ) -> Optional[WebCredentialInDB]:
-        """查询该登录名在冷却期内是否已被指定状态占用（拒绝后 24h 内不可重注）。"""
+        """查询该用户名在冷却期内是否已被指定状态占用（拒绝后 24h 内不可重注）。"""
         since = datetime.now(timezone.utc) - timedelta(hours=within_hours)
         doc = await self._collection().find_one(
             {"username": username, "status": status, "reviewed_at": {"$gt": since}}

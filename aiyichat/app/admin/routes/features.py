@@ -180,7 +180,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="web_auth_enabled",
         label="C 端网页登录",
-        desc="开启后网页身份可用「登录名 + 密码」登录，并以会话令牌访问流式对话接口；"
+        desc="开启后网页身份可用「用户名 + 密码」登录，并以会话令牌访问流式对话接口；"
         "关闭时 /api/auth/* 与 /web/* 一律 403，QQ / 微信链路完全不受影响。",
         dependency="需在「网页身份」页指定载体 Bot（platform=web）",
         cost="free",
@@ -189,7 +189,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         key="web_register_enabled",
         label="C 端自助注册",
         desc="开放网页自助注册：注册时原子建齐账号、额度、身份与对话服务，任一步失败自动回滚，"
-        "不会留下占死登录名的半成品账号。",
+        "不会留下占死用户名的半成品账号。",
         dependency="需先开启「C 端网页登录」",
         cost="free",
     ),
@@ -197,7 +197,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         key="web_register_require_review",
         label="注册需人工审核",
         desc="新身份注册后处于待审核状态，管理员在「网页身份」页通过后方可登录；"
-        "被拒绝的登录名 24 小时内不可重新注册。",
+        "被拒绝的用户名 24 小时内不可重新注册。",
         dependency="需先开启「C 端自助注册」",
         cost="free",
     ),

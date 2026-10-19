@@ -160,7 +160,7 @@ def _build_create(payload: WebProfilePayload, account_id: str, slug: str) -> Pro
 
 
 def _gen_slug(username: str) -> str:
-    """生成私有角色的 slug：登录名可读前缀 + 随机后缀，与公共命名空间隔离。"""
+    """生成私有角色的 slug：用户名可读前缀 + 随机后缀，与公共命名空间隔离。"""
     base = re.sub(r"[^a-z0-9]", "", username.lower())[:12] or "user"
     return f"w-{base}-{uuid4().hex[:8]}"
 

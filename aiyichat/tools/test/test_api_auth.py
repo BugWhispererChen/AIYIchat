@@ -2,7 +2,7 @@
 
 覆盖计划第六节的必测项：
 - 取验证码 → 注册（pending）→ 审核通过 → 登录 → 会话访问
-- 验证码一次性消费、IP 限流 429、重复登录名 409、未成年拦截
+- 验证码一次性消费、IP 限流 429、重复用户名 409、未成年拦截
 - `chat/stream` 无 token 必须 401、带 token 但 platform_id/bot_id 不匹配必须 403
 - 开关关闭时旧 API 行为完全不变
 """
@@ -315,7 +315,7 @@ class TestAuthApiFlow:
         asyncio.run(flow())
 
     def test_rejections(self) -> None:
-        """重复登录名 409、未成年 400、弱密码 400、非法登录名 400。"""
+        """重复用户名 409、未成年 400、弱密码 400、非法用户名 400。"""
 
         async def flow() -> None:
             app = await _setup_app("t_auth_reject")
@@ -576,7 +576,7 @@ class TestChatStreamAuthorization:
 
 
 async def _services_of(identity_id: str) -> list[Any]:
-    """取该登录名下的对话服务列表。"""
+    """取该用户名下的对话服务列表。"""
     from app.db.repositories.service_repo import ServiceRepository
 
     return await ServiceRepository().list_by_identity(identity_id)

@@ -142,7 +142,7 @@
             <div id="success-panel" class="alert alert-success" hidden></div>
 
             <form id="register-form" autocomplete="off">
-                <label for="username">登录名</label>
+                <label for="username">用户名</label>
                 <input type="text" id="username" name="username" required maxlength="32"
                        placeholder="3-32 位字母、数字或下划线" autocomplete="username">
                 <p class="field-tip">不能使用 admin、system 等保留名，注册后不可修改。</p>
@@ -285,7 +285,7 @@
                 grade = '弱'; width = '33%'; color = 'var(--danger)'; cls = 'lvl-weak';
                 tip.textContent = pwd.length < 8
                     ? '至少 8 位，并同时包含字母和数字。'
-                    : '该密码过于常见或包含登录名，请更换。';
+                    : '该密码过于常见或包含用户名，请更换。';
             } else if (pwd.length >= 12 && (hasSymbol || /[A-Z]/.test(pwd))) {
                 grade = '强'; width = '100%'; color = 'var(--success)'; cls = 'lvl-strong';
                 tip.textContent = '强度良好。建议再启用大小写与符号混排。';

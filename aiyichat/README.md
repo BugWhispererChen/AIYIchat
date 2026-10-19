@@ -77,7 +77,7 @@ chmod +x deploy.sh
 | `CONTEXT_WINDOW_SIZE` | 上下文窗口大小 | `20` |
 | `SUMMARY_TRIGGER_COUNT` | 摘要触发消息数 | `40` |
 | **管理后台** |||
-| `ADMIN_USERNAME` | 管理员登录名 | `admin` |
+| `ADMIN_USERNAME` | 管理员用户名 | `admin` |
 | `ADMIN_PASSWORD` | 管理员密码 | 空，**必填** |
 | `ADMIN_SESSION_HOURS` | 会话有效期（小时） | `24` |
 | **主动关怀分享** |||

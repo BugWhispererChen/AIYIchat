@@ -3,8 +3,8 @@
 设计要点（对应执行计划第二节与第五节 P2/P3）：
 - 注册必须原子建齐 Account→Quota→User→Service 四件套：流式链路没有自动绑定分支，
   引擎要求 User 与 Service 均已存在，且 `_quota_precheck` 在额度记录缺失时直接拒发。
-- 登录名占位依赖 `web_credentials.username` 唯一索引，四件套建齐后才回填 `identity_id`，
-  中途失败必须回滚已写文档（含删除身份，避免登录名被永久占死）。
+- 用户名占位依赖 `web_credentials.username` 唯一索引，四件套建齐后才回填 `identity_id`，
+  中途失败必须回滚已写文档（含删除身份，避免用户名被永久占死）。
 - 凭据与业务身份分离：密码哈希只进 `web_credentials`，不进会被 prompt 消费的 user 对象。
 """
 
@@ -55,7 +55,7 @@ FREE_VOICE_LIMIT = 30
 FREE_IMAGE_LIMIT = 20
 FREE_QUOTA_VALID_DAYS = 30
 
-# 登录名规则：规范化后 3-32 位，小写字母/数字/下划线，且必须以字母或数字开头
+# 用户名规则：规范化后 3-32 位，小写字母/数字/下划线，且必须以字母或数字开头
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,32}$")
 USERNAME_FIRST_MUST_ALNUM = re.compile(r"^[a-z0-9]")
 # 保留名：避免与管理员账号、系统角色混淆或被用于仿冒
@@ -127,19 +127,19 @@ def ensure_web_enabled() -> None:
 
 
 def validate_username(raw: str) -> str:
-    """校验并返回规范化登录名。"""
+    """校验并返回规范化用户名。"""
     username = normalize_username(raw)
     if not username:
-        raise AuthError("invalid_username", "登录名不能为空")
+        raise AuthError("invalid_username", "用户名不能为空")
     if not USERNAME_PATTERN.match(username) or not USERNAME_FIRST_MUST_ALNUM.match(username):
-        raise AuthError("invalid_username", "登录名需为 3-32 位字母、数字或下划线，且以字母或数字开头")
+        raise AuthError("invalid_username", "用户名需为 3-32 位字母、数字或下划线，且以字母或数字开头")
     if username in RESERVED_USERNAMES:
-        raise AuthError("invalid_username", "该登录名为保留名，请更换")
+        raise AuthError("invalid_username", "该用户名为保留名，请更换")
     return username
 
 
 def validate_password(username: str, password: str) -> None:
-    """密码策略：长度 8-64、至少 1 字母 + 1 数字、不在弱密码黑名单、不含登录名。"""
+    """密码策略：长度 8-64、至少 1 字母 + 1 数字、不在弱密码黑名单、不含用户名。"""
     if len(password) < 8 or len(password) > 64:
         raise AuthError("weak_password", "密码长度需为 8-64 位")
     if not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
@@ -147,7 +147,7 @@ def validate_password(username: str, password: str) -> None:
     if password.lower() in WEAK_PASSWORDS:
         raise AuthError("weak_password", "该密码过于常见，请更换")
     if username and username in password.lower():
-        raise AuthError("weak_password", "密码不能包含登录名")
+        raise AuthError("weak_password", "密码不能包含用户名")
 
 
 def build_consent(terms_accepted: bool, privacy_accepted: bool, age_confirmed: bool) -> WebConsent:
@@ -242,7 +242,7 @@ async def build_free_quota(account_id: str) -> tuple[AccountQuotaUpdate, str]:
 async def rollback(draft: _Draft) -> None:
     """回滚注册途中已写入的文档。
 
-    账号级联删除覆盖 User/Service/Quota；身份单独删除，否则登录名会被永久占死、
+    账号级联删除覆盖 User/Service/Quota；身份单独删除，否则用户名会被永久占死、
     身份再也无法注册。回滚自身失败只告警，不掩盖原始异常。
     """
     try:
@@ -259,7 +259,7 @@ async def rollback(draft: _Draft) -> None:
 
 
 async def _purge_rejected(credential: WebCredentialInDB) -> None:
-    """清理被拒身份的遗留数据，释放登录名以便冷却期后重新注册。
+    """清理被拒身份的遗留数据，释放用户名以便冷却期后重新注册。
 
     唯一索引按字面值占位，被拒记录不删除就永远注册不了；被拒身份从未激活，
     其业务四件套与会话可安全级联清除。
@@ -281,12 +281,12 @@ async def register(
     age_confirmed: bool,
     ip: str = "",
 ) -> WebCredentialInDB:
-    """自助注册：校验 → 占登录名 → 建四件套 → 落 pending（或免审直达 active）。
+    """自助注册：校验 → 占用户名 → 建四件套 → 落 pending（或免审直达 active）。
 
     Returns:
         已落库的网页身份（status 由 `web_register_require_review` 决定）
     Raises:
-        AuthError: 校验不通过、登录名冲突、处于拒绝冷却期、或依赖配置缺失
+        AuthError: 校验不通过、用户名冲突、处于拒绝冷却期、或依赖配置缺失
     """
     ensure_web_enabled()
     if not settings.web_register_enabled:
@@ -299,9 +299,9 @@ async def register(
     credentials = WebCredentialRepository()
     existing = await credentials.find_by_username(name)
     if existing is not None:
-        # 被拒登录名在冷却期后允许重新注册；其余状态（pending/active/disabled）一律占用
+        # 被拒用户名在冷却期后允许重新注册；其余状态（pending/active/disabled）一律占用
         if existing.status != "rejected":
-            raise AuthError("username_taken", "该登录名已被占用", 409)
+            raise AuthError("username_taken", "该用户名已被占用", 409)
         if (
             await credentials.find_recent_by_username(name, REJECT_COOLDOWN_HOURS, "rejected")
             is not None
@@ -309,7 +309,7 @@ async def register(
             raise AuthError("register_cooldown", "上次审核未通过，请稍后再试", 409)
         await _purge_rejected(existing)
 
-    # 先占登录名（唯一索引原子判重），再建业务四件套
+    # 先占用户名（唯一索引原子判重），再建业务四件套
     credential = await credentials.insert(
         WebCredentialCreate(
             username=name,
@@ -320,7 +320,7 @@ async def register(
         )
     )
     if credential is None:
-        raise AuthError("username_taken", "该登录名已被占用", 409)
+        raise AuthError("username_taken", "该用户名已被占用", 409)
 
     draft = _Draft(credential_id=credential.id)
     try:
@@ -376,14 +376,14 @@ async def register(
 async def login(*, username: str, password: str, ip: str = "", user_agent: str = "") -> LoginResult:
     """登录：校验凭据与状态 → 签发会话 → 并发上限控制 → 滑动过期起点。
 
-    失败计数与锁定按身份维度进行；无论登录名是否存在都返回同一提示，避免枚举账号。
+    失败计数与锁定按身份维度进行；无论用户名是否存在都返回同一提示，避免枚举账号。
     """
     ensure_web_enabled()
     name = normalize_username(username)
     credentials = WebCredentialRepository()
     credential = await credentials.find_by_username(name)
     if credential is None:
-        raise AuthError("login_failed", "登录名或密码错误", 401)
+        raise AuthError("login_failed", "用户名或密码错误", 401)
 
     if credential.is_locked:
         raise AuthError("login_locked", "登录失败次数过多，请稍后再试", 429)
@@ -393,7 +393,7 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
         )
         if locked_until is not None:
             raise AuthError("login_locked", "登录失败次数过多，账号已临时锁定", 429)
-        raise AuthError("login_failed", "登录名或密码错误", 401)
+        raise AuthError("login_failed", "用户名或密码错误", 401)
 
     if credential.status == "pending":
         raise AuthError("login_pending", "注册正在等待审核，通过后即可登录", 403)

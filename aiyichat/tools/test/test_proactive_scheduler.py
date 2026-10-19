@@ -192,8 +192,8 @@ class TestWebPrincipalSkipped:
     def test_web_user_never_receives_proactive_message(self, monkeypatch) -> None:
         """网页身份由 C 端会话被动应答，主动关怀必须跳过（防止向无真实平台通道的身份发送）。
 
-        回归动机：注册身份以 User(platform="web", platform_id=<登录名>) 入库，
-        其 platform_id 是小写登录名（非 UUID、非 openid），不会被前置的
+        回归动机：注册身份以 User(platform="web", platform_id=<用户名>) 入库，
+        其 platform_id 是小写用户名（非 UUID、非 openid），不会被前置的
         UUID 未绑定检查拦截——唯一防线是 _process_service 中的平台白名单守卫。
         本用例将守卫之后的整条"合格服务"链路全部打桩为可发送，若守卫被重构
         移除，发送与建档断言会立即失败，锁定该行为不被静默破坏。
@@ -205,7 +205,7 @@ class TestWebPrincipalSkipped:
         identity = SimpleNamespace(
             id="u-web-1",
             platform="web",
-            platform_id="alice",  # 登录名而非 openid，刻意避开 UUID 兜底检查
+            platform_id="alice",  # 用户名而非 openid，刻意避开 UUID 兜底检查
             is_blocked=False,
             last_active_at=datetime.now(timezone.utc) - timedelta(hours=5),
             timezone="",

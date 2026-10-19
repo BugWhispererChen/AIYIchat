@@ -238,7 +238,7 @@ class TestReviewActions:
         asyncio.run(flow())
 
     def test_disable_kicks_sessions(self) -> None:
-        """后台禁用后：会话清空、令牌立即失效、登录名不可重注。"""
+        """后台禁用后：会话清空、令牌立即失效、用户名不可重注。"""
 
         async def flow() -> None:
             app = await _seed_env()

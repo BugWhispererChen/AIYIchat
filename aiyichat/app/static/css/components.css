@@ -284,6 +284,36 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-note { font-size: .82rem; color: var(--text-2); margin: var(--space-1) 0 0; }
 .ui-note--err { color: var(--danger-text); }
 
+/* 滑块右侧的数值回显（性格特质） */
+.ui-trait-val {
+    min-width: 40px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: .82rem;
+    color: var(--text-2);
+}
+
+/* 卡片内的小节标题（比 ui-card-title 低一档） */
+.ui-subhead {
+    margin: 0 0 var(--space-2);
+    font-family: var(--font-display);
+    font-size: .95rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* 原生音频控件：限宽，避免在宽卡片里拉成一条巨棒 */
+.ui-audio { width: 100%; max-width: 400px; }
+
+/* 录音计时回显 */
+.ui-timer {
+    min-width: 60px;
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary);
+}
+
 /* ── 空 / 加载 / 错误 三态 ───────────────────────────── */
 .ui-empty, .ui-error-state {
     display: flex;
@@ -325,6 +355,21 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     border-radius: 50%;
     animation: ui-spin .7s linear infinite;
 }
+/* 行内超小档：跟在文字后面的"处理中…"提示，替代各页自带的 spinner 样式块 */
+.ui-spinner--xs {
+    width: 12px; height: 12px;
+    margin-right: 6px;
+    vertical-align: -2px;
+}
+
+/* 缩略图：定妆照一类的方形预览图 */
+.ui-thumb {
+    width: 160px;
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+.ui-thumb--pick { border: 2px solid var(--primary); }
 
 /* ── 标签页 ─────────────────────────────────────────── */
 .ui-tabs {

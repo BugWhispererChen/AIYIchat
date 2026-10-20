@@ -287,6 +287,16 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-input--tight { max-width: 8rem; }
 .ui-input--num { max-width: 5rem; }
 
+/* 只读态：公共角色预览复用编辑表单时，用虚线灰底把"看得见、改不了"表达出来 */
+.ui-input[readonly], .ui-textarea[readonly] {
+    background: var(--surface-2);
+    color: var(--text-2);
+    border-style: dashed;
+    cursor: default;
+    resize: none;
+}
+.ui-select[disabled] { opacity: .7; cursor: not-allowed; }
+
 /* 次级行：附属于上一行的编辑带，去掉上边框以与主行连成一块 */
 .ui-table tbody tr.ui-row-sub > td {
     background: var(--surface-2);

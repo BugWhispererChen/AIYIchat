@@ -9,6 +9,7 @@
 """
 
 import asyncio
+from datetime import datetime
 from typing import Any, AsyncIterator, Callable
 
 import mongomock_motor
@@ -31,6 +32,17 @@ from app.utils.rate_limit import login_limiter, register_limiter
 WEB_BOT_ID = "web-bot-selfsvc"
 PUBLIC_SLUG = "lin-yu"
 PASSWORD = "passw0rd9"
+
+# 公共角色详情必须隐去的内部字段：写成字面量而非导入被测模块的私有常量，
+# 这样清单被误删时测试会失败，而不是跟着一起放宽断言。
+HIDDEN_PUBLIC_FIELDS = (
+    "account_id",
+    "voice_id",
+    "voice_clone_target_model",
+    "reference_image_url",
+    "sticker_group_ids",
+    "disable_reason",
+)
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
@@ -198,6 +210,54 @@ class TestWebProfileSelfService:
                     pub = await ProfileRepository().find_by_slug(PUBLIC_SLUG)
                     assert pub is not None
                     assert (await c.put(f"/api/web/profiles/{pub.id}", json=_profile_body(), headers=_h(b))).status_code == 404
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_owner_can_read_private_profile_detail(self) -> None:
+        """本人私有角色详情可读：响应必须能被 JSON 解析（时间字段须已序列化）。"""
+
+        async def flow() -> None:
+            app = await _setup_app("selfsvc_detail")
+            try:
+                async with _client(app) as c:
+                    a = await _signup(c, "alice")
+                    pid = (await c.post("/api/web/profiles", json=_profile_body("阿禾"), headers=_h(a))).json()["id"]
+                    resp = await c.get(f"/api/web/profiles/{pid}", headers=_h(a))
+                    assert resp.status_code == 200, resp.text
+                    data = resp.json()
+                    assert data["id"] == pid
+                    assert data["name"] == "阿禾"
+                    assert data["visibility"] == "private"
+                    assert data["persona"]["background"] == "山间书院的学徒"
+                    # created_at / updated_at 是 datetime，必须以 ISO 字符串出网
+                    for key in ("created_at", "updated_at"):
+                        assert isinstance(data[key], str), (key, data[key])
+                        datetime.fromisoformat(data[key])
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_public_profile_detail_masks_internal_fields(self) -> None:
+        """公共角色详情可读且脱敏：只读字段可见，运营与归属字段不外泄。"""
+
+        async def flow() -> None:
+            app = await _setup_app("selfsvc_detail_pub")
+            try:
+                async with _client(app) as c:
+                    a = await _signup(c, "alice")
+                    resp = await c.get(f"/api/web/profiles/{PUBLIC_SLUG}", headers=_h(a))
+                    assert resp.status_code == 200, resp.text
+                    data = resp.json()
+                    assert data["name"] == "林语"
+                    assert data["visibility"] == "public"
+                    # 编辑表单回填所需的分组必须齐全
+                    for key in ("persona", "language_style", "personality", "dialogue_strategy"):
+                        assert key in data
+                    for key in HIDDEN_PUBLIC_FIELDS:
+                        assert key not in data, key
             finally:
                 mongo._db = None
 

@@ -182,6 +182,7 @@
         const editorEl = document.getElementById('editor-card');
         const titleEl = editorEl.querySelector('.ui-card-title');
         const saveBtn = document.getElementById('save-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
 
         let items = [];          // 后端返回的角色条目
         let editingId = null;    // null=新建，否则为正在编辑的私有角色 ID
@@ -288,6 +289,23 @@
             };
         }
 
+        /* 只读态：预览公共角色时锁定整张表单。select 不支持 readOnly，改用 disabled；
+           两者的 .value 仍可被 JS 读到，故「以此新建角色」的取值逻辑不受影响。 */
+        function setReadonly(flag) {
+            Object.keys(F).forEach(function (key) {
+                const node = el(key);
+                if (node.tagName === 'SELECT') node.disabled = flag;
+                else node.readOnly = flag;
+            });
+            const badge = titleEl.querySelector('.ui-badge');
+            if (badge) badge.remove();
+            if (!flag) return;
+            const b = document.createElement('span');
+            b.className = 'ui-badge ui-badge--line';
+            b.textContent = '只读';
+            titleEl.appendChild(b);
+        }
+
         /* ── 列表渲染（一律 textContent，禁止把后端文本当 HTML 解析）── */
         function show(kind, text) {
             bannerEl.hidden = false;
@@ -373,7 +391,9 @@
             editingId = id;
             fillForm(r.data);
             titleEl.textContent = '编辑角色：' + (r.data.name || '');
+            setReadonly(false);
             saveBtn.textContent = '保存角色';
+            cancelBtn.textContent = '取消';
             editorEl.hidden = false;
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -385,17 +405,21 @@
             editingId = null;
             fillForm(r.data);
             titleEl.textContent = '公共角色（只读参考）：' + (r.data.name || '');
+            setReadonly(true);
             saveBtn.textContent = '以此新建角色';
+            cancelBtn.textContent = '关闭';
             editorEl.hidden = false;
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            show('公共角色不可修改；需要改动请以此为基础新建自己的角色。');
+            show('info', '公共角色不可修改；需要改动请以此为基础新建自己的角色。');
         }
 
         function closeEditor() {
             editorEl.hidden = true;
             editingId = null;
             base = null;
+            setReadonly(false);
             saveBtn.textContent = '保存角色';
+            cancelBtn.textContent = '取消';
             bannerEl.hidden = true;
         }
 
@@ -436,7 +460,9 @@
             editingId = null;
             fillForm(null);
             titleEl.textContent = '新建角色';
+            setReadonly(false);
             saveBtn.textContent = '保存角色';
+            cancelBtn.textContent = '取消';
             bannerEl.hidden = true;
             editorEl.hidden = false;
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });

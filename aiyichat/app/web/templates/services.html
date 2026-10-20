@@ -189,7 +189,7 @@
             titleEl.textContent = sv ? '编辑伙伴：' + sv.name : '新建伙伴';
             editorEl.hidden = false;
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            if (!profiles.length) show('还没有可用角色，请先到「我的角色」创建或启用一个。');
+            if (!profiles.length) show('info', '还没有可用角色，请先到「我的角色」创建或启用一个。');
         }
 
         async function save() {

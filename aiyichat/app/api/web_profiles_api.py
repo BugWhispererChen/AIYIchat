@@ -10,11 +10,12 @@
 
 import logging
 import re
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import APIRouter, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -240,7 +241,9 @@ async def get_web_profile(request: Request, profile_id: str) -> JSONResponse:
     if profile.visibility == "private" and not owned:
         return _bad("not_found", "角色不存在", 404)
 
-    data = profile.model_dump(by_alias=False)
+    # created_at/updated_at 是 datetime，而 JSONResponse 用裸 json.dumps 渲染（不做 FastAPI
+    # 的 jsonable_encoder 编码），直接返回会 TypeError→500，前端表现为"角色读取失败"。
+    data: dict[str, Any] = jsonable_encoder(profile.model_dump(by_alias=False))
     if not owned:
         # 公共角色只读：隐去运营与内部字段，保留前端展示所需的人设描述
         for key in _HIDDEN_PUBLIC_FIELDS:

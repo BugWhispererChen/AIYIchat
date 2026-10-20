@@ -138,6 +138,26 @@ class MessageRepository:
         )
         return result.deleted_count
 
+    async def list_by_conversation_ids(
+        self, conv_ids: list[str], limit: int = 0
+    ) -> list[MessageInDB]:
+        """批量取回多个对话的消息（按对话与时间正序）。
+
+        账号中心的数据导出与注销都要先拿到消息：导出用它在一次查询内组装全部
+        对话内容，注销用它反解消息里挂的媒体文件 ID（媒体文档本身不记归属）。
+        limit > 0 时按总量截断并在结果外由调用方标记 truncated。
+        """
+        if not conv_ids:
+            return []
+        cursor = (
+            self._collection()
+            .find({"conversation_id": {"$in": conv_ids}})
+            .sort([("conversation_id", 1), ("created_at", 1), ("_id", 1)])
+        )
+        if limit > 0:
+            cursor = cursor.limit(limit)
+        return [MessageInDB.from_mongo(doc) async for doc in cursor]
+
     # ── 经营数据聚合（仪表盘趋势图）────────────────────────────
 
     async def count_daily(self, days: int = 14) -> list[dict]:

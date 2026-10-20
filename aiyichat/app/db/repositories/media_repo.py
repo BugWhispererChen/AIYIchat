@@ -40,3 +40,18 @@ class MediaRepository:
     async def delete(self, media_id: str) -> bool:
         result = await self._collection().delete_one({"_id": ObjectId(media_id)})
         return result.deleted_count > 0
+
+    async def delete_by_ids(self, media_ids: list[str]) -> int:
+        """按 ID 批量删除媒体文件。
+
+        media 文档不记归属（只有二进制与上传时间），删除只能由持有消息的一方驱动：
+        账号中心清空对话/注销时先从消息的 media_url 反解出 ID，再走这里清理，
+        否则用户删完对话，生成的图片仍整份留在库里。
+        """
+        valid_ids = [mid for mid in set(media_ids) if ObjectId.is_valid(mid)]
+        if not valid_ids:
+            return 0
+        result = await self._collection().delete_many(
+            {"_id": {"$in": [ObjectId(mid) for mid in valid_ids]}}
+        )
+        return result.deleted_count

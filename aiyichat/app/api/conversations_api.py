@@ -145,7 +145,9 @@ async def chat_stream(req: StreamChatRequest, request: Request):
             raise HTTPException(status_code=403, detail="无权使用该 Bot")
         bot_id = principal.bot_id
         platform, platform_id = "web", principal.username
-        nickname = req.nickname or principal.username
+        # 昵称一律取会话身份（账号中心可改），不接受客户端入参：
+        # 否则任何人只要在请求体里换一个 nickname 就能冒充他人的称呼写进 prompt
+        nickname = principal.nickname or principal.username
         # 指定服务时校验归属：只能对话自己名下的服务（多角色切换的越权面）
         service_id = req.service_id.strip()
         if service_id:

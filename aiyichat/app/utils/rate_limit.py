@@ -85,6 +85,14 @@ WINDOW_SECONDS = 600.0
 # 模块级单例：注册/登录共用进程内计数
 register_limiter = SlidingWindowLimiter()
 login_limiter = SlidingWindowLimiter()
+# 账号中心写操作（改密 / 资料 / 清理 / 注销）共用一个计数器：
+# key 已含 scope 与凭据 ID，不同动作与不同账号互不影响，只需注意别把同 IP 的其他账号打死
+account_limiter = SlidingWindowLimiter()
+
+# 账号中心的限流作用域：统一走 account_limiter，避免每新增一个端点就新增一个单例
+_ACCOUNT_SCOPES = frozenset(
+    {"account_password", "account_write", "account_data", "account_delete"}
+)
 
 
 def check_rate_limit(scope: str, ip: str, limit: int) -> None:
@@ -103,6 +111,8 @@ def _limiter_for(scope: str) -> SlidingWindowLimiter:
         return register_limiter
     if scope == "login":
         return login_limiter
+    if scope in _ACCOUNT_SCOPES:
+        return account_limiter
     raise ValueError(f"未注册的限流作用域: {scope}")
 
 

@@ -1,4 +1,4 @@
-"""C 端网页路由：注册 / 登录 / 极简聊天三张页面。
+"""C 端网页路由：注册 / 登录 / 极简聊天 / 角色 / 伙伴 / 账号中心。
 
 页面只是静态壳，本模块不接触凭据与数据库：所有业务一律走前端直连
 `/api/auth/*` 与 `/api/conversations/chat/stream`，因此这里只做模板渲染与开关拦截。
@@ -151,6 +151,18 @@ async def services_page(request: Request) -> Response:
     if not settings.web_auth_enabled:
         return _disabled_page()
     return _render(request, "services.html")
+
+
+@web_router.get("/web/account", response_class=HTMLResponse)
+async def account_page(request: Request) -> Response:
+    """账号中心：资料、密码与登录设备、额度、数据与隐私、注销。
+
+    页面只是静态壳，账号数据全部由前端带 Bearer 令牌调 `/api/web/account/*` 取，
+    因此开关关闭时同样只返回 403 提示页，不下发任何身份数据。
+    """
+    if not settings.web_auth_enabled:
+        return _disabled_page()
+    return _render(request, "account.html")
 
 
 @web_router.get("/", include_in_schema=False)

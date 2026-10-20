@@ -38,7 +38,7 @@ from app.models.web_credential import (
     WebCredentialInDB,
     normalize_username,
 )
-from app.models.web_session import WebSessionCreate
+from app.models.web_session import WebSessionCreate, WebSessionInDB
 from app.utils.password_hashing import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,19 @@ class LoginResult:
 
     credential: WebCredentialInDB
     token: str
+
+
+@dataclass
+class SessionResult:
+    """令牌解析产物：凭据、关联身份与承载它的会话记录。
+
+    账号中心需要会话 ID 来区分"当前设备"与"其他设备"，故单独返回 session；
+    只需要凭据与身份的旧调用方继续用 `resolve_token`。
+    """
+
+    credential: WebCredentialInDB
+    identity_id: str
+    session: WebSessionInDB
 
 
 @dataclass
@@ -421,8 +434,8 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
     return LoginResult(credential=saved or credential, token=token)
 
 
-async def resolve_token(token: str) -> tuple[WebCredentialInDB, str]:
-    """由会话令牌解析出身份与其关联身份 ID（供 `require_current_identity` 使用）。
+async def resolve_session(token: str) -> SessionResult:
+    """由会话令牌解析出凭据、关联身份与会话记录。
 
     令牌缺失/过期/被 TTL 回收、身份非 active、身份已被删除或 identity_id 未回填，
     一律抛 AuthError(401)，由依赖层转成 401/403。
@@ -440,12 +453,54 @@ async def resolve_token(token: str) -> tuple[WebCredentialInDB, str]:
         raise AuthError("unauthorized", "账号数据不完整，请重新登录", 401)
     # 滑动过期：每次成功访问顺延
     await WebSessionRepository().touch(session.token, settings.web_session_hours)
-    return credential, credential.identity_id
+    return SessionResult(credential=credential, identity_id=credential.identity_id, session=session)
+
+
+async def resolve_token(token: str) -> tuple[WebCredentialInDB, str]:
+    """由会话令牌解析出身份与其关联身份 ID（供 `require_current_identity` 使用）。"""
+    result = await resolve_session(token)
+    return result.credential, result.identity_id
 
 
 async def logout(token: str) -> bool:
     """注销：删除当前会话令牌。"""
     return await WebSessionRepository().delete_by_token(token)
+
+
+async def change_password(
+    credential_id: str,
+    current_password: str,
+    new_password: str,
+    keep_session_id: str = "",
+) -> int:
+    """用户自助改密：校验旧密码 → 写入新哈希 → 保留当前会话、踢掉其他设备。
+
+    与管理员 `reset_password` 的区别：本函数面向已登录用户，必须验旧密码，
+    且只下线"其他"会话，避免用户改完密码就被自己的当前设备踢出。
+
+    Returns:
+        被下线的其他会话数量
+    Raises:
+        AuthError: 凭据不存在、旧密码错误、新旧相同、新密码不合策略、写库失败
+    """
+    repo = WebCredentialRepository()
+    credential = await repo.find_by_id(credential_id)
+    if credential is None:
+        raise AuthError("credential_not_found", "账号不存在", 404)
+    if not verify_password(current_password, credential.password_hash):
+        raise AuthError("invalid_current_password", "当前密码不正确", 400)
+    if verify_password(new_password, credential.password_hash):
+        raise AuthError("same_password", "新密码不能与当前密码相同", 400)
+    validate_password(credential.username, new_password)
+
+    if not await repo.set_password(credential_id, hash_password(new_password)):
+        raise AuthError("password_change_failed", "密码修改失败，请稍后重试", 500)
+
+    revoked = await WebSessionRepository().delete_others(credential_id, keep_session_id)
+    logger.info(
+        "网页身份 %s 自助修改密码，已下线其他会话 %d 个", credential.username, revoked
+    )
+    return revoked
 
 
 async def approve(credential_id: str, reviewed_by: str, note: str = "") -> bool:

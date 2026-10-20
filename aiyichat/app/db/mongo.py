@@ -184,6 +184,14 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("status", 1), ("sent_at", -1)],
     )
     await _safe_create_index(db.proactive_records, "created_at")
+    # 主动消息记录：按身份清理（C 端账号注销）
+    await _safe_create_index(db.proactive_records, "identity_id")
+    # 套餐订单台账：按账号查询与清理
+    await _safe_create_index(db.orders, "account_id")
+    # 内容安全事件：按账号查询与清理
+    await _safe_create_index(db.safety_events, "account_id")
+    # 记忆注入快照：按服务（含共享组 key）查询与清理
+    await _safe_create_index(db.injection_snapshots, "service_id")
     # 内容安全事件：按类型+时间、创建时间索引（供审计分页/统计）
     await _safe_create_index(
         db.safety_events,

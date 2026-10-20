@@ -45,6 +45,17 @@ class OrderRepository:
             query["account_id"] = account_id
         return await self._collection().count_documents(query)
 
+    async def delete_by_account(self, account_id: str) -> int:
+        """删除某账号的订单台账（用户自助注销时调用）。
+
+        当前订单为运营手动开通的记账流水、未接第三方支付，随账号一并物理删除；
+        一旦接入真实支付，此处必须改为保留并脱敏，否则财务对账链条会断。
+        """
+        if not account_id:
+            return 0
+        result = await self._collection().delete_many({"account_id": account_id})
+        return result.deleted_count
+
     async def sum_amount(self, days: int = 30) -> float:
         """统计近 N 天订单记账金额合计（元）。"""
         from datetime import datetime, timedelta, timezone

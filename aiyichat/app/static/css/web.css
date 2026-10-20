@@ -230,6 +230,46 @@ label { font-size: .8rem; color: var(--text-2); }
 input, textarea, select { font-size: .88rem; }
 textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 
+/* ══ 账号中心：分区导航、额度仪表、设备与危险区 ══ */
+.account-nav {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-bottom: 1rem;
+    padding: .5rem 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.account-nav a {
+    padding: .3rem .7rem;
+    border-radius: var(--radius-pill);
+    font-size: .82rem;
+    color: var(--text-2);
+    text-decoration: none;
+}
+.account-nav a:hover { background: var(--surface-2); color: var(--text); }
+.account-section { scroll-margin-top: 4.5rem; }
+.account-meta { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; font-size: .82rem; color: var(--text-2); }
+.quota-cell { display: grid; gap: .35rem; }
+.quota-cell .quota-head { display: flex; align-items: baseline; gap: .4rem; font-size: .84rem; }
+.quota-cell .quota-head strong { font-size: 1.05rem; color: var(--text); }
+.quota-cell .quota-tail { font-size: .78rem; color: var(--text-3); }
+.session-meta, .data-meta { font-size: .78rem; color: var(--text-3); }
+.memory-fact {
+    display: grid;
+    gap: .15rem;
+    padding: .5rem 0;
+    border-top: 1px dashed var(--border);
+    font-size: .84rem;
+    line-height: 1.7;
+}
+.memory-fact:first-child { border-top: 0; }
+.memory-fact .fact-meta { font-size: .74rem; color: var(--text-3); }
+.danger-hint { font-size: .8rem; color: var(--danger-text); line-height: 1.8; }
+
 /* ══ 会话页骨架 ══ */
 .chat-body {
     display: flex;

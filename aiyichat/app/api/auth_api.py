@@ -21,6 +21,7 @@ from app.db.repositories.identity_repo import IdentityRepository
 from app.models.service import ServiceInDB
 from app.models.identity import IdentityInDB
 from app.models.web_credential import WebCredentialInDB
+from app.models.web_session import WebSessionInDB
 from app.services import auth_service
 from app.services.auth_service import AuthError
 from app.services.captcha_service import captcha_service
@@ -40,8 +41,24 @@ class WebPrincipal:
     identity_id: str
     account_id: str
     username: str
+    nickname: str
     bot_id: str
     service_id: str
+
+
+@dataclass
+class WebAccountPrincipal:
+    """账号中心上下文：只依赖凭据 / 身份 / 会话，不要求账号已有活跃服务。
+
+    与 `WebPrincipal` 分开是有意为之：对话与角色/伙伴接口必须有可用服务才能工作，
+    但账号中心承担的正是"服务被停用后用户仍能自救"的场景（改密、清理数据、注销），
+    若复用带服务校验的依赖，这类用户会被 403 彻底挡在门外。
+    """
+
+    credential: WebCredentialInDB
+    identity: IdentityInDB
+    session: WebSessionInDB
+    token: str
 
 
 def client_ip(request: Request) -> str:
@@ -69,18 +86,40 @@ async def require_current_identity(request: Request) -> WebPrincipal:
     token = bearer_token(request)
     if not token:
         raise AuthError("unauthorized", "请先登录", 401)
-    credential, identity_id = await auth_service.resolve_token(token)
-    identity = await IdentityRepository().find_by_id(identity_id)
+    result = await auth_service.resolve_session(token)
+    identity = await IdentityRepository().find_by_id(result.identity_id)
     if identity is None or identity.is_blocked:
         raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
     service = await _resolve_service(identity)
     return WebPrincipal(
-        credential=credential,
+        credential=result.credential,
         identity_id=identity.id,
         account_id=identity.account_id,
-        username=credential.username,
+        username=result.credential.username,
+        nickname=identity.nickname or identity.name or result.credential.username,
         bot_id=service.bot_id,
         service_id=service.id,
+    )
+
+
+async def require_web_account(request: Request) -> WebAccountPrincipal:
+    """账号中心依赖：解析凭据 / 身份 / 当前会话，不校验是否存在活跃服务。
+
+    Raises:
+        AuthError: 总开关关闭、缺/错令牌、会话过期、凭据非 active、身份被禁用或已删除
+    """
+    token = bearer_token(request)
+    if not token:
+        raise AuthError("unauthorized", "请先登录", 401)
+    result = await auth_service.resolve_session(token)
+    identity = await IdentityRepository().find_by_id(result.identity_id)
+    if identity is None or identity.is_blocked:
+        raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
+    return WebAccountPrincipal(
+        credential=result.credential,
+        identity=identity,
+        session=result.session,
+        token=token,
     )
 
 

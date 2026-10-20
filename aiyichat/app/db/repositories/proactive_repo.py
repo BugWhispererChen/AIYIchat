@@ -203,6 +203,17 @@ class ProactiveRecordRepository:
         result = await self._collection().delete_one({"_id": record_id})
         return result.deleted_count > 0
 
+    async def delete_by_identity(self, identity_id: str) -> int:
+        """删除某身份的全部主动消息记录（用户自助注销时调用）。
+
+        记录里存着实际发送出去的消息正文，属于用户可见数据，
+        不能只靠账号级联删除漏掉它。
+        """
+        if not identity_id:
+            return 0
+        result = await self._collection().delete_many({"identity_id": identity_id})
+        return result.deleted_count
+
     # ── 管理面板：全局分页与统计 ───────────────────────────
 
     async def list_recent(

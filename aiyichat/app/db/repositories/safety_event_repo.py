@@ -47,6 +47,17 @@ class SafetyEventRepository:
             query["event_type"] = event_type
         return await self._collection().count_documents(query)
 
+    async def delete_by_account(self, account_id: str) -> int:
+        """删除某账号的安全事件记录（用户自助注销时调用）。
+
+        事件里带身份输入摘要（excerpt）与 platform_id，属个人数据；
+        账号注销后留着它们既无审计对象也无归属账号。
+        """
+        if not account_id:
+            return 0
+        result = await self._collection().delete_many({"account_id": account_id})
+        return result.deleted_count
+
     async def count_recent_by_type(self, days: int = 7) -> dict[str, int]:
         """统计近 N 天各类型事件数量，返回 {event_type: count}。"""
         since = datetime.now(timezone.utc) - timedelta(days=days)

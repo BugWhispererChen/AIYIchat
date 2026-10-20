@@ -73,6 +73,28 @@ class InjectionSnapshotRepository:
             result.append(InjectionSnapshotInDB.from_mongo(doc))
         return result
 
+    async def delete_by_service_ids(self, service_ids: list[str]) -> int:
+        """删除指定服务（含共享组 key）的全部快照。
+
+        快照里存着本轮 AI 回复与被注入的记忆正文，属个人数据：
+        用户清空对话/记忆或注销账号时必须一并删除，否则等于留了份完整副本。
+        """
+        if not service_ids:
+            return 0
+        result = await self._collection().delete_many(
+            {"service_id": {"$in": service_ids}}
+        )
+        return result.deleted_count
+
+    async def delete_by_conversation_ids(self, conversation_ids: list[str]) -> int:
+        """删除指定会话产生的快照（清空对话记录时按会话精确清理）。"""
+        if not conversation_ids:
+            return 0
+        result = await self._collection().delete_many(
+            {"conversation_id": {"$in": conversation_ids}}
+        )
+        return result.deleted_count
+
     @staticmethod
     def _now() -> datetime:
         return datetime.now(timezone.utc)

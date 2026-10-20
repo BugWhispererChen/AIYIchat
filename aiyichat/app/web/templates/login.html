@@ -62,6 +62,10 @@
                 <button type="submit" class="btn-submit" id="submit-btn">登录</button>
             </form>
 
+            {# 本期未接邮件/短信通道，找回密码只能走管理员；把出口写清楚，
+               免得用户反复试密码把自己锁进 15 分钟冷却 #}
+            <p class="field-tip">忘记密码？当前版本暂不支持自助找回，请联系管理员重置。</p>
+
             <p class="auth-foot">还没有账号？<a href="/web/register">注册新账号</a></p>
         </section>
     </main>

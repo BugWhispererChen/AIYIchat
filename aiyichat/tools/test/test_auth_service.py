@@ -375,6 +375,41 @@ class TestWebSessionRepository:
 
         run_with_db(body)
 
+    def test_delete_by_id_and_others(self) -> None:
+        """按会话 ID 注销，以及"保留当前设备"的下线其他会话。
+
+        存量会话可能缺 id 字段：from_mongo 以 _id 兜底、删除端同时认 id 与 _id，
+        否则老会话在设备上列表里看得见却下不掉。
+        """
+
+        async def body():
+            repo = WebSessionRepository()
+            keep = await repo.create(self._session("keep", "id1"))
+            assert await repo.create(self._session("other", "id1"))
+            assert await repo.create(self._session("peer", "id2"))
+
+            # 跨凭据的下线请求一律无效
+            assert await repo.delete_by_id("id1", "nope") is False
+            assert await repo.delete_by_credential("id2") == 1
+
+            assert await repo.delete_by_id("id1", keep.id) is True
+            assert await repo.find_by_token("keep") is None
+
+            # 无 id 字段的存量会话：按 _id 仍可定位
+            legacy_doc = {"token": "legacy", "credential_id": "id1",
+                          "expires_at": _naive_utc(_now() + timedelta(hours=2)),
+                          "created_at": _naive_utc(_now())}
+            inserted = await repo._collection().insert_one(legacy_doc)
+            assert await repo.delete_by_id("id1", str(inserted.inserted_id)) is True
+
+            assert await repo.delete_others("id1", "") == 1
+            fresh = await repo.create(self._session("me", "id1"))
+            await repo.create(self._session("elsewhere", "id1"))
+            assert await repo.delete_others("id1", fresh.id) == 1
+            assert await repo.find_by_token("me") is not None
+
+        run_with_db(body)
+
     def test_duplicate_token_rejected(self) -> None:
         """token 唯一索引：重复写入抛错（签发端用随机 token，理论不可达，仅作防护）。"""
 

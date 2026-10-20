@@ -1,8 +1,8 @@
 """C 端网页路由渲染测试（mongomock + ASGI 内存客户端，不启浏览器）。
 
 只断言渲染出的 HTML：
-- 关闭 `web_auth_enabled` 时三张页面一律 403，且提示页不含任何账号数据、根路径维持原 404；
-- 开启时三张页面 200，并含各自约定的关键结构与共享设计令牌（证明 admin partial 复用生效）。
+- 关闭 `web_auth_enabled` 时各张页面一律 403，且提示页不含任何账号数据、根路径维持原 404；
+- 开启时各张页面 200，并含各自约定的关键结构与共享设计令牌（证明 admin partial 复用生效）。
 """
 
 import asyncio
@@ -27,7 +27,7 @@ PROFILE_SLUG = "lin-yu-page"
 PASSWORD = "passw0rd9"
 LEAK_USERNAME = "leakcheck"
 
-PAGE_PATHS = ("/web/register", "/web/login", "/web/chat")
+PAGE_PATHS = ("/web/register", "/web/login", "/web/chat", "/web/account")
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
@@ -163,6 +163,34 @@ class TestWebPagesRender:
                     assert "/api/conversations/chat/stream" in html
                     assert "退出登录" in html
                     assert "Design Tokens" in html
+            finally:
+                mongo._db = None
+
+        asyncio.run(flow())
+
+    def test_account_page_landmarks(self) -> None:
+        """账号中心：五个分区齐备，顶栏入口与聊天页一致。"""
+
+        async def flow() -> None:
+            app = await _setup_app("t_web_pages_account")
+            try:
+                async with _client(app) as client:
+                    resp = await client.get("/web/account")
+                    assert resp.status_code == 200
+                    html = resp.text
+                    for anchor in ("account-profile", "account-security", "account-quota",
+                                   "account-data", "account-danger"):
+                        assert f'id="{anchor}"' in html, anchor
+                    assert "/api/web/account" not in html  # 数据一律由前端带令牌去取
+                    assert 'id="account-delete"' in html
+                    assert 'href="/web/account"' in html  # 顶栏入口
+                    assert "Design Tokens" in html
+
+                    chat = await client.get("/web/chat")
+                    assert 'href="/web/account"' in chat.text
+
+                    login = await client.get("/web/login")
+                    assert "联系管理员重置" in login.text
             finally:
                 mongo._db = None
 

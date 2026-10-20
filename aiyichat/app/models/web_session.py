@@ -30,10 +30,11 @@ class WebSessionInDB(WebSessionCreate):
 
     @classmethod
     def from_mongo(cls, doc: dict) -> Self:
-        """从 MongoDB 文档构造会话对象。"""
+        """从 MongoDB 文档构造网页会话对象。"""
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
+        doc.setdefault("id", doc["_id"])
         doc.setdefault("ip", "")
         doc.setdefault("user_agent", "")
         doc.setdefault("last_activity", doc.get("created_at", datetime.now(timezone.utc)))

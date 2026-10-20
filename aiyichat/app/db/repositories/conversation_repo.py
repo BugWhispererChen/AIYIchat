@@ -179,6 +179,24 @@ class ConversationRepository:
         )
         return [str(doc["_id"]) async for doc in cursor]
 
+    async def list_ids_by_identity(self, identity_id: str) -> list[str]:
+        """获取某身份名下所有对话的 ID 列表。
+
+        账号中心「清空对话记录」按身份取数：共享组场景下 service_id 是组 key，
+        只删 identity_id 命中本人的对话，才不会连带删掉同组其他人的会话。
+        """
+        cursor = self._collection().find({"identity_id": identity_id}, {"_id": 1})
+        return [str(doc["_id"]) async for doc in cursor]
+
+    async def delete_by_ids(self, conversation_ids: list[str]) -> int:
+        """按 ID 列表批量删除对话（先删消息、再删对话）。"""
+        if not conversation_ids:
+            return 0
+        result = await self._collection().delete_many(
+            {"_id": {"$in": [ObjectId(cid) for cid in conversation_ids]}}
+        )
+        return result.deleted_count
+
     async def delete_by_service(self, service_id: str) -> int:
         """删除指定服务下的所有对话。"""
         result = await self._collection().delete_many(

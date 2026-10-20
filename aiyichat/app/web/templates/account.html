@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账号中心 - 爱易聊</title>
+    {# 空图标：避免浏览器默认去取 /favicon.ico 产生 404 控制台报错 #}
+    <link rel="icon" href="data:,">
+    {% include "partials/_assets.html" %}
+    <script src="{{ asset('js/web-account.js') }}" defer></script>
+    {% set active_page = "account" %}
+    {% include "partials/_web_shell.html" %}
+</head>
+<body>
+    {% include "partials/_web_topbar.html" %}
+
+    {% from "partials/_ui.html" import page_header, card %}
+    <div class="page ui-page">
+        {{ page_header('账号中心', '管理你的资料、登录设备、额度与数据。用户名注册后不可更改。') }}
+
+        <div id="banner" class="ui-alert" hidden></div>
+
+        <nav class="account-nav" aria-label="账号中心分区">
+            <a href="#account-profile">资料</a>
+            <a href="#account-security">安全与设备</a>
+            <a href="#account-quota">额度</a>
+            <a href="#account-data">数据与隐私</a>
+            <a href="#account-danger">注销账号</a>
+        </nav>
+
+        {# ── 资料 ────────────────────────────────── #}
+        <section id="account-profile" class="account-section">
+            {% call card('账号资料') %}
+                <div class="account-meta" id="account-meta">正在读取账号信息…</div>
+                <div class="ui-grid ui-grid--3">
+                    <div class="ui-field">
+                        <label for="f-nickname">昵称</label>
+                        <input class="ui-input" id="f-nickname" maxlength="30" placeholder="伙伴如何称呼你">
+                        <div class="ui-help">最长 30 字，用于列表与对话中的称呼。</div>
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-timezone">时区</label>
+                        <input class="ui-input" id="f-timezone" maxlength="60" placeholder="例如 Asia/Shanghai">
+                        <div class="ui-help">影响时间感知与主动问候；留空跟随系统默认。</div>
+                    </div>
+                </div>
+                <div class="ui-field">
+                    <label for="f-desc">自我描述</label>
+                    <textarea class="ui-textarea" id="f-desc" maxlength="600"
+                              placeholder="介绍一下自己，AI 伙伴会据此调整说话方式"></textarea>
+                    <div class="ui-help">这段内容会进入对话上下文，最长 600 字。</div>
+                </div>
+                <div class="ui-cluster ui-cluster--bar">
+                    <button type="button" class="ui-btn ui-btn--primary" id="profile-save">保存资料</button>
+                </div>
+            {% endcall %}
+        </section>
+
+        {# ── 安全与设备 ──────────────────────────── #}
+        <section id="account-security" class="account-section">
+            {% call card('修改密码') %}
+                <div class="ui-grid ui-grid--3">
+                    <div class="ui-field">
+                        <label for="f-pw-current">当前密码</label>
+                        <input class="ui-input" type="password" id="f-pw-current" maxlength="64"
+                               autocomplete="current-password">
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-pw-new">新密码</label>
+                        <input class="ui-input" type="password" id="f-pw-new" maxlength="64"
+                               autocomplete="new-password">
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-pw-confirm">确认新密码</label>
+                        <input class="ui-input" type="password" id="f-pw-confirm" maxlength="64"
+                               autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="ui-help">密码 8–64 位，需同时包含字母和数字，且不能使用常见弱口令。修改后其他设备需重新登录。</div>
+                <div class="ui-cluster ui-cluster--bar">
+                    <button type="button" class="ui-btn ui-btn--primary" id="password-save">修改密码</button>
+                </div>
+            {% endcall %}
+
+            {% call card('登录设备',
+                 action='<button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="revoke-others">下线其他设备</button>') %}
+                <div class="ui-help" id="session-note">正在读取登录设备…</div>
+                <div id="session-list"><div class="ui-empty">正在读取登录设备…</div></div>
+            {% endcall %}
+
+            {% call card('忘记密码') %}
+                <p class="ui-note">当前版本未开放邮箱/短信自助找回。若忘记密码，请联系管理员在后台重置后再登录。</p>
+            {% endcall %}
+        </section>
+
+        {# ── 额度 ────────────────────────────────── #}
+        <section id="account-quota" class="account-section">
+            {% call card('额度与有效期') %}
+                <div class="ui-help" id="quota-note">正在读取额度…</div>
+                <div class="ui-grid ui-grid--3" id="quota-grid"></div>
+                <p class="ui-note">
+                    文字额度按模型实际消耗的 Token 计，语音按次、图片按张。<br>
+                    额度到期后剩余部分不可再用；续期与加量由管理员发放，页面只作只读展示。
+                </p>
+            {% endcall %}
+
+            {% call card('发放记录') %}
+                <div id="order-list"><div class="ui-empty">正在读取发放记录…</div></div>
+            {% endcall %}
+        </section>
+
+        {# ── 数据与隐私 ──────────────────────────── #}
+        <section id="account-data" class="account-section">
+            {% call card('我的数据') %}
+                <div class="ui-help" id="data-summary">正在统计账号数据…</div>
+                <div id="service-data"><div class="ui-empty">正在读取伙伴数据…</div></div>
+                <div class="ui-cluster ui-cluster--bar">
+                    <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="export-data">导出我的数据</button>
+                    <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--danger" id="clear-conversations">清空全部对话记录</button>
+                </div>
+                <p class="ui-note">
+                    「清空全部对话记录」会删除你的消息、AI 回复以及由此生成的图片，长期记忆不受影响；<br>
+                    每个伙伴的记忆可在上方各自清空。导出文件不含密码、登录令牌等凭据信息。
+                </p>
+            {% endcall %}
+        </section>
+
+        {# ── 注销 ────────────────────────────────── #}
+        <section id="account-danger" class="account-section">
+            {% call card('注销账号') %}
+                <p class="danger-hint">
+                    注销将<strong>立即且永久</strong>删除该账号下的对话记录、长期记忆、自建角色、额度与登录设备，
+                    并释放用户名供他人注册。此操作不可恢复，也没有自助找回渠道。
+                </p>
+                <div class="ui-grid ui-grid--2">
+                    <div class="ui-field">
+                        <label for="f-del-password">当前密码</label>
+                        <input class="ui-input" type="password" id="f-del-password" maxlength="64"
+                               autocomplete="current-password">
+                    </div>
+                    <div class="ui-field">
+                        <label for="f-del-username">输入用户名以确认</label>
+                        <input class="ui-input" id="f-del-username" maxlength="32" autocomplete="off">
+                    </div>
+                </div>
+                <div class="ui-cluster ui-cluster--bar">
+                    <button type="button" class="ui-btn ui-btn--danger" id="account-delete">确认注销账号</button>
+                </div>
+            {% endcall %}
+        </section>
+    </div>
+</body>
+</html>

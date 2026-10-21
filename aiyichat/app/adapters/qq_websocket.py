@@ -27,6 +27,7 @@ from app.bot_config import BotConfig, async_load_bots_config
 from app.utils.tasks import spawn
 from app.config import settings
 from app.conversation.engine import ConversationEngine
+from app.conversation.human_rhythm import pacing_delay_seconds
 from app.conversation.image_task import ImageTask
 from app.conversation.sticker_task import (
     IMAGE_TRANSCRIBE_PREFIX,
@@ -401,12 +402,9 @@ class QQWebSocketClient:
                 texts = [response_text]
             for i, text in enumerate(texts):
                 if i > 0:
-                    # 模拟打字延迟：按上一条消息长度计算，封顶 multi_message_max_delay
-                    delay = min(
-                        len(texts[i - 1]) * settings.multi_message_delay_per_char,
-                        settings.multi_message_max_delay,
-                    )
-                    await asyncio.sleep(delay)
+                    # 逐条间隔统一走节奏层：默认配置下与旧的
+                    # min(len*per_char, max_delay) 逐字等价，开启 human 档才叠启动/昼夜
+                    await asyncio.sleep(pacing_delay_seconds(text, settings))
                 await self._send_reply(
                     user_id, text, msg_id, is_group, group_id
                 )

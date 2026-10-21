@@ -7,6 +7,7 @@
 from app.conversation.message_splitter import (
     MESSAGE_DELIMITER,
     SplitResult,
+    split_for_pacing,
     split_messages,
 )
 
@@ -36,10 +37,11 @@ class TestSplitMessages:
         assert result.was_split is True
 
     def test_max_messages_limit(self) -> None:
-        """超过 max_messages 时截断到上限条数。"""
+        """超过 max_messages 时限制条数，溢出内容回并到最后一条（不丢字）。"""
         text = MESSAGE_DELIMITER.join(["一", "二", "三", "四", "五", "六"])
         result = split_messages(text, max_messages=3)
-        assert result.messages == ["一", "二", "三"]
+        assert len(result.messages) == 3
+        assert "".join(result.messages).count("六") == 1
 
     def test_only_delimiter_yields_empty_list(self) -> None:
         """纯分隔符输入拆分后为空列表。"""
@@ -64,10 +66,11 @@ class TestSplitMessages:
         assert result.was_split is True
 
     def test_paragraph_fallback_respects_limit(self) -> None:
-        """空行分段兑底同样受 max_messages 限制。"""
+        """空行分段兑底同样受 max_messages 限制，溢出部分回并保留。"""
         text = "一\n\n二\n\n三\n\n四\n\n五"
         result = split_messages(text, max_messages=2)
-        assert result.messages == ["一", "二"]
+        assert len(result.messages) == 2
+        assert "五" in result.messages[-1]
 
     def test_single_newline_not_split(self) -> None:
         """单个换行不触发拆分（保持单条消息）。"""
@@ -118,3 +121,73 @@ class TestSplitMessages:
         result = split_messages(text)
         assert result.messages == ["唯一内容"]
         assert result.was_split is False
+
+
+class TestOverflowMerged:
+    """超限回并：超出 max_messages 的内容并入最后一条，绝不静默丢弃。"""
+
+    def test_delimiter_overflow_keeps_tail(self) -> None:
+        text = MESSAGE_DELIMITER.join(["一", "二", "三", "四", "五", "六"])
+        result = split_messages(text, max_messages=3)
+        assert result.messages == ["一", "二", "三\n四\n五\n六"]
+        # 内容守恒：所有非空段落都还在
+        assert set("一二三四五六") <= set("".join(result.messages))
+
+    def test_paragraph_overflow_keeps_tail(self) -> None:
+        result = split_messages("一\n\n二\n\n三\n\n四\n\n五", max_messages=2)
+        assert result.messages == ["一", "二\n三\n四\n五"]
+
+    def test_max_messages_nonpositive_is_no_limit(self) -> None:
+        text = MESSAGE_DELIMITER.join(["甲", "乙", "丙"])
+        assert split_messages(text, max_messages=0).messages == ["甲", "乙", "丙"]
+
+
+class TestSplitForPacing:
+    """节奏分条：超长单条按句末边界继续切，并保护代码块/清单。"""
+
+    def test_short_message_untouched(self) -> None:
+        assert split_for_pacing("今天累坏了") == ["今天累坏了"]
+
+    def test_delimiter_result_preserved(self) -> None:
+        text = f"你好呀{MESSAGE_DELIMITER}在忙吗"
+        assert split_for_pacing(text) == ["你好呀", "在忙吗"]
+
+    def test_long_message_split_at_sentence_ends(self) -> None:
+        text = "。".join(["今天加班到十点才吃上饭"] * 12) + "。"
+        chunks = split_for_pacing(text, 5, auto_split_threshold=40, target_chunk_chars=30)
+        assert len(chunks) > 1
+        assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
+        assert all(c.endswith("。") or len(c) < 12 for c in chunks[:-1])
+
+    def test_respects_max_messages_with_merge(self) -> None:
+        text = "。".join(["句子略长一点的内容块"] * 40) + "。"
+        chunks = split_for_pacing(text, 3, auto_split_threshold=20, target_chunk_chars=20)
+        assert len(chunks) == 3
+        assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
+
+    def test_code_fence_not_split(self) -> None:
+        code = "def f():\n    return 1\n"
+        text = f"你看这段代码：```{code}```" + "。补充说明。" * 30
+        chunks = split_for_pacing(text, 8, auto_split_threshold=40, target_chunk_chars=30)
+        assert any("return 1" in c and "def f()" in c for c in chunks)
+
+    def test_unclosed_fence_protected_to_end(self) -> None:
+        text = "前半段。" + "很长的未闭合代码 " * 20 + "```\ninner = 1\nstill inside"
+        chunks = split_for_pacing(text, 8, auto_split_threshold=40, target_chunk_chars=30)
+        assert all("inner = 1" in c or "```" not in c for c in chunks)
+
+    def test_numbered_list_kept_together(self) -> None:
+        items = "".join(f"{i}. 第{i}条待办事项说明。\n" for i in range(1, 15))
+        chunks = split_for_pacing(items, 8, auto_split_threshold=40, target_chunk_chars=30)
+        assert any("1. 第1条" in c and "14. 第14条" in c for c in chunks)
+
+    def test_tiny_fragments_merged_back(self) -> None:
+        text = "第一句挺长的内容用来触发切分逻辑。" * 6 + "嗯。"
+        chunks = split_for_pacing(text, 8, auto_split_threshold=30, target_chunk_chars=25)
+        assert all(len(c) >= 3 for c in chunks)
+
+    def test_empty_input(self) -> None:
+        assert split_for_pacing("") == []
+
+    def test_only_delimiter(self) -> None:
+        assert split_for_pacing(MESSAGE_DELIMITER * 2) == []

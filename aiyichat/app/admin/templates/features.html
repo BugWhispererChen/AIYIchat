@@ -96,6 +96,72 @@
     </section>
 
     <section class="ui-card">
+        <div class="ui-card-head"><h4 class="ui-card-title">流式放行与气泡节奏参数</h4></div>
+        <p class="ui-note">
+            需先开启上方「流式按句缓冲放行」「气泡真人节奏」「拟人节奏参数」三把开关。
+            间隔单位均为毫秒；数值区间倒置时保存会自动交换。
+        </p>
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">缓冲放行上限（字）</span>
+                <input class="ui-input" type="number" name="stream_gate_max_pending" min="8" max="400" value="{{ stream_gate_max_pending }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">整轮节奏总延迟护栏（秒）</span>
+                <input class="ui-input" type="number" name="stream_max_total_delay_seconds" min="0" max="120" step="0.5" value="{{ stream_max_total_delay_seconds }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">每字时长（毫秒）</span>
+                <input class="ui-input" type="number" name="human_typing_ms_per_char" min="20" max="400" value="{{ human_typing_ms_per_char }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">气泡间隔下限（毫秒）</span>
+                <input class="ui-input" type="number" name="human_gap_min_ms" min="0" max="30000" value="{{ human_gap_min_ms }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">气泡间隔上限（毫秒）</span>
+                <input class="ui-input" type="number" name="human_gap_max_ms" min="0" max="30000" value="{{ human_gap_max_ms }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">启动延迟下限（毫秒）</span>
+                <input class="ui-input" type="number" name="human_startup_min_ms" min="0" max="15000" value="{{ human_startup_min_ms }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">启动延迟上限（毫秒）</span>
+                <input class="ui-input" type="number" name="human_startup_max_ms" min="0" max="15000" value="{{ human_startup_max_ms }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">节奏抖动（0~0.9）</span>
+                <input class="ui-input" type="number" name="human_jitter_ratio" min="0" max="0.9" step="0.05" value="{{ human_jitter_ratio }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">深夜减速倍率（1~4）</span>
+                <input class="ui-input" type="number" name="human_night_factor" min="1" max="4" step="0.1" value="{{ human_night_factor }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">偶发长停顿概率（0~1）</span>
+                <input class="ui-input" type="number" name="human_long_pause_prob" min="0" max="1" step="0.05" value="{{ human_long_pause_prob }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">复读判定起判字数</span>
+                <input class="ui-input" type="number" name="stream_jitter_precheck_chars" min="8" max="400" value="{{ stream_jitter_precheck_chars }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">公共前缀占比阈值（0.1~1）</span>
+                <input class="ui-input" type="number" name="stream_jitter_prefix_ratio" min="0.1" max="1" step="0.05" value="{{ stream_jitter_prefix_ratio }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">单轮最多收回重跑（次）</span>
+                <input class="ui-input" type="number" name="stream_jitter_reset_max" min="0" max="3" value="{{ stream_jitter_reset_max }}">
+            </label>
+        </div>
+        <p class="ui-note">
+            提示：缓冲上限决定"最长攒多少字才放行"，调小更接近打字机手感、调大更接近整条出现；
+            总延迟护栏到顶后剩余气泡会全速下发，避免长回复把页面拖成等待页。
+        </p>
+    </section>
+
+    <section class="ui-card">
         <div class="ui-card-head"><h4 class="ui-card-title">语音动态触发参数</h4></div>
         <p class="ui-note">
             控制语音动态触发窗口的随机时长，需先开启上方「语音动态触发窗口」开关。

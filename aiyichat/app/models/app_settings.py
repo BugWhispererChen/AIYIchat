@@ -213,6 +213,36 @@ class AppSettingsDocument(BaseModel):
     # 回复抖动检测（拦截模型复读上一条回复：命中后追加提示重试一次）
     reply_jitter_detection_enabled: bool = True  # 复读检测总开关
     reply_jitter_similarity: float = 0.9  # 相似度阈值（0~1，达到即判定为复读）
+    reply_jitter_similarity_warn: float = 0.75  # 轻微重复警告阈值
+    reply_jitter_window: int = 4  # 比对最近 N 条 assistant 消息
+    reply_jitter_retry_max: int = 2  # 最大重试次数
+    reply_jitter_retry_temp_step: float = 0.15  # 每次重试温度递增步长
+
+    # 拟人化多消息回复（此前只有 config.py 有、本模型没有：
+    # 缺字段会让 to_flat_dict 不产出该键，DB 覆盖链直接断掉，后台改了也不生效）
+    multi_message_enabled: bool = True
+    multi_message_max_count: int = 5
+    multi_message_delay_per_char: float = 0.05
+    multi_message_max_delay: float = 2.0
+
+    # 流式主链路拟人化：放行闸门、气泡节奏与流式复读护栏
+    stream_gate_enabled: bool = False
+    stream_gate_max_pending: int = 40
+    stream_pacing_enabled: bool = False
+    stream_max_total_delay_seconds: float = 20.0
+    stream_jitter_guard_enabled: bool = False
+    stream_jitter_precheck_chars: int = 24
+    stream_jitter_prefix_ratio: float = 0.5
+    stream_jitter_reset_max: int = 1
+    human_rhythm_enabled: bool = False
+    human_typing_ms_per_char: int = 85
+    human_gap_min_ms: int = 700
+    human_gap_max_ms: int = 2600
+    human_startup_min_ms: int = 250
+    human_startup_max_ms: int = 900
+    human_jitter_ratio: float = 0.2
+    human_night_factor: float = 1.6
+    human_long_pause_prob: float = 0.25
 
     # 事件驱动主动对话
     proactive_event_enabled: bool = False

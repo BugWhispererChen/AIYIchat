@@ -8,6 +8,7 @@
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -209,7 +210,141 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         dependency="单实例内存实现，多实例部署需改为共享存储",
         cost="free",
     ),
+    # —— 流式主链路拟人化（C 端网页）——
+    FeatureToggle(
+        key="stream_gate_enabled",
+        label="流式按句缓冲放行",
+        desc="网页流式回复改为「先清洗再放行」：攒到句末边界且确认没有半截标记才下发，"
+        "（微笑）/[表情:]/[IMG:]/自称 AI/禁用词不再当场露出，屏幕所见即落库所持。"
+        "代价是首字延迟增加约 0.3~1 秒。",
+        dependency="关闭时输出与改动前逐字节一致，可随时回退",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="stream_pacing_enabled",
+        label="气泡真人节奏",
+        desc="逐条气泡之间由服务端插入停顿（含首条的思考延迟、深夜减速与偶发长停顿），"
+        "不再一次性砸出全部气泡。",
+        dependency="需先开启「流式按句缓冲放行」与「拟人节奏参数」",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="human_rhythm_enabled",
+        label="拟人节奏参数",
+        desc="用下方节奏参数取代旧的按字延迟公式；关闭时沿用 legacy 间隔，行为与改动前一致。",
+        dependency="影响网页与 QQ/微信 Bot 的逐条间隔",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="stream_jitter_guard_enabled",
+        label="流式复读拦截",
+        desc="边放行边比「公共前缀占旧回复比例」，判定复读即收回本轮气泡并重跑一次，"
+        "避免网页端出现「一条消息发三遍」。",
+        dependency="需先开启「流式按句缓冲放行」；重跑会多花一次模型调用",
+        cost="paid",
+    ),
 ]
+
+
+def _pacing_context(s: "Any") -> dict[str, object]:
+    """把流式放行/节奏/复读护栏的数值参数摊平成模板上下文。
+
+    GET 与 POST 两条路共用同一个构造函数，避免两处键名漂移
+    （本项目已经吃过"配置键登记漏一处、后台改了不生效"的亏）。
+    """
+    return {
+        "stream_gate_max_pending": s.stream_gate_max_pending,
+        "stream_max_total_delay_seconds": s.stream_max_total_delay_seconds,
+        "human_typing_ms_per_char": s.human_typing_ms_per_char,
+        "human_gap_min_ms": s.human_gap_min_ms,
+        "human_gap_max_ms": s.human_gap_max_ms,
+        "human_startup_min_ms": s.human_startup_min_ms,
+        "human_startup_max_ms": s.human_startup_max_ms,
+        "human_jitter_ratio": s.human_jitter_ratio,
+        "human_night_factor": s.human_night_factor,
+        "human_long_pause_prob": s.human_long_pause_prob,
+        "stream_jitter_precheck_chars": s.stream_jitter_precheck_chars,
+        "stream_jitter_prefix_ratio": s.stream_jitter_prefix_ratio,
+        "stream_jitter_reset_max": s.stream_jitter_reset_max,
+    }
+
+
+def _pacing_updates(form: Any, s: Any) -> dict[str, object]:
+    """读取并限幅节奏参数：表单值非法时保留当前值，区间倒置时自动交换。"""
+
+    def _int_or(name: str, current: int) -> int:
+        try:
+            return int(str(form.get(name, current)))
+        except (TypeError, ValueError):
+            return current
+
+    def _float_or(name: str, current: float) -> float:
+        try:
+            return float(str(form.get(name, current)))
+        except (TypeError, ValueError):
+            return current
+
+    def _clamp_int(name: str, current: int, lo: int, hi: int) -> int:
+        return max(lo, min(hi, _int_or(name, current)))
+
+    def _clamp_pair(lo_name: str, hi_name: str, cur_lo: int, cur_hi: int, lo: int, hi: int) -> tuple[int, int]:
+        a = _clamp_int(lo_name, cur_lo, lo, hi)
+        b = _clamp_int(hi_name, cur_hi, lo, hi)
+        return (a, b) if a <= b else (b, a)
+
+    gap_lo, gap_hi = _clamp_pair(
+        "human_gap_min_ms", "human_gap_max_ms",
+        s.human_gap_min_ms, s.human_gap_max_ms, 0, 30000,
+    )
+    boot_lo, boot_hi = _clamp_pair(
+        "human_startup_min_ms", "human_startup_max_ms",
+        s.human_startup_min_ms, s.human_startup_max_ms, 0, 15000,
+    )
+    return {
+        "stream_gate_max_pending": _clamp_int(
+            "stream_gate_max_pending", s.stream_gate_max_pending, 8, 400
+        ),
+        "stream_max_total_delay_seconds": max(
+            0.0,
+            min(
+                120.0,
+                _float_or(
+                    "stream_max_total_delay_seconds",
+                    s.stream_max_total_delay_seconds,
+                ),
+            ),
+        ),
+        "human_typing_ms_per_char": _clamp_int(
+            "human_typing_ms_per_char", s.human_typing_ms_per_char, 20, 400
+        ),
+        "human_gap_min_ms": gap_lo,
+        "human_gap_max_ms": gap_hi,
+        "human_startup_min_ms": boot_lo,
+        "human_startup_max_ms": boot_hi,
+        "human_jitter_ratio": max(
+            0.0, min(0.9, _float_or("human_jitter_ratio", s.human_jitter_ratio))
+        ),
+        "human_night_factor": max(
+            1.0, min(4.0, _float_or("human_night_factor", s.human_night_factor))
+        ),
+        "human_long_pause_prob": max(
+            0.0,
+            min(1.0, _float_or("human_long_pause_prob", s.human_long_pause_prob)),
+        ),
+        "stream_jitter_precheck_chars": _clamp_int(
+            "stream_jitter_precheck_chars", s.stream_jitter_precheck_chars, 8, 400
+        ),
+        "stream_jitter_prefix_ratio": max(
+            0.1,
+            min(
+                1.0,
+                _float_or("stream_jitter_prefix_ratio", s.stream_jitter_prefix_ratio),
+            ),
+        ),
+        "stream_jitter_reset_max": _clamp_int(
+            "stream_jitter_reset_max", s.stream_jitter_reset_max, 0, 3
+        ),
+    }
 
 
 @features_router.get("/features", response_class=HTMLResponse)
@@ -243,6 +378,7 @@ async def features_page(
         # 语音动态触发窗口参数
         "voice_window_min_minutes": settings.voice_window_min_minutes,
         "voice_window_max_minutes": settings.voice_window_max_minutes,
+        **_pacing_context(settings),
         "active_page": "features",
     })
 
@@ -312,6 +448,8 @@ async def features_save(
         voice_min, voice_max = voice_max, voice_min
     updates["voice_window_min_minutes"] = voice_min
     updates["voice_window_max_minutes"] = voice_max
+    # 流式放行与节奏参数
+    updates.update(_pacing_updates(form, settings))
 
     repo = AppSettingsRepository()
     await repo.upsert(updates)
@@ -344,6 +482,7 @@ async def features_save(
         "sticker_reply_probability": settings.sticker_reply_probability,
         "voice_window_min_minutes": settings.voice_window_min_minutes,
         "voice_window_max_minutes": settings.voice_window_max_minutes,
+        **_pacing_context(settings),
         "active_page": "features",
         "success": "能力开关已保存并生效",
     })

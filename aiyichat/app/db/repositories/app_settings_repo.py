@@ -126,6 +126,10 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "memory_inject_time_suffix", "time_jionlp_enabled",
         # 记忆双时间轴（软失效与注入前硬过滤）
         "memory_fact_validity_enabled", "memory_expired_filter_enabled",
+        # 拟人化多消息与流式放行闸门/节奏/复读护栏
+        "multi_message_enabled",
+        "stream_gate_enabled", "stream_pacing_enabled",
+        "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }
     int_fields = {
         "context_window_size",
@@ -146,11 +150,22 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "voice_window_min_minutes", "voice_window_max_minutes",
         # 聊天记录导入时区偏移
         "chat_import_timezone_offset",
+        # 多消息条数上限与流式闸门/节奏的整型参数
+        "multi_message_max_count", "stream_gate_max_pending",
+        "stream_jitter_precheck_chars", "stream_jitter_reset_max",
+        "human_typing_ms_per_char", "human_gap_min_ms", "human_gap_max_ms",
+        "human_startup_min_ms", "human_startup_max_ms",
+        "reply_jitter_window", "reply_jitter_retry_max",
     }
     float_fields = {
         "proactive_llm_temperature",
         "chat_temperature", "proactive_temperature", "focus_temperature",
         "emotion_temperature", "summary_temperature", "chat_import_temperature",
+        # 节奏与复读的浮点参数
+        "multi_message_delay_per_char", "multi_message_max_delay",
+        "stream_max_total_delay_seconds", "stream_jitter_prefix_ratio",
+        "human_jitter_ratio", "human_night_factor", "human_long_pause_prob",
+        "reply_jitter_similarity_warn", "reply_jitter_retry_temp_step",
     }
 
     for key, val in raw.items():

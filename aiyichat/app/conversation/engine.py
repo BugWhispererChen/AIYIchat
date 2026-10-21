@@ -24,7 +24,11 @@ from app.conversation.focus_tracker import FocusTracker
 from app.conversation.image_task import ImageTask
 from app.conversation.message_splitter import split_messages
 from app.conversation.mood_manager import MoodManager
-from app.conversation.reply_jitter import normalize_text, prefix_repeat_ratio
+from app.conversation.reply_jitter import (
+    normalize_text,
+    prefix_repeat_ratio,
+    shingle_coverage,
+)
 from app.conversation.response_processor import ResponseProcessor
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX, StickerTask
@@ -982,12 +986,15 @@ class ConversationEngine:
                     if not repeat_suspect:
                         for seg in gate.flush():
                             yield await release(seg)
-                        # 前缀没命中但全文高度雷同（改写式复读）时的兜底判定
-                        repeat_suspect = guard_on and bool(
-                            recent_assistant
-                        ) and self._get_repeat_similarity(
-                            "".join(chunks), history
-                        ) >= settings.reply_jitter_similarity
+                        # 前缀/覆盖都没命中时的全文兜底判定（改写幅度更大的复述）
+                        repeat_suspect = guard_on and bool(recent_assistant) and (
+                            self._get_repeat_similarity(
+                                "".join(chunks), history
+                            ) >= settings.reply_jitter_similarity
+                            or shingle_coverage(
+                                "".join(chunks), recent_assistant
+                            ) >= settings.stream_jitter_overlap_ratio
+                        )
                     if repeat_suspect and resets < settings.stream_jitter_reset_max:
                         resets += 1
                         async for event in self._recover_stream_repeat(
@@ -1082,12 +1089,17 @@ class ConversationEngine:
     def _looks_like_stream_repeat(
         self, released_text: str, recent_assistant: list[str]
     ) -> bool:
-        """流式早期复读判定：攒够字数后看公共前缀占比。"""
+        """流式早期复读判定：逐字照抄（前缀）与换序复述（覆盖）两个尺子一起看。"""
         if not recent_assistant or len(released_text) < settings.stream_jitter_precheck_chars:
             return False
-        return (
+        if (
             prefix_repeat_ratio(released_text, recent_assistant)
             >= settings.stream_jitter_prefix_ratio
+        ):
+            return True
+        return (
+            shingle_coverage(released_text, recent_assistant)
+            >= settings.stream_jitter_overlap_ratio
         )
 
     async def _recover_stream_repeat(

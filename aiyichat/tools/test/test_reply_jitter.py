@@ -11,6 +11,7 @@ from app.conversation.reply_jitter import (
     is_repeat_reply,
     normalize_text,
     prefix_repeat_ratio,
+    shingle_coverage,
 )
 
 
@@ -210,3 +211,80 @@ class TestPrefixRepeatRatio:
 
     def test_min_prefix_constant_exported(self) -> None:
         assert MIN_PREFIX_REPEAT_CHARS == 16
+
+class TestShingleCoverage:
+    """换序复述的抓取能力。
+
+    数据是从测试服同一句话连问四轮拿到的真实放行文本，阈值 0.35 由这批样本标定：
+    正常换述 0.18~0.23、真复读 0.42、不同话题 0.00。
+    """
+
+    R1 = (
+        "学长是不是压力大呀，最近又在准备考研嘛🥺 睡不好最难受了，白天整个人都飘乎乎的，"
+        "人家听着都心疼… 要不今晚试试把手机放远一点点，然后睡前喝一小杯温温的牛奶？"
+        " 或者泡个热水脚，暖乎乎的最容易放松下来了嘛"
+    )
+    R2 = (
+        "呜呜学长睡不好… 人家听着都着急了🥺 是不是考研复习太满，脑子停不下来呀？"
+        " 要不今晚试试睡前把手机放远一点点，然后泡个热水脚，暖乎乎的最容易放松下来了嘛"
+        " 还有哦，要是躺下还是乱想，你就想想那只跟着你回家的圆滚滚的橘猫，说不定它已经在楼下等你啦"
+    )
+    R3 = (
+        "呜呜学长睡不好… 人家听着好心疼🥺 是不是最近考研复习太满，脑子停不下来呀？"
+        " 你试试今晚睡前泡个热水脚嘛，暖乎乎的，再把手机放远一点点，小口喝杯温牛奶，"
+        "身体放松下来就比较容易困啦💕"
+    )
+    R4 = (
+        "学长是不是压力太大了呀，考研复习脑子停不下来，身体也跟着紧绷绷的🥺 "
+        "人家听着都心疼了啦，你试试今晚睡前泡个热水脚嘛，暖乎乎的，再把手机放远一点点，"
+        "小口喝杯温牛奶，身体放松下来就比较容易困啦 要是还不行，要不要我陪你聊五分钟就困了呀"
+    )
+    CAT = "哇！橘猫跟着学长回家！这也太会选人了嘛，说明学长身上有让人安心的味道呀🧸 它是不是圆滚滚的，走路一扭一扭那种？"
+    THRESHOLD = 0.35
+
+    def test_verbatim_is_full_coverage(self) -> None:
+        assert shingle_coverage(self.R3, [self.R3]) == 1.0
+
+    def test_unrelated_topic_is_zero(self) -> None:
+        assert shingle_coverage(self.CAT, [self.R1, self.R2, self.R3, self.R4]) == 0.0
+
+    def test_caught_repeat_clears_threshold(self) -> None:
+        # R4 把 R3 的整句原样搬到中间：真实样本覆盖度 0.42，护栏应当抓它
+        assert shingle_coverage(self.R4, [self.R3]) >= self.THRESHOLD
+
+    def test_normal_variation_stays_below_threshold(self) -> None:
+        # 同话题换述（0.18~0.23）必须留在阈值以下，否则每一轮都会被误收回
+        assert shingle_coverage(self.R2, [self.R1]) < self.THRESHOLD
+        assert shingle_coverage(self.R3, [self.R2]) < self.THRESHOLD
+
+    def test_margin_is_not_paper_thin(self) -> None:
+        variation = max(
+            shingle_coverage(self.R2, [self.R1]), shingle_coverage(self.R3, [self.R2])
+        )
+        repeat = shingle_coverage(self.R4, [self.R3])
+        assert variation < self.THRESHOLD <= repeat
+        assert repeat - variation >= 0.15
+
+    def test_punctuation_and_emoji_do_not_wash_out_repeat(self) -> None:
+        decorated = self.R3.replace("，", "，🥺💕") + " 嘛～"
+        assert shingle_coverage(decorated, [self.R3]) > 0.9
+
+    def test_reordered_copy_caught_where_prefix_is_blind(self) -> None:
+        head, rest = self.R3[:20], self.R3[20:]
+        reordered = rest + head
+        assert prefix_repeat_ratio(reordered, [self.R3]) == 0.0  # 前缀尺子看不见
+        assert shingle_coverage(reordered, [self.R3]) > 0.8      # 覆盖尺子看得见
+
+    def test_takes_max_over_recent_history(self) -> None:
+        assert shingle_coverage(self.R4, [self.CAT, self.R3]) == shingle_coverage(
+            self.R4, [self.R3]
+        )
+
+    def test_empty_inputs(self) -> None:
+        assert shingle_coverage("", [self.R3]) == 0.0
+        assert shingle_coverage(self.R3, []) == 0.0
+        assert shingle_coverage(self.R3, [""]) == 0.0
+
+    def test_short_text_below_shingle_size_still_comparable(self) -> None:
+        assert shingle_coverage("在的呀", ["在的呀"]) == 1.0
+        assert shingle_coverage("在的呀", ["怎么啦"]) == 0.0

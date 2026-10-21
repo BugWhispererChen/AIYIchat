@@ -164,6 +164,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         # 节奏与复读的浮点参数
         "multi_message_delay_per_char", "multi_message_max_delay",
         "stream_max_total_delay_seconds", "stream_jitter_prefix_ratio",
+        "stream_jitter_overlap_ratio",
         "human_jitter_ratio", "human_night_factor", "human_long_pause_prob",
         "reply_jitter_similarity_warn", "reply_jitter_retry_temp_step",
     }

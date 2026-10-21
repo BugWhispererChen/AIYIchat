@@ -11,9 +11,43 @@ import re
 
 # 空白归一化：连续空白折叠为单个空格，避免排版差异影响相似度
 _WHITESPACE_RE = re.compile(r"\s+")
+# shingle 归一化：标点与 emoji 不参与切块（换一套 emoji 不该让复读"洗白"，也不该因标点误判）
+_SHINGLE_STRIP_RE = re.compile(r"[\W_]+", re.UNICODE)
 
 # 公共前缀至少要这么多字才当作"复读前兆"（低于此长度容易把"好的""嗯"这类开头误判成照抄）
 MIN_PREFIX_REPEAT_CHARS = 16
+# 复述式复读的字符切块大小：5~6 字一块，够长才不会把常用短语算成重复
+SHINGLE_SIZE = 6
+
+
+def _shingles(text: str, size: int = SHINGLE_SIZE) -> set[str]:
+    """字符 n-gram 集合；去掉标点与 emoji，只比可读内容的重复程度。"""
+    cleaned = _SHINGLE_STRIP_RE.sub("", text or "")
+    if len(cleaned) < size:
+        return {cleaned} if cleaned else set()
+    return {cleaned[i : i + size] for i in range(len(cleaned) - size + 1)}
+
+
+def shingle_coverage(new_text: str, recent_assistant_texts: list[str]) -> float:
+    """新内容里有多大比例是旧回复说过的（换序复述也能抓到）。
+
+    为什么不能只用公共前缀或整段相似度：实测同一话题连问四次时，
+    真正"复读"的那一轮与上一轮的 6-gram 覆盖率约 0.58，而正常换述只有 0.23、
+    完全无关是 0.00；逐字照抄用前缀判即可，但"把上句原封不动挪到新句中间"这类
+    复述前缀很短、整段 difflib 也只有 0.67，两种老尺子都漏。
+    用"新内容被旧内容覆盖的比例"而非 Jaccard，是因为新回复通常更长，
+    Jaccard 会被长度差稀释（同一样本 Jaccard 只有 0.34）。
+    """
+    new_set = _shingles(new_text)
+    if not new_set:
+        return 0.0
+    best = 0.0
+    for old in recent_assistant_texts:
+        old_set = _shingles(old)
+        if not old_set:
+            continue
+        best = max(best, len(new_set & old_set) / len(new_set))
+    return best
 
 
 def normalize_text(text: str) -> str:

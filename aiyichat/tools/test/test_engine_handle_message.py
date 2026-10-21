@@ -1231,6 +1231,36 @@ class TestStreamRepeatGuard:
         assert all(isinstance(i, str) for i in items)
         provider.complete_with_usage.assert_not_awaited()
 
+    def test_overlap_signal_catches_reordered_repeat(self) -> None:
+        """前缀尺子看不见的换序复述，覆盖度尺子必须能看见。
+
+        测试服实测：同一句"我最近睡不好"连问四轮，第四轮把第三轮整句搬到中间，
+        公共前缀不到 16 字、difflib 只有 0.67，旧的两把尺子全漏，护栏形同虚设。
+        """
+        engine = _build_engine()
+        old = (
+            "呜呜学长睡不好 人家听着好心疼 是不是最近考研复习太满，脑子停不下来呀？"
+            " 你试试今晚睡前泡个热水脚嘛，暖乎乎的，再把手机放远一点点，小口喝杯温牛奶"
+        )
+        repeated = (
+            "学长是不是压力太大了呀，考研复习脑子停不下来 人家听着都心疼了啦，"
+            "你试试今晚睡前泡个热水脚嘛，暖乎乎的，再把手机放远一点点，小口喝杯温牛奶"
+        )
+        variation = (
+            "学长也别太急啦，睡前少刷会儿手机会不会好一些？"
+            " 要不要明天早上补个短觉，白天就不会一直飘着"
+        )
+        with patch.object(settings, "stream_jitter_precheck_chars", 24):
+            assert engine._looks_like_stream_repeat(repeated, [old]) is True
+            assert engine._looks_like_stream_repeat(variation, [old]) is False
+
+    def test_precheck_needs_enough_text_first(self) -> None:
+        engine = _build_engine()
+        old = "白天整个人都飘乎乎的人家听着都心疼要不今晚试试把手机放远一点点"
+        with patch.object(settings, "stream_jitter_precheck_chars", 24):
+            assert engine._looks_like_stream_repeat(old[:10], [old]) is False
+            assert engine._looks_like_stream_repeat(old, []) is False
+
     def test_retry_failure_falls_back_without_blank_screen(self) -> None:
         """重跑失败：收回复读后必须还给用户一句话，不能只剩一个被清空的回合。"""
         engine = self._engine_with_history(self.OLD)

@@ -233,6 +233,7 @@ class AppSettingsDocument(BaseModel):
     stream_jitter_guard_enabled: bool = False
     stream_jitter_precheck_chars: int = 24
     stream_jitter_prefix_ratio: float = 0.5
+    stream_jitter_overlap_ratio: float = 0.35
     stream_jitter_reset_max: int = 1
     human_rhythm_enabled: bool = False
     human_typing_ms_per_char: int = 85

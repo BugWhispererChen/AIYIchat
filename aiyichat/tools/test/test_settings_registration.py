@@ -105,6 +105,7 @@ class _FakeSettings:
     human_long_pause_prob = 0.25
     stream_jitter_precheck_chars = 24
     stream_jitter_prefix_ratio = 0.5
+    stream_jitter_overlap_ratio = 0.35
     stream_jitter_reset_max = 1
 
 

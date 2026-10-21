@@ -118,6 +118,7 @@ class _RuntimeSettings:
     stream_jitter_guard_enabled: bool = False  # 流式复读拦截总开关
     stream_jitter_precheck_chars: int = 24  # 已放行文本攒到多少字才开始判
     stream_jitter_prefix_ratio: float = 0.5  # 公共前缀占旧回复比例达到即判复读前兆
+    stream_jitter_overlap_ratio: float = 0.35  # 新内容被旧回复覆盖的 6-gram 比例阈值（实测换述 0.23 / 复读 0.42）
     stream_jitter_reset_max: int = 1  # 单轮最多收回重跑几次（重跑要花双倍 token）
 
     # 回复抖动检测（拦截模型复读上一条回复：命中后追加提示重试）
@@ -382,7 +383,8 @@ class _RuntimeSettings:
             "human_startup_min_ms", "human_startup_max_ms",
             "human_jitter_ratio", "human_night_factor", "human_long_pause_prob",
             "stream_jitter_guard_enabled", "stream_jitter_precheck_chars",
-            "stream_jitter_prefix_ratio", "stream_jitter_reset_max",
+            "stream_jitter_prefix_ratio", "stream_jitter_overlap_ratio",
+            "stream_jitter_reset_max",
             "reply_jitter_detection_enabled", "reply_jitter_similarity",
             "reply_jitter_similarity_warn",
             "reply_jitter_window", "reply_jitter_retry_max",
@@ -499,6 +501,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         stream_jitter_guard_enabled: bool = Field(default=False)
         stream_jitter_precheck_chars: int = Field(default=24)
         stream_jitter_prefix_ratio: float = Field(default=0.5)
+        stream_jitter_overlap_ratio: float = Field(default=0.35)
         stream_jitter_reset_max: int = Field(default=1)
         reply_jitter_detection_enabled: bool = Field(default=True)
         reply_jitter_similarity: float = Field(default=0.9)

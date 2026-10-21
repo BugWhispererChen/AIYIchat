@@ -265,6 +265,7 @@ def _pacing_context(s: "Any") -> dict[str, object]:
         "human_long_pause_prob": s.human_long_pause_prob,
         "stream_jitter_precheck_chars": s.stream_jitter_precheck_chars,
         "stream_jitter_prefix_ratio": s.stream_jitter_prefix_ratio,
+        "stream_jitter_overlap_ratio": s.stream_jitter_overlap_ratio,
         "stream_jitter_reset_max": s.stream_jitter_reset_max,
     }
 
@@ -339,6 +340,15 @@ def _pacing_updates(form: Any, s: Any) -> dict[str, object]:
             min(
                 1.0,
                 _float_or("stream_jitter_prefix_ratio", s.stream_jitter_prefix_ratio),
+            ),
+        ),
+        "stream_jitter_overlap_ratio": max(
+            0.2,
+            min(
+                1.0,
+                _float_or(
+                    "stream_jitter_overlap_ratio", s.stream_jitter_overlap_ratio
+                ),
             ),
         ),
         "stream_jitter_reset_max": _clamp_int(

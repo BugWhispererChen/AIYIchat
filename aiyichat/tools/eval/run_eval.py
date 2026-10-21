@@ -24,9 +24,11 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 # 确保可导入 app 包
@@ -197,7 +199,9 @@ def _build_messages(case: dict[str, Any]) -> list[dict[str, str]]:
 
     评测必须评线上真正发出去的那份 Prompt：时间上下文、记忆分层、重要规则
     （不许虚构共同回忆等）都在里面，绕过它自己拼 Prompt 就测不出机制改动。
+    长度引导同样要带上——它是本轮"发几条、多长"的唯一来源，漏了它长度改动测不出来。
     """
+    from app.conversation.engine import ConversationEngine
     from app.llm.prompt_assembler import PromptAssembler
 
     return PromptAssembler().assemble(
@@ -205,7 +209,53 @@ def _build_messages(case: dict[str, Any]) -> list[dict[str, str]]:
         _build_history(case),
         case["user_input"],
         memory_facts=list(case.get("memory", [])),
+        length_instruction=ConversationEngine._length_instruction_for(
+            "standard", case["user_input"]
+        ),
     )
+
+
+def _length_metrics(response: str, user_input: str) -> dict[str, Any]:
+    """确定性长度指标（G35）。
+
+    裁判分噪声大到能自己造出 -15% 的假退步，而字数与条数是零噪声的尺子：
+    改没改短、是不是把一条 300 字长文砸成一屏，看这几个数就够了。
+    """
+    from app.config import settings
+    from app.conversation.message_splitter import split_for_pacing
+    from app.conversation.response_processor import ResponseProcessor
+
+    # 先按生产链路清洗再量：[IMG:...] / [表情:...] 这类内部标记有 150 字是常态，
+    # 但它们根本不会作为文本发出去，算进"回复长度"就是一把歪尺子。
+    raw = (response or "").strip()
+    cleaned, _images, _stickers = ResponseProcessor().process(raw)
+    text = cleaned.strip()
+    bubbles = split_for_pacing(
+        text,
+        max_messages=settings.multi_message_max_count,
+        auto_split_threshold=settings.pacing_auto_split_threshold,
+        target_chunk_chars=settings.pacing_target_chunk_chars,
+        min_chunk_chars=settings.pacing_min_chunk_chars,
+    )
+    explicit = [p for p in raw.split("|||") if p.strip()]
+    sizes = sorted(len(b.strip()) for b in bubbles if b.strip())
+    user_chars = len((user_input or "").strip())
+    return {
+        "chars": len(text),
+        "bubbles": len(bubbles),
+        # 模型自己标出来的条数（||| 与空行）：与 bubbles 不同说明是"被切开"而不是"想分条"
+        "explicit_bubbles": len(explicit),
+        "bubble_median": sizes[len(sizes) // 2] if sizes else 0,
+        "bubble_max": sizes[-1] if sizes else 0,
+        "ratio": round(len(text) / max(user_chars, 1), 2),
+        "list_markers": len(_LIST_LINE_RE.findall(text)),
+    }
+
+
+# 清单体特征行：编号、括号编号、圈号与项目符号（真人微信不这么写）
+_LIST_LINE_RE = re.compile(
+    r"^\s*(?:\d+[.)、]|[（(]\d+[)）]|[①-⑩]|[-*•·])\s*\S", re.MULTILINE
+)
 
 
 def _scan_ai_tells(response: str) -> dict[str, Any]:
@@ -314,6 +364,7 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
             response = await _generate_response(case)
             scores = await _judge(case, response)
             tells = _scan_ai_tells(response)
+            lengths = _length_metrics(response, case["user_input"])
             print("  回复:", response[:80])
             print("  评分:", json.dumps(scores, ensure_ascii=False))
             print(
@@ -321,8 +372,20 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
                 f"blocking={tells['blocking_count']} {tells['blocking']}",
                 f"review={tells['review']} vocab={tells['vocab']}",
             )
+            print(
+                "  长度:",
+                f"{lengths['chars']}字/{lengths['bubbles']}条",
+                f"单条中位{lengths['bubble_median']}",
+                f"镜像比{lengths['ratio']}x",
+                f"清单行{lengths['list_markers']}",
+            )
             record.update(
-                {"response": response, "scores": scores, "ai_tells": tells}
+                {
+                    "response": response,
+                    "scores": scores,
+                    "ai_tells": tells,
+                    "length": lengths,
+                }
             )
             overall = _overall(scores)
             if overall is not None:
@@ -344,15 +407,54 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
         print(f"  blocking 命中用例: {len(blocked)}/{counted}")
         for r in blocked:
             print(f"    - {r['name']}: {r['ai_tells']['blocking']}")
+        _print_length_summary(results)
     elif dry_run:
         print("dry-run 流水线校验通过（含生产 Prompt 组装）。")
     return results
+
+
+def _percentile(values: list[int], pct: float) -> int:
+    """小样本百分位（取最近秩），长度指标用。"""
+    if not values:
+        return 0
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(len(ordered) * pct))]
+
+
+def _print_length_summary(results: list[dict[str, Any]]) -> None:
+    """长度汇总：整体分布 + 按用例前缀分桶（闲聊与倾诉不该用同一把尺子量）。"""
+    items = [r for r in results if r.get("length")]
+    if not items:
+        return
+    chars = [r["length"]["chars"] for r in items]
+    bubbles = [r["length"]["bubbles"] for r in items]
+    explicit = [r["length"]["explicit_bubbles"] for r in items]
+    markers = sum(r["length"]["list_markers"] for r in items)
+    print("=== 长度指标（确定性，零噪声）===")
+    print(
+        f"  整轮字数: 中位 {_percentile(chars, 0.5)} / p90 {_percentile(chars, 0.9)}"
+        f" / 最长 {max(chars)}"
+    )
+    print(
+        f"  气泡条数: 中位 {_percentile(bubbles, 0.5)} / 最多 {max(bubbles)}"
+        f"（模型自标 ||| 条数中位 {_percentile(explicit, 0.5)}）"
+    )
+    ratio_median = round(median(r["length"]["ratio"] for r in items), 2)
+    print(f"  回复/对方长度比: 中位 {ratio_median}x")
+    print(f"  清单体行数: {markers}")
+    buckets: dict[str, list[int]] = {}
+    for r in items:
+        key = r["name"].split("-", 1)[0]
+        buckets.setdefault(key, []).append(r["length"]["chars"])
+    for key, values in sorted(buckets.items()):
+        print(f"    - {key}: 中位 {_percentile(values, 0.5)} 字（{len(values)} 例）")
 
 
 def _gsb(current: list[dict], baseline: list[dict]) -> None:
     """GSB 成对比较：同一用例取两份 overall 分，统计 Good/Same/Bad。"""
     base_map = {r["name"]: r for r in baseline}
     good = same = bad = 0
+    len_pairs: list[tuple[int, int]] = []
     print("=== GSB 成对比较（相对基线）===")
     for item in current:
         base = base_map.get(item["name"])
@@ -374,14 +476,31 @@ def _gsb(current: list[dict], baseline: list[dict]) -> None:
             same += 1
         cur_block = item.get("ai_tells", {}).get("blocking_count", 0)
         base_block = base.get("ai_tells", {}).get("blocking_count", 0)
+        # 旧基线 JSON 没有 length 字段（指标是本轮才加的），退回按原始字符数对照
+        cur_len = item.get("length", {}).get("chars") or len(
+            (item.get("response") or "").strip()
+        )
+        base_len = base.get("length", {}).get("chars") or len(
+            (base.get("response") or "").strip()
+        )
+        len_pairs.append((base_len, cur_len))
         print(
             f"  {item['name']}: {verdict} "
             f"({base_score:.2f} → {cur_score:.2f}, "
-            f"blocking {base_block} → {cur_block})"
+            f"blocking {base_block} → {cur_block}, "
+            f"字数 {base_len} → {cur_len})"
         )
     print(f"  合计 Good={good} Same={same} Bad={bad}")
     if good + bad:
         print(f"  净改善率: {(good - bad) / (good + same + bad):.0%}")
+    if len_pairs:
+        # 字数是中位数可直接对照的确定性量：裁判分噪声 ±15%，这个不是
+        base_median = median(p[0] for p in len_pairs)
+        cur_median = median(p[1] for p in len_pairs)
+        print(
+            f"  整轮字数中位: {base_median:.0f} → {cur_median:.0f}"
+            f"（{(cur_median - base_median) / max(base_median, 1):+.0%}）"
+        )
 
 
 def main() -> None:

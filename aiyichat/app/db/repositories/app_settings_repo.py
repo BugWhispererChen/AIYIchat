@@ -128,6 +128,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "memory_fact_validity_enabled", "memory_expired_filter_enabled",
         # 拟人化多消息与流式放行闸门/节奏/复读护栏
         "multi_message_enabled",
+        "reply_length_mirror_enabled", "pacing_split_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }
@@ -152,6 +153,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "chat_import_timezone_offset",
         # 多消息条数上限与流式闸门/节奏的整型参数
         "multi_message_max_count", "stream_gate_max_pending",
+        "pacing_auto_split_threshold", "pacing_target_chunk_chars",
+        "pacing_min_chunk_chars", "stream_max_bubbles",
         "stream_jitter_precheck_chars", "stream_jitter_reset_max",
         "human_typing_ms_per_char", "human_gap_min_ms", "human_gap_max_ms",
         "human_startup_min_ms", "human_startup_max_ms",

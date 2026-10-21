@@ -163,6 +163,36 @@
             提示：缓冲上限决定"最长攒多少字才放行"，调小更接近打字机手感、调大更接近整条出现；
             总延迟护栏到顶后剩余气泡会全速下发，避免长回复把页面拖成等待页。
         </p>
+
+        <div class="ui-card-head"><h4 class="ui-card-title">回复长度治理</h4></div>
+        <p class="ui-note">
+            实测角色整轮中位 99 字、4.5 条气泡，而对方平均只说 13 字——这里管的是"发多少条、一条多长"，
+            说什么仍由长度引导与长度镜像决定。分条三阈值必须满足 起切阈值 ≥ 目标长度 ≥ 碎片下限，填反了保存会自动交换。
+            <b>「网页流式单轮最多几条气泡」只在开启上方「流式按句缓冲放行」后生效</b>：
+            闸门关闭时服务端不切气泡，条数由前端按 ||| 自行决定，收不住。
+        </p>
+        <div class="ui-grid ui-grid--2">
+            <label class="ui-field">
+                <span class="ui-label">单轮最多几条消息（Bot 侧）</span>
+                <input class="ui-input" type="number" name="multi_message_max_count" min="1" max="10" value="{{ multi_message_max_count }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">网页流式单轮最多几条气泡（0=不限）</span>
+                <input class="ui-input" type="number" name="stream_max_bubbles" min="0" max="12" value="{{ stream_max_bubbles }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">超长起切阈值（字）</span>
+                <input class="ui-input" type="number" name="pacing_auto_split_threshold" min="20" max="600" value="{{ pacing_auto_split_threshold }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">分条目标长度（字）</span>
+                <input class="ui-input" type="number" name="pacing_target_chunk_chars" min="15" max="300" value="{{ pacing_target_chunk_chars }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">碎片回并下限（字）</span>
+                <input class="ui-input" type="number" name="pacing_min_chunk_chars" min="2" max="80" value="{{ pacing_min_chunk_chars }}">
+            </label>
+        </div>
     </section>
 
     <section class="ui-card">

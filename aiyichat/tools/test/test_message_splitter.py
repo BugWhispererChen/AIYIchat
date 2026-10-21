@@ -4,9 +4,14 @@
 超限截断 / 空输入。
 """
 
+from types import SimpleNamespace
+
+import pytest
+
 from app.conversation.message_splitter import (
     MESSAGE_DELIMITER,
     SplitResult,
+    limit_messages,
     split_for_pacing,
     split_messages,
 )
@@ -191,3 +196,81 @@ class TestSplitForPacing:
 
     def test_only_delimiter(self) -> None:
         assert split_for_pacing(MESSAGE_DELIMITER * 2) == []
+
+
+class TestLimitMessages:
+    """条数护栏：超出上限回并到最后一条，绝不丢尾（适配器以前自己切片会吞掉尾部）。"""
+
+    def test_overflow_merged_into_last_message(self) -> None:
+        msgs = ["一", "二", "三", "四"]
+        out = limit_messages(msgs, 3)
+        # 前 max-1 条原样保留，超出的一律回并进最后一条
+        assert out == ["一", "二", "三\n四"]
+        assert "".join(out).replace("\n", "") == "".join(msgs)
+
+    def test_within_limit_unchanged(self) -> None:
+        msgs = ["一", "二"]
+        assert limit_messages(msgs, 5) == msgs
+
+    def test_zero_or_negative_means_no_cap(self) -> None:
+        msgs = ["一", "二", "三"]
+        assert limit_messages(msgs, 0) == msgs
+
+
+class TestEnginePacingWiring:
+    """主链路真的接上了节奏分条：split_for_pacing 写完很久却一直没人调用。"""
+
+    @staticmethod
+    def _stub() -> object:
+        from app.conversation.consistency_checker import ConsistencyChecker
+        from app.conversation.response_processor import ResponseProcessor
+
+        return SimpleNamespace(
+            response_processor=ResponseProcessor(),
+            consistency_checker=ConsistencyChecker(),
+        )
+
+    @staticmethod
+    def _profile() -> object:
+        return SimpleNamespace(
+            language_style=SimpleNamespace(forbidden_words=[]),
+        )
+
+    def test_long_reply_split_into_bubbles(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+        from app.conversation.engine import ConversationEngine
+
+        monkeypatch.setattr(settings, "pacing_split_enabled", True)
+        monkeypatch.setattr(settings, "consistency_check_enabled", False)
+        text = "今天加班到十点，眼睛都花了。" * 12
+        _, messages, _, _ = ConversationEngine._postprocess_response(
+            self._stub(), text, self._profile(), "user-1"
+        )
+        assert len(messages) > 1
+        assert all(len(m) <= settings.pacing_auto_split_threshold for m in messages)
+        # 回并而非丢弃：切完的每条拼起来仍是原话
+        assert "".join(messages).replace("\n", "") == text
+
+    def test_short_reply_stays_single(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+        from app.conversation.engine import ConversationEngine
+
+        monkeypatch.setattr(settings, "pacing_split_enabled", True)
+        monkeypatch.setattr(settings, "consistency_check_enabled", False)
+        _, messages, _, _ = ConversationEngine._postprocess_response(
+            self._stub(), "嗯嗯，知道啦", self._profile(), "user-1"
+        )
+        assert messages == ["嗯嗯，知道啦"]
+
+    def test_disabled_keeps_old_split_behaviour(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """关掉开关即回退到只按 ||| 与空行拆分：一整段长文仍是一条。"""
+        from app.config import settings
+        from app.conversation.engine import ConversationEngine
+
+        monkeypatch.setattr(settings, "pacing_split_enabled", False)
+        monkeypatch.setattr(settings, "consistency_check_enabled", False)
+        text = "今天加班到十点，眼睛都花了。" * 12
+        _, messages, _, _ = ConversationEngine._postprocess_response(
+            self._stub(), text, self._profile(), "user-1"
+        )
+        assert messages == [text]

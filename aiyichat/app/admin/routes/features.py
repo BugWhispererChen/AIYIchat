@@ -243,6 +243,23 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         dependency="需先开启「流式按句缓冲放行」；重跑会多花一次模型调用",
         cost="paid",
     ),
+    # —— 回复长度治理（G35：实测角色整轮中位 99 字 / 4.5 条，对方只说 13 字）——
+    FeatureToggle(
+        key="reply_length_mirror_enabled",
+        label="回复长度镜像",
+        desc="按对方这条消息的长短分档提示角色对齐（只给档位词、不给数字）："
+        "对方甩几个字就短回一句，对方说了不少才多回一两句。真人话轮本就会互相对齐长度。",
+        dependency="与「回复方式」软引导同处动态尾段注入，不进 system 前缀，不影响前缀缓存",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="pacing_split_enabled",
+        label="超长回复按句末分条",
+        desc="单条超过阈值（默认 120 字）时按句末边界切成适合逐条发送的小块，"
+        "避免一整段 300 字砸在屏幕上；代码块、表格与编号清单内部不切。",
+        dependency="只改「怎么切」不改「说什么」；总字数要靠长度引导与镜像收口",
+        cost="free",
+    ),
 ]
 
 
@@ -267,6 +284,13 @@ def _pacing_context(s: "Any") -> dict[str, object]:
         "stream_jitter_prefix_ratio": s.stream_jitter_prefix_ratio,
         "stream_jitter_overlap_ratio": s.stream_jitter_overlap_ratio,
         "stream_jitter_reset_max": s.stream_jitter_reset_max,
+        # 长度治理：条数上限、流式气泡上限、句末分条三阈值
+        # （此前 multi_message_max_count 只有代码默认值，后台看着能调其实调不动）
+        "multi_message_max_count": s.multi_message_max_count,
+        "stream_max_bubbles": s.stream_max_bubbles,
+        "pacing_auto_split_threshold": s.pacing_auto_split_threshold,
+        "pacing_target_chunk_chars": s.pacing_target_chunk_chars,
+        "pacing_min_chunk_chars": s.pacing_min_chunk_chars,
     }
 
 
@@ -296,6 +320,20 @@ def _pacing_updates(form: Any, s: Any) -> dict[str, object]:
     gap_lo, gap_hi = _clamp_pair(
         "human_gap_min_ms", "human_gap_max_ms",
         s.human_gap_min_ms, s.human_gap_max_ms, 0, 30000,
+    )
+    # 分条三阈值必须 起切阈值 ≥ 目标长度 ≥ 碎片下限：运营填反了就整体重排，
+    # 而不是让 split_for_pacing 拿到 target>threshold 这种切不动的组合
+    threshold, target, chunk_floor = sorted(
+        (
+            _clamp_int(
+                "pacing_auto_split_threshold", s.pacing_auto_split_threshold, 20, 600
+            ),
+            _clamp_int(
+                "pacing_target_chunk_chars", s.pacing_target_chunk_chars, 15, 300
+            ),
+            _clamp_int("pacing_min_chunk_chars", s.pacing_min_chunk_chars, 2, 80),
+        ),
+        reverse=True,
     )
     boot_lo, boot_hi = _clamp_pair(
         "human_startup_min_ms", "human_startup_max_ms",
@@ -354,6 +392,15 @@ def _pacing_updates(form: Any, s: Any) -> dict[str, object]:
         "stream_jitter_reset_max": _clamp_int(
             "stream_jitter_reset_max", s.stream_jitter_reset_max, 0, 3
         ),
+        "multi_message_max_count": _clamp_int(
+            "multi_message_max_count", s.multi_message_max_count, 1, 10
+        ),
+        "stream_max_bubbles": _clamp_int(
+            "stream_max_bubbles", s.stream_max_bubbles, 0, 12
+        ),
+        "pacing_auto_split_threshold": threshold,
+        "pacing_target_chunk_chars": target,
+        "pacing_min_chunk_chars": chunk_floor,
     }
 
 

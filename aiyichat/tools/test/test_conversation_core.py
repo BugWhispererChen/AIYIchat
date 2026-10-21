@@ -99,15 +99,16 @@ class TestEmotionDetector:
 
 
 class TestLengthSoftGuide:
-    """回复长度软引导：不设字数硬限制，仅按角色风格做文案软引导。"""
+    """长度引导：约束的是**条数与一句一意**，不是字数——模型数不准自己写了多少字。"""
 
     def test_base_guide(self) -> None:
         from app.conversation.engine import ConversationEngine
 
         guide = ConversationEngine._length_instruction_for("standard")
-        # 软引导包含情景自由决定长度与多消息分隔符引导
-        assert "自由决定" in guide
+        # 条数主导 + 多消息分隔符 + 禁清单体
+        assert "最多两条" in guide
         assert "|||" in guide
+        assert "不列点" in guide
         # 不再包含字数硬限制类指令
         assert "字以内" not in guide
         assert "1句话即可" not in guide
@@ -117,12 +118,35 @@ class TestLengthSoftGuide:
 
         concise = ConversationEngine._length_instruction_for("concise")
         verbose = ConversationEngine._length_instruction_for("verbose")
-        assert "凝练" in concise
-        assert "健谈" in verbose
+        assert "话少" in concise
+        assert "小作文" in verbose
+        # standard 不再"什么都不写"：实测整轮中位 99 字正是从这个默认档长出来的
+        assert "一到两条" in ConversationEngine._length_instruction_for("standard")
         # 未知风格回退基础文案（与 standard 一致）
         assert (
             ConversationEngine._length_instruction_for("bogus")
             == ConversationEngine._length_instruction_for("standard")
+        )
+
+    def test_mirror_follows_counterpart_length(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+        from app.conversation import engine
+
+        # 显式打开：镜像开关是全局配置，随机测试顺序下不能依赖别的用例没关掉它
+        monkeypatch.setattr(settings, "reply_length_mirror_enabled", True)
+        assert engine._mirror_hint("在吗") == engine._MIRROR_TIERS[0][1]
+        assert "把话头留给对方" in engine._mirror_hint("今天真是累得不行了呀")
+        assert "值得你多回一两句" in engine._mirror_hint(" x" * 60)
+
+    def test_mirror_can_be_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+        from app.conversation import engine
+        from app.conversation.engine import ConversationEngine
+
+        monkeypatch.setattr(settings, "reply_length_mirror_enabled", False)
+        assert engine._mirror_hint("在吗") == ""
+        assert "别铺成长段" not in ConversationEngine._length_instruction_for(
+            "standard", "在吗"
         )
 
 

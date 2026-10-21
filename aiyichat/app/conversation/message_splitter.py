@@ -169,6 +169,15 @@ def _protected_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def limit_messages(messages: list[str], max_messages: int) -> list[str]:
+    """条数护栏的公开入口，供适配器共用。
+
+    各载体以前各自 ``texts[:max_count]`` 截一刀，超出上限的内容既没发出去也没落库，
+    等于静默吞掉回复尾部；统一走"回并不丢弃"后，尾部内容并进最后一条继续发。
+    """
+    return _limit(messages, max_messages)
+
+
 def _limit(messages: list[str], max_messages: int) -> list[str]:
     """条数护栏：超出上限时把多出的内容回并到最后一条，绝不丢弃。"""
     if max_messages <= 0 or len(messages) <= max_messages:

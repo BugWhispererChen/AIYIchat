@@ -81,11 +81,16 @@ class SentenceGate:
         forbidden_words: list[str] | None = None,
         *,
         max_pending: int = 40,
+        max_segments: int = 0,
         processor: ResponseProcessor | None = None,
         checker: ConsistencyChecker | None = None,
     ) -> None:
         self._forbidden = forbidden_words or []
         self._max_pending = max(8, max_pending)
+        # 单轮气泡总上限（0=不限）：留一个位置给尾段，超限后的内容合并进最后一条，
+        # 绝不丢弃——真人连发不会一次砸十几条，但也不会把话说一半。
+        self._bubble_cap = max_segments > 0
+        self._tail_after = max_segments - 1 if self._bubble_cap else 0
         self._processor = processor or ResponseProcessor()
         self._checker = checker or ConsistencyChecker()
         self._pending = ""
@@ -152,6 +157,9 @@ class SentenceGate:
         返回 ``(段, 剩余)``；段为 None 表示还需要继续缓冲（空串表示只吃掉了分隔符）。
         """
         text = self._pending.lstrip()
+        # 气泡数已到上限：不再切新条，剩余内容留在缓冲里由 flush 合并成一条尾段
+        if self._bubble_cap and len(self._released) >= self._tail_after:
+            return None, self._pending
         # 模型显式要求换一条消息：分隔符优先于任何句子边界，且绝不跟着正文下发
         if text.startswith(_DELIMITER):
             return "", text[len(_DELIMITER) :]

@@ -99,6 +99,14 @@ class _RuntimeSettings:
     multi_message_delay_per_char: float = 0.05  # 模拟打字延迟：每字延迟秒数
     multi_message_max_delay: float = 2.0  # 相邻消息间最大延迟秒数
 
+    # 回复长度治理（G35：整轮字数与气泡条数失控——实测角色中位 99 字 / 4.5 条，对方只说 13 字）
+    reply_length_mirror_enabled: bool = True  # 按对方这条消息的长度分档镜像（只给档位词，不写数字）
+    pacing_split_enabled: bool = True  # 超长单条按句末再切分（接通 split_for_pacing）
+    pacing_auto_split_threshold: int = 120  # 单条超过此字数才考虑再切
+    pacing_target_chunk_chars: int = 60  # 切到接近此字数即收口
+    pacing_min_chunk_chars: int = 12  # 小于此字数的碎片回并相邻块，避免无意义独立气泡
+    stream_max_bubbles: int = 5  # C 端流式单轮最多几条气泡，超出即合并成一条尾段（0=不限；仅在放行闸门开启后生效）
+
     # 流式主链路拟人化（C端网页；默认全部关闭，开启前行为与改动前逐字等价）
     stream_gate_enabled: bool = False  # 按句缓冲放行：清洗在发送之前，所见即所存
     stream_gate_max_pending: int = 40  # 缓冲上限（字数），超过则强制放行防憋死
@@ -376,6 +384,9 @@ class _RuntimeSettings:
             "topic_stall_similarity",
             "multi_message_enabled", "multi_message_max_count",
             "multi_message_delay_per_char", "multi_message_max_delay",
+            "reply_length_mirror_enabled", "pacing_split_enabled",
+            "pacing_auto_split_threshold", "pacing_target_chunk_chars",
+            "pacing_min_chunk_chars", "stream_max_bubbles",
             "stream_gate_enabled", "stream_gate_max_pending",
             "stream_pacing_enabled", "stream_max_total_delay_seconds",
             "human_rhythm_enabled", "human_typing_ms_per_char",
@@ -485,6 +496,12 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         multi_message_max_count: int = Field(default=5)
         multi_message_delay_per_char: float = Field(default=0.05)
         multi_message_max_delay: float = Field(default=2.0)
+        reply_length_mirror_enabled: bool = Field(default=True)
+        pacing_split_enabled: bool = Field(default=True)
+        pacing_auto_split_threshold: int = Field(default=120)
+        pacing_target_chunk_chars: int = Field(default=60)
+        pacing_min_chunk_chars: int = Field(default=12)
+        stream_max_bubbles: int = Field(default=5)
         stream_gate_enabled: bool = Field(default=False)
         stream_gate_max_pending: int = Field(default=40)
         stream_pacing_enabled: bool = Field(default=False)

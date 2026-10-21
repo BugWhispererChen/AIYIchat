@@ -89,6 +89,13 @@ _FILLER_PREFIX_PATTERNS: list[re.Pattern[str]] = [
     ),
 ]
 
+# 清单标记前缀：IM 里的"1. / (1) / 首先，"是最强的机器排版特征。
+# 只剥序号、保留内容——删整句会把角色真正想说的要点一起弄丢。
+_LIST_PREFIX_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"^\s*(?:\d+[.)、]|[（(]\d+[)）]|[①-⑩])\s*"),
+    re.compile(r"^\s*(?:首先|其次|再次|再者|第一|第二|第三)[，,、:：]\s*"),
+]
+
 # —— review：书面连接词与空转句，只计数不删（删了可能改坏语义） ——
 _REVIEW_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
@@ -153,6 +160,13 @@ def scan(text: str, *, keep_if_all_blocked: bool = True) -> ScanResult:
             if candidate != stripped:
                 stripped = candidate.lstrip()
                 blocking.append("assistant_opener")
+                break
+        # 再剥清单序号：去掉"1."这类标记但留住内容，同时计入 blocking 供评测数缺陷
+        for pat in _LIST_PREFIX_PATTERNS:
+            candidate = pat.sub("", stripped)
+            if candidate != stripped:
+                stripped = candidate.lstrip()
+                blocking.append("list_marker")
                 break
         if not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", stripped):
             continue

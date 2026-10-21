@@ -107,6 +107,11 @@ class _FakeSettings:
     stream_jitter_prefix_ratio = 0.5
     stream_jitter_overlap_ratio = 0.35
     stream_jitter_reset_max = 1
+    multi_message_max_count = 5
+    stream_max_bubbles = 5
+    pacing_auto_split_threshold = 120
+    pacing_target_chunk_chars = 60
+    pacing_min_chunk_chars = 12
 
 
 class TestPacingFormUpdates:
@@ -171,3 +176,38 @@ class TestPacingFormUpdates:
     def test_reset_zero_disables_recovery(self) -> None:
         updates = self._updates({"stream_jitter_reset_max": "0"})
         assert updates["stream_jitter_reset_max"] == 0
+
+    def test_split_thresholds_keep_ordering(self) -> None:
+        """分条三阈值必须 起切 ≥ 目标 ≥ 碎片下限：填反了整体重排，而不是交给 splitter 一个切不动的组合。"""
+        updates = self._updates(
+            {
+                "pacing_auto_split_threshold": "50",
+                "pacing_target_chunk_chars": "80",
+                "pacing_min_chunk_chars": "90",
+            }
+        )
+        assert (
+            updates["pacing_auto_split_threshold"]
+            >= updates["pacing_target_chunk_chars"]
+            >= updates["pacing_min_chunk_chars"]
+        )
+        # 90 被下限幅到 80，三个值按大小重排回三个字段
+        assert updates["pacing_auto_split_threshold"] == 80
+        assert updates["pacing_target_chunk_chars"] == 80
+        assert updates["pacing_min_chunk_chars"] == 50
+
+    def test_split_thresholds_keep_defaults_when_absent(self) -> None:
+        updates = self._updates({})
+        assert updates["pacing_auto_split_threshold"] == 120
+        assert updates["pacing_target_chunk_chars"] == 60
+        assert updates["pacing_min_chunk_chars"] == 12
+
+    def test_bubble_cap_zero_means_unlimited(self) -> None:
+        """流式气泡上限填 0 = 不限制，不能被限幅成 1 条。"""
+        updates = self._updates({"stream_max_bubbles": "0"})
+        assert updates["stream_max_bubbles"] == 0
+
+    def test_message_count_cannot_be_zero(self) -> None:
+        """Bot 侧条数下限是 1：填 0 会让整轮回复一条都发不出去。"""
+        updates = self._updates({"multi_message_max_count": "0"})
+        assert updates["multi_message_max_count"] == 1

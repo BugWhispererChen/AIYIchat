@@ -225,6 +225,14 @@ class AppSettingsDocument(BaseModel):
     multi_message_delay_per_char: float = 0.05
     multi_message_max_delay: float = 2.0
 
+    # 回复长度治理：长度镜像、超长节奏分条阈值、流式单轮气泡上限
+    reply_length_mirror_enabled: bool = True
+    pacing_split_enabled: bool = True
+    pacing_auto_split_threshold: int = 120
+    pacing_target_chunk_chars: int = 60
+    pacing_min_chunk_chars: int = 12
+    stream_max_bubbles: int = 5
+
     # 流式主链路拟人化：放行闸门、气泡节奏与流式复读护栏
     stream_gate_enabled: bool = False
     stream_gate_max_pending: int = 40

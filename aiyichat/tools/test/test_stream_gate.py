@@ -211,3 +211,35 @@ def test_all_slicings_agree_on_content_not_position() -> None:
         for pieces in itertools.islice(permutations_under_test(text), 5)
     }
     assert len(variants) == 1, variants
+
+
+class TestBubbleCap:
+    """单轮气泡上限：真人连发不会一次砸十几条，超限的内容合并进最后一条、不丢尾。"""
+
+    def test_no_cap_by_default(self) -> None:
+        gate = SentenceGate(FORBIDDEN, max_pending=200)
+        segs = list(gate.feed("一。二。三。四。")) + list(gate.flush())
+        assert len(segs) == 4
+
+    def test_overflow_merged_into_one_tail(self) -> None:
+        gate = SentenceGate(FORBIDDEN, max_pending=200, max_segments=3)
+        segs = list(gate.feed("第一条。第二条。第三条。第四条。")) + list(gate.flush())
+        assert len(segs) == 3
+        assert segs[0] == "第一条。"
+        assert "第四条" in segs[-1]
+        assert "".join(segs).replace(" ", "") == "第一条。第二条。第三条。第四条。"
+
+    def test_delimiter_not_leaked_after_cap(self) -> None:
+        """封顶后模型仍在标 |||：分隔符只能当"换条指令"被吃掉，不能漏进正文。"""
+        gate = SentenceGate(FORBIDDEN, max_pending=200, max_segments=2)
+        segs = list(gate.feed("第一条。|||第二条。|||第三条。")) + list(gate.flush())
+        assert len(segs) == 2
+        assert all("|||" not in seg for seg in segs)
+        assert "第三条" in segs[-1]
+
+    def test_cap_one_sends_single_bubble(self) -> None:
+        """上限填 1 = 整轮就一条，不能退化成不限。"""
+        gate = SentenceGate(FORBIDDEN, max_pending=200, max_segments=1)
+        segs = list(gate.feed("一。二。三。")) + list(gate.flush())
+        assert len(segs) == 1
+        assert "".join(segs).replace(" ", "") == "一。二。三。"

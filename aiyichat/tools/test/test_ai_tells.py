@@ -138,3 +138,26 @@ class TestVocab:
         assert result.kept == ""
         assert not result.blocking
         assert isinstance(AI_VOCAB, tuple)
+
+
+class TestListMarkerStripped:
+    """清单序号：剥掉标记、留住内容，同时计入 blocking 让评测能数出这条缺陷。"""
+
+    def test_number_prefix_stripped_content_kept(self) -> None:
+        result = scan("1. 早点睡。")
+        assert "list_marker" in result.blocking
+        assert result.kept == "早点睡。"
+
+    def test_cjk_order_prefix_stripped(self) -> None:
+        result = scan("首先，你得先把饭吃了。")
+        assert "list_marker" in result.blocking
+        assert "首先" not in result.kept
+        assert "把饭吃了" in result.kept
+
+    def test_circle_number_stripped(self) -> None:
+        assert scan("①早点睡。").kept == "早点睡。"
+
+    def test_plain_sentence_not_flagged(self) -> None:
+        # 句中/句首的普通数字不是清单标记
+        result = scan("我 10 点就睡了。")
+        assert "list_marker" not in result.blocking

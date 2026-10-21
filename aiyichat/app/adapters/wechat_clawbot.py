@@ -26,6 +26,7 @@ from app.adapters.base import ChannelAdapter, NormalizedMessage
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.human_rhythm import pacing_delay_seconds
+from app.conversation.message_splitter import limit_messages
 from app.conversation.image_task import ImageTask
 from app.conversation.sticker_task import (
     IMAGE_TRANSCRIBE_PREFIX,
@@ -621,9 +622,10 @@ class WeChatClient(ChannelAdapter):
                 and result is not None
                 and result.texts
             ):
-                texts = [
-                    t for t in result.texts if t.strip()
-                ][: settings.multi_message_max_count]
+                texts = limit_messages(
+                    [t for t in result.texts if t.strip()],
+                    settings.multi_message_max_count,
+                )
             else:
                 texts = [reply_text]
             for i, text in enumerate(texts):

@@ -22,7 +22,7 @@ from app.conversation.emotion_detector import (
 )
 from app.conversation.focus_tracker import FocusTracker
 from app.conversation.image_task import ImageTask
-from app.conversation.message_splitter import split_messages
+from app.conversation.message_splitter import split_for_pacing, split_messages
 from app.conversation.mood_manager import MoodManager
 from app.conversation.reply_jitter import (
     normalize_text,
@@ -116,15 +116,38 @@ _MINOR_GUARD_PROMPT = (
     "3. 鼓励学业、健康作息与现实社交，适当提醒休息与适度使用。"
 )
 
-# 回复长度软引导：不设字数硬限制，由 LLM 根据情景与角色风格自由决定长短与条数；
-# 输出上限仅由全局 chat_max_tokens 作为防失控护栏。
+# 回复长度软引导：模型不会数字数（"不超过 N 字"只被理解成"写短点"这种模糊倾向），
+# 因此约束的是**条数**与**一句一意**，而不是字数；输出上限仍只由 chat_max_tokens 兜底。
+# 实测基线（G35）：角色整轮中位 99 字 / 4.5 条气泡，而对方只说 13 字——失控在总长与条数。
 _LENGTH_SOFT_GUIDE = (
-    "【回复方式】像真人聊天一样，根据当前情景自由决定回复的长度与条数："
-    "日常闲聊、简单回应时言简意赅；"
-    "对方深入分享、情绪低落、需要你详细解释或讲故事时，"
-    "自然地展开多说几句，把话说充分。"
-    "表达多层意思时可用 ||| 分隔拆成多条消息发送，条数与长短由情景决定。"
+    "【回复方式】像真人发微信那样回：默认一条消息就把这一轮说完，最多两条，"
+    "每条只讲一个意思、一句话说完，剩下的留一句让对方接话。"
+    "简单回应和日常闲聊就用十几个字；对方在倾诉、追问细节，或你确实要讲一件事时，"
+    "可以多说一两句，但仍然一条一句。"
+    "真要分几条时用 ||| 分隔；不要为了显得丰富把一件事拆成三四条刷屏。"
+    "不列点、不编号，几个意思用口语串成一句。"
 )
+
+# 长度镜像档位：真人聊天会自然对齐对方的长短（对齐是话轮节奏，不是字数上限）。
+# 只给档位词、不写数字——数字模型数不准，档位它能理解。
+_MIRROR_TIERS: tuple[tuple[int, str], ...] = (
+    (6, "对方这次只甩了几个字，你也照样短一句回过去，别铺成长段。"),
+    (15, "对方这条很短，回一句话就够，把话头留给对方。"),
+    (40, "对方说了几句，你可以正常回一两句，仍然一句一意。"),
+)
+_MIRROR_LONG = "对方这次说了不少，值得你多回一两句，但照样一条只说一件事。"
+
+
+def _mirror_hint(text: str) -> str:
+    """按对方这条消息的长度给出"对齐到哪一档"的提示；关闭镜像开关时返回空串。"""
+    if not settings.reply_length_mirror_enabled:
+        return ""
+    chars = len((text or "").strip())
+    for limit, phrase in _MIRROR_TIERS:
+        if chars <= limit:
+            return phrase
+    return _MIRROR_LONG
+
 
 # 纯表情包消息匹配：仅由一个或多个 [表情:描述] 标签组成（QQ 内置表情解析产物）
 _STICKER_ONLY_RE = re.compile(r"^(\[表情(?:[:：][^\]]*)?\]\s*)+$")
@@ -894,6 +917,7 @@ class ConversationEngine:
             gate = SentenceGate(
                 profile.language_style.forbidden_words,
                 max_pending=settings.stream_gate_max_pending,
+                max_segments=settings.stream_max_bubbles,
             )
         rhythm = RhythmConfig.from_settings(settings)
         pacing_on = bool(settings.stream_pacing_enabled and rhythm.human_mode)
@@ -1558,13 +1582,20 @@ class ConversationEngine:
         )
 
     @staticmethod
-    def _length_instruction_for(verbosity: str) -> str:
-        """生成回复长度软引导：基础文案统一，仅按角色风格微调倾向，不做字数硬限制。"""
+    def _length_instruction_for(verbosity: str, user_text: str = "") -> str:
+        """生成本轮长度引导：基础条数约束 + 角色风格倾向 + 对方长短镜像。
+
+        standard 档不再"什么都不说"——实测整轮中位 99 字正是从这个默认档长出来的。
+        """
+        guide = _LENGTH_SOFT_GUIDE
         if verbosity == "concise":
-            return _LENGTH_SOFT_GUIDE + "\n你的人设偏凝练，没有特别值得展开的内容时倾向短句回应。"
-        if verbosity == "verbose":
-            return _LENGTH_SOFT_GUIDE + "\n你的人设偏健谈，时机合适时可以自然多展开聊几句。"
-        return _LENGTH_SOFT_GUIDE
+            guide += "\n你的人设本就话少，多数时候一条短句就够。"
+        elif verbosity == "verbose":
+            guide += "\n你比一般人爱聊，可以多说一句，但仍按条发、每条一句，不写小作文。"
+        else:
+            guide += "\n你不刻意摆话痨姿态，通常一到两条就说完这一轮。"
+        mirror = _mirror_hint(user_text)
+        return f"{guide}\n{mirror}" if mirror else guide
 
     async def _reset_topic_after_gap(
         self, service_id: str, current_topic: str, topic_history: list[str], topic_context: str,
@@ -1633,7 +1664,7 @@ class ConversationEngine:
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
-            length_instruction=self._length_instruction_for(verbosity),
+            length_instruction=self._length_instruction_for(verbosity, text),
             topic_context=topic_context,
             strategy_instruction=strategy_instruction,
             mood_hint=mood_hint,
@@ -1684,8 +1715,8 @@ class ConversationEngine:
     ) -> tuple[str, list[str], list[tuple[str, bool]], list[str]]:
         """LLM 回复后处理：标签清洗 + 消息拆分 + 人设一致性自检。
 
-        回复长度由 Prompt 软引导，不再做字数硬截断；
-        仅保留消息条数上限（multi_message_max_count）作为防失控护栏。
+        回复长度由 Prompt 软引导与长度镜像收口，不做字数硬截断；
+        这里只负责"怎么发"：超过软阈值的长条按句末切小，条数上限回并不丢弃。
 
         Returns:
             (clean_text, messages, image_specs, sticker_specs)
@@ -1699,11 +1730,20 @@ class ConversationEngine:
             self.response_processor.process(response_text)
         )
 
-        # 消息拆分（拟人化多消息回复，条数上限由配置控制）
-        split_result = split_messages(
-            clean_text, max_messages=settings.multi_message_max_count
-        )
-        messages = split_result.messages
+        # 消息拆分（拟人化多消息回复，条数上限由配置控制）。
+        # 开启节奏分条后，超过软阈值的长条会按句末边界再切成适合逐条发送的小块，
+        # 不再把 300 字一整块砸在对方屏幕上（split_for_pacing 此前是死代码）。
+        max_count = settings.multi_message_max_count
+        if settings.pacing_split_enabled:
+            messages = split_for_pacing(
+                clean_text,
+                max_messages=max_count,
+                auto_split_threshold=settings.pacing_auto_split_threshold,
+                target_chunk_chars=settings.pacing_target_chunk_chars,
+                min_chunk_chars=settings.pacing_min_chunk_chars,
+            )
+        else:
+            messages = split_messages(clean_text, max_messages=max_count).messages
 
         # 拼接完整文本（用于持久化和兼容）
         full_text = "\n".join(messages)

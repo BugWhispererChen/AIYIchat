@@ -3,10 +3,13 @@
 三件事，缺一不可：
 1. **评的是生产链路**：走真实的 ``PromptAssembler`` 组装 Prompt，线上注入的时间上下文、
    记忆分层、心情、策略都参与——否则机制改了分数不会动，评测就成了自欺；
+   本轮的长度引导与味道允许（``emotion_tag`` 驱动）也从同一入口取，漏一个就测不到对应机制；
 2. **确定性门禁**：``ai_tells`` 的 blocking 命中数不需要 LLM，可进 CI，
-   比" judge 打个 3.8 分"更能定位问题；
+   比" judge 打个 3.8 分"更能定位问题；口径与生产一致——**先清洗再扫**，
+   屏幕上根本不会出现的问题不算缺陷；同理字数与味道一律量清洗后那份；
 3. **GSB 成对比较**：同一用例跑改动前/后两份结果，统计 Good/Same/Bad。
    绝对分在不同模型间不可比，成对比较才是"这次改动到底有没有变好"的答案。
+   裁判均分实测噪声 ±15%，所以 GSB 同时打印字数与味道命中率两行确定性对照。
 
 用法：
     python tools/eval/run_eval.py                        # 内置用例，调 LLM
@@ -49,8 +52,11 @@ DIMENSIONS: list[str] = [
 _JUDGE_SYSTEM_PROMPT = (
     "你是严格的对话质量评审。根据给定的【角色设定】【已知记忆】【对话历史】"
     "和【AI回复】，对以下维度各打 1~5 分（5分最好）：\n"
-    "- persona_consistency：回复是否始终符合角色设定，无出戏/自曝AI\n"
-    "- empathy：是否恰当共情、贴合对方情绪\n"
+    "- persona_consistency：回复是否始终符合角色设定，无出戏/自曝 AI\n"
+    "- empathy：是否恰当共情、贴合对方情绪。判据要可核对：对方在报喜（如升职、上岸）"
+    "或倾诉（如难过、孤单、撑不住）时，若回复只陈述事实或只给建议、"
+    "没有任何先给反应的情绪表达（一起高兴、接住情绪，可核对的"
+    "标志是语气词或表情），视为只完成信息传递，empathy 不得高于 2 分\n"
     "- memory_accuracy：是否正确运用已知记忆，无编造/矛盾\n"
     "- naturalness：语言是否自然、像真人微信聊天（书面腔、套话、清单体都要扣分）\n"
     "- boundary_honesty：对方问起记忆里没有的事时，是否坦率说不记得而不是编细节\n"
@@ -194,25 +200,53 @@ def _build_history(case: dict[str, Any]):
     ]
 
 
+def _emotion_tag(user_input: str) -> str:
+    """取本轮情绪标签，口径与生产一致（`detect_emotion` 纯关键词那一步）。
+
+    评测刻意只用关键词检测、不补 LLM 降级：裁判要量的是"机制有没有生效"，
+    多一次 LLM 推断只会把噪声引进输入侧。生产链路本就以此结果为底线
+    （流式侧 `allow_llm_fallback=False` 走的正是这一条）。
+    """
+    from app.conversation.emotion_detector import detect_emotion
+
+    return detect_emotion(user_input) or ""
+
+
 def _build_messages(case: dict[str, Any]) -> list[dict[str, str]]:
     """用生产链路的 PromptAssembler 组装本轮消息。
 
     评测必须评线上真正发出去的那份 Prompt：时间上下文、记忆分层、重要规则
     （不许虚构共同回忆等）都在里面，绕过它自己拼 Prompt 就测不出机制改动。
     长度引导同样要带上——它是本轮"发几条、多长"的唯一来源，漏了它长度改动测不出来。
+    `emotion_tag` 也必须给：味道允许（G34）挂在它上面，漏传就只有"我升职了！！！"
+    这种靠连跑感叹号兜底的用例能命中，"今天又一个人吃饭"这类倾诉样本全程测不到机制。
     """
     from app.conversation.engine import ConversationEngine
     from app.llm.prompt_assembler import PromptAssembler
 
+    user_input = case["user_input"]
     return PromptAssembler().assemble(
         _build_profile(case),
         _build_history(case),
-        case["user_input"],
+        user_input,
         memory_facts=list(case.get("memory", [])),
         length_instruction=ConversationEngine._length_instruction_for(
-            "standard", case["user_input"]
+            "standard", user_input, _emotion_tag(user_input)
         ),
     )
+
+
+def _clean_reply(raw: str) -> str:
+    """按生产口径清洗回复文本（去 [IMG:] / [表情:] 等内部标记）。
+
+    长度与 AI 腔两把尺子都必须量"用户真正会看到的那份文本"：
+    线上是先清洗再放行，拿模型原始输出去量会把 150 字的内部标记算进正文，
+    也会把清洗链本就拦掉的问题当成缺陷报给门禁。
+    """
+    from app.conversation.response_processor import ResponseProcessor
+
+    cleaned, _images, _stickers = ResponseProcessor().process((raw or "").strip())
+    return cleaned.strip()
 
 
 def _length_metrics(response: str, user_input: str) -> dict[str, Any]:
@@ -223,13 +257,9 @@ def _length_metrics(response: str, user_input: str) -> dict[str, Any]:
     """
     from app.config import settings
     from app.conversation.message_splitter import split_for_pacing
-    from app.conversation.response_processor import ResponseProcessor
 
-    # 先按生产链路清洗再量：[IMG:...] / [表情:...] 这类内部标记有 150 字是常态，
-    # 但它们根本不会作为文本发出去，算进"回复长度"就是一把歪尺子。
     raw = (response or "").strip()
-    cleaned, _images, _stickers = ResponseProcessor().process(raw)
-    text = cleaned.strip()
+    text = _clean_reply(raw)
     bubbles = split_for_pacing(
         text,
         max_messages=settings.multi_message_max_count,
@@ -257,17 +287,96 @@ _LIST_LINE_RE = re.compile(
     r"^\s*(?:\d+[.)、]|[（(]\d+[)）]|[①-⑩]|[-*•·])\s*\S", re.MULTILINE
 )
 
+# 味道（G34）确定性判据：emoji 与句末语气词。长度有尺子而味道没有，
+# "短而有味"这轮就只能靠裁判主观分判定，而那把尺子实测噪声 ±15%。
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF]"
+)
+_WARMTH_PARTICLES = "呀啊吧嘛哦哈呢啦呗喽咯哟嘞哇"
+# 强弱两档：实测"好吧 我知道了"这类纯应答也带句末语气词，把它算成情绪外显会让
+# 尺子虚报命中、把敷衍回成"有味道"。弱档单独计数、不参与 hit 判定。
+_STRONG_PARTICLES = "呀哇哈嘞喽咯哟啦哎欸"
+# 按句切开后看收尾：真人微信的语气词在句末，句中出现（"好吧我知道了"）不算外显
+_SENTENCE_SPLIT_RE = re.compile(r"[!！?？。;；,，~～\s]+")
+# 语气词后面常跟一个表情或省略号收尾（"恭喜呀🥳"、"抱抱🤗"），
+# 直接把"句末字符"当判据会被 emoji 挡掉，得先剔掉尾部装饰再取尾字
+_SENTENCE_TAIL_STRIP = " \t\r\n…‥.。．-—*~～、”\"'』」）)"
+
+
+def _text_emoji_count(warmth: dict[str, Any]) -> int:
+    """正文里模型自己打出的 emoji 数（扣掉动作神态括号被清洗链转出来的那一份）。"""
+    return int(warmth.get("emoji", 0)) - len(warmth.get("mapped_emojis", []))
+
+
+def _warmth_expected(user_input: str) -> bool:
+    """这一例"该不该有味道"——判据与生产 `_warmth_instruction` 同源，但**忽略开关本身**。
+
+    绝不拿"引导文本里有没有'倾诉'二字"当判据：`_LENGTH_SOFT_GUIDE` 本就含
+    "倾诉"，那样数出来的是满屏假阳性。
+    也绝不直接调 `_warmth_instruction`：它第一行就读 `reply_warmth_enabled`，
+    关掉开关做对照时"应命中"会跟着变成 0 例，两份结果从此没法比——
+    尺子的期待必须钉死在机制的判定条件上，与被测开关无关。
+    """
+    from app.conversation import engine as E
+
+    tag = _emotion_tag(user_input)
+    text = user_input or ""
+    if tag in E._WARMTH_CELEBRATE_TAGS or E._CELEBRATION_RE.search(text):
+        return True
+    return bool(tag in E._WARMTH_VENT_TAGS or E._VENT_RE.search(text))
+
+
+def _warmth_metrics(response: str, user_input: str) -> dict[str, Any]:
+    """确定性味道指标：报喜/倾诉时那一句短话里有没有情绪外显符号。
+
+    emoji 必须分开记来源。清洗链会把 `（微笑）` 转成 `😊`、`(开心)` 转成 `😄`
+    （`[IMG:…]` / `[表情:…]` 则直接删除），所以量清洗后那份看似"带表情"的回复，
+    可能恰恰是模型写了动作神态标注——那是要扣分的非人信号，绝不能记成味道。
+    另外语气词分强弱：`好吧` 这类纯应答带句末语气词却不带情绪，只数强档。
+    """
+    raw = (response or "").strip()
+    text = _clean_reply(raw)
+    raw_emojis = {c for c in _EMOJI_RE.findall(raw)}
+    clean_emojis = {c for c in _EMOJI_RE.findall(text)}
+    mapped_emojis = sorted(clean_emojis - raw_emojis)
+    particles: list[str] = []
+    for seg in _SENTENCE_SPLIT_RE.split(text):
+        tail = _EMOJI_RE.sub("", seg).strip().rstrip(_SENTENCE_TAIL_STRIP)
+        if tail and tail[-1] in _WARMTH_PARTICLES:
+            particles.append(tail[-1])
+    strong = [c for c in particles if c in _STRONG_PARTICLES]
+    return {
+        "expected": _warmth_expected(user_input),
+        "emoji": len(clean_emojis),
+        "emoji_chars": sorted(clean_emojis),
+        # 由动作神态括号转出的 emoji，不计入"文本里的味道"
+        "mapped_emojis": mapped_emojis,
+        "particles": len(particles),
+        "particle_chars": sorted(set(particles)),
+        "strong_particles": sorted(set(strong)),
+        "hit": bool(clean_emojis - set(mapped_emojis)) or bool(strong),
+    }
+
 
 def _scan_ai_tells(response: str) -> dict[str, Any]:
-    """确定性 AI 腔门禁：blocking 命中数、review 命中数与高频词。"""
+    """确定性 AI 腔门禁：以清洗后的正文为准（生产口径），原始输出只作对照。
+
+    `raw_blocking_count` 与 `blocking_count` 的差值说明清洗链自己拦掉了多少，
+    两者混用会把"屏幕上根本不会出现的问题"记成缺陷。
+    """
     from app.conversation import ai_tells
 
-    result = ai_tells.scan(response, keep_if_all_blocked=False)
+    raw_result = ai_tells.scan(
+        (response or "").strip(), keep_if_all_blocked=False
+    )
+    cleaned_result = ai_tells.scan(_clean_reply(response), keep_if_all_blocked=False)
     return {
-        "blocking": result.blocking,
-        "blocking_count": len(result.blocking),
-        "review": result.review,
-        "vocab": result.vocab,
+        "blocking": cleaned_result.blocking,
+        "blocking_count": len(cleaned_result.blocking),
+        "review": cleaned_result.review,
+        "vocab": cleaned_result.vocab,
+        "raw_blocking": raw_result.blocking,
+        "raw_blocking_count": len(raw_result.blocking),
     }
 
 
@@ -355,6 +464,11 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
             messages = _build_messages(case)
             print(f"  (dry-run) 生产 Prompt 段数: {len(messages)}")
             print("  (dry-run) 对方输入:", case["user_input"])
+            print(
+                "  (dry-run) 情绪标签:",
+                _emotion_tag(case["user_input"]) or "(无)",
+                f"味道应命中={_warmth_expected(case['user_input'])}",
+            )
             print("  (dry-run) 记忆:", case.get("memory", []))
             results.append(record)
             print()
@@ -365,11 +479,14 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
             scores = await _judge(case, response)
             tells = _scan_ai_tells(response)
             lengths = _length_metrics(response, case["user_input"])
+            warmth = _warmth_metrics(response, case["user_input"])
             print("  回复:", response[:80])
             print("  评分:", json.dumps(scores, ensure_ascii=False))
+            raw_extra = tells["raw_blocking_count"] - tells["blocking_count"]
             print(
                 "  AI腔:",
                 f"blocking={tells['blocking_count']} {tells['blocking']}",
+                f"(清洗前 {tells['raw_blocking_count']}，清洗链拦掉 {raw_extra})",
                 f"review={tells['review']} vocab={tells['vocab']}",
             )
             print(
@@ -379,12 +496,20 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
                 f"镜像比{lengths['ratio']}x",
                 f"清单行{lengths['list_markers']}",
             )
+            print(
+                "  味道:",
+                f"应命中={warmth['expected']} 命中={warmth['hit']}",
+                f"emoji{warmth['emoji_chars']}",
+                f"语气词{warmth['particle_chars']}(强{warmth['strong_particles']})",
+                f"括号转出的表情{warmth['mapped_emojis']}",
+            )
             record.update(
                 {
                     "response": response,
                     "scores": scores,
                     "ai_tells": tells,
                     "length": lengths,
+                    "warmth": warmth,
                 }
             )
             overall = _overall(scores)
@@ -408,6 +533,7 @@ async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
         for r in blocked:
             print(f"    - {r['name']}: {r['ai_tells']['blocking']}")
         _print_length_summary(results)
+        _print_warmth_summary(results)
     elif dry_run:
         print("dry-run 流水线校验通过（含生产 Prompt 组装）。")
     return results
@@ -450,11 +576,49 @@ def _print_length_summary(results: list[dict[str, Any]]) -> None:
         print(f"    - {key}: 中位 {_percentile(values, 0.5)} 字（{len(values)} 例）")
 
 
+def _print_warmth_summary(results: list[dict[str, Any]]) -> None:
+    """味道汇总（确定性）：应命中几例、实际命中几例，逐例点名漏掉的。
+
+    长度收住之后塌掉的就是这一项——同批 13 用例的 emoji 命中曾从 11/13 掉到 6/13。
+    只看整体命中率看不出问题，必须看"该有味道的那几例"有没有被回成干信息。
+    """
+    items = [r for r in results if r.get("warmth")]
+    if not items:
+        return
+    expected = [r for r in items if r["warmth"]["expected"]]
+    hit_all = [r for r in items if r["warmth"]["hit"]]
+    hit_expected = [r for r in expected if r["warmth"]["hit"]]
+    # 只数正文里模型自己打出的 emoji：动作神态括号转出来的另算一行
+    text_emoji = [r for r in items if _text_emoji_count(r["warmth"])]
+    mapped = [r for r in items if r["warmth"]["mapped_emojis"]]
+    print("=== 味道指标（确定性，零噪声）===")
+    print(
+        f"  应命中 {len(expected)}/{len(items)} 例，"
+        f"其中实际带情绪外显: {len(hit_expected)}/{len(expected)}"
+    )
+    print(
+        f"  全批正文 emoji 命中: {len(text_emoji)}/{len(items)}"
+        f"（历史基线 6/13，味道机制上线前 11/13）"
+    )
+    print(f"  全批带情绪外显（强语气词或正文 emoji）: {len(hit_all)}/{len(items)}")
+    if mapped:
+        # 这批不是味道而是缺陷：括号里写神态，清洗链才把它变成 😊
+        print(
+            f"  ⚠ 靠动作神态括号转出 emoji 的用例: {len(mapped)}/{len(items)}"
+            f" —— {', '.join(r['name'] for r in mapped)}"
+        )
+    for r in expected:
+        if not r["warmth"]["hit"]:
+            print(f"    - 缺失: {r['name']}")
+
+
 def _gsb(current: list[dict], baseline: list[dict]) -> None:
     """GSB 成对比较：同一用例取两份 overall 分，统计 Good/Same/Bad。"""
     base_map = {r["name"]: r for r in baseline}
     good = same = bad = 0
     len_pairs: list[tuple[int, int]] = []
+    warmth_pairs: list[tuple[int, int]] = []
+    emoji_hits: list[tuple[int, int]] = []
     print("=== GSB 成对比较（相对基线）===")
     for item in current:
         base = base_map.get(item["name"])
@@ -484,11 +648,27 @@ def _gsb(current: list[dict], baseline: list[dict]) -> None:
             (base.get("response") or "").strip()
         )
         len_pairs.append((base_len, cur_len))
+        cur_w = item.get("warmth", {})
+        base_w = base.get("warmth", {})
+        warmth_note = ""
+        if cur_w and base_w and cur_w.get("expected"):
+            # 基线那份必须也有味道字段，否则把"没测过"当成"没命中"来对照
+            cur_hit = 1 if cur_w.get("hit") else 0
+            base_hit = 1 if base_w.get("hit") else 0
+            warmth_pairs.append((base_hit, cur_hit))
+            warmth_note = f", 味道 {base_hit} → {cur_hit}"
+        if cur_w and base_w:
+            emoji_hits.append(
+                (
+                    1 if _text_emoji_count(base_w) else 0,
+                    1 if _text_emoji_count(cur_w) else 0,
+                )
+            )
         print(
             f"  {item['name']}: {verdict} "
             f"({base_score:.2f} → {cur_score:.2f}, "
             f"blocking {base_block} → {cur_block}, "
-            f"字数 {base_len} → {cur_len})"
+            f"字数 {base_len} → {cur_len}{warmth_note})"
         )
     print(f"  合计 Good={good} Same={same} Bad={bad}")
     if good + bad:
@@ -501,6 +681,19 @@ def _gsb(current: list[dict], baseline: list[dict]) -> None:
             f"  整轮字数中位: {base_median:.0f} → {cur_median:.0f}"
             f"（{(cur_median - base_median) / max(base_median, 1):+.0%}）"
         )
+    if warmth_pairs:
+        # 味道命中率同样是计数而非主观分：这一行才是 G34 那轮的判据
+        print(
+            f"  应命中用例的味道命中率: "
+            f"{sum(p[0] for p in warmth_pairs)}/{len(warmth_pairs)} → "
+            f"{sum(p[1] for p in warmth_pairs)}/{len(warmth_pairs)}"
+        )
+    if emoji_hits:
+        print(
+            f"  全批正文 emoji 命中: "
+            f"{sum(p[0] for p in emoji_hits)}/{len(emoji_hits)} → "
+            f"{sum(p[1] for p in emoji_hits)}/{len(emoji_hits)}"
+        )
 
 
 def main() -> None:
@@ -512,7 +705,7 @@ def main() -> None:
     parser.add_argument(
         "--gate",
         action="store_true",
-        help="任一用例出现 blocking 级 AI 腔即以非零码退出（CI 门禁）",
+        help="任一用例在清洗后仍有 blocking 级 AI 腔即以非零码退出（CI 门禁）",
     )
     args = parser.parse_args()
 

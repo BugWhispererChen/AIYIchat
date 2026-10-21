@@ -273,9 +273,27 @@ def _overall(scores: dict[str, Any]) -> float | None:
     return sum(float(scores[d]) for d in DIMENSIONS) / len(DIMENSIONS)
 
 
+async def _bootstrap() -> None:
+    """加载运行时配置：模型与 config_id 都存在 DB 的 app_settings 文档里。
+
+    本脚本是一次性进程，不走 FastAPI 的 lifespan，不调 `settings.reload()`
+    就只会读到 `.env`/代码默认值，`text-default` 这类 config_id 解析不到，
+    每个用例都会以"未引用有效的基础配置"失败。
+    """
+    from app.config import settings
+    from app.db import mongo
+
+    await mongo.connect_db()
+    await settings.reload()
+
+
 async def run(cases: list[dict], *, dry_run: bool) -> list[dict[str, Any]]:
     """执行评估，打印汇总并返回逐用例结果（供 --out/--compare 复用）。"""
     print(f"=== 对话质量评估：{len(cases)} 个用例，dry_run={dry_run} ===\n")
+    try:
+        await _bootstrap()
+    except Exception as e:  # 本地无 DB 时仍可跑 dry-run 校验流水线
+        print("!! 运行时配置加载失败，将使用代码默认值:", e)
     results: list[dict[str, Any]] = []
     totals: dict[str, float] = {d: 0.0 for d in DIMENSIONS}
     counted = 0

@@ -102,6 +102,48 @@ class TestRoleBreakAndForbidden:
             assert "语言模型" not in joined
 
 
+class TestDelimiterNeverLeaks:
+    """`|||` 是"换一条消息"的指令，任何到达顺序都不许把它留在正文里。
+
+    线上复现过的漏洞路径：模型输出 "…海边呀🤔||| 人家最近…"，句末边界在分隔符之后，
+    旧实现先在句末收口、把开头的 `|||` 留在缓冲里又中断了本轮取段，
+    分隔符最终随尾段一起被放行，直接显示在气泡里。
+    """
+
+    def test_delimiter_after_first_release_leaves_no_trace(self) -> None:
+        joined = "".join(
+            feed_by(SentenceGate(FORBIDDEN), ["海边呀🤔|||人家最近在赶作业"])
+        )
+        assert "|||" not in joined and "|" not in joined
+        assert "海边呀" in joined and "赶作业" in joined
+
+    def test_leading_delimiter_consumed_and_stream_continues(self) -> None:
+        gate = SentenceGate(FORBIDDEN)
+        first = gate.feed("在吗|||")
+        second = gate.feed("今天累不累")
+        tail = gate.flush()
+        joined = "".join(first + second + tail)
+        assert "|||" not in joined
+        assert "在吗" in joined and "今天累不累" in joined
+
+    def test_split_delimiter_across_deltas(self) -> None:
+        for pieces in (["在吗|", "|", "|你好"], ["在吗||", "|你好"], ["在吗", "|||你好"]):
+            joined = "".join(feed_by(SentenceGate(FORBIDDEN), pieces))
+            assert "|" not in joined, pieces
+            assert "你好" in joined, pieces
+
+    def test_trailing_delimiter_only(self) -> None:
+        joined = "".join(feed_by(SentenceGate(FORBIDDEN), ["说完了|||"]))
+        assert "|" not in joined and "说完了" in joined
+
+    def test_delimiter_inside_forced_release(self) -> None:
+        gate = SentenceGate(FORBIDDEN, max_pending=20)
+        text = "没有标点的长句内容" * 4 + "|||" + "后半段也要能出来"
+        joined = "".join(feed_by(gate, [text]))
+        assert "|" not in joined
+        assert "后半段" in joined
+
+
 class TestReleaseShape:
     """放行段的结构。"""
 

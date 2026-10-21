@@ -123,15 +123,25 @@ class SentenceGate:
         return out
 
     def flush(self) -> list[str]:
-        """流结束：放掉最后不足一句的残留；未闭合的半截标记直接丢弃。"""
+        """流结束：先把还能收口的段都收口，再放掉最后不足一句的残留。
+
+        未闭合的半截标记（被截断的 ``[IMG:``）直接丢弃——发出去只会露标。
+        """
         out: list[str] = []
+        while True:
+            segment, keep = self._take_ready_segment()
+            if segment is None:
+                break
+            self._pending = keep
+            cleaned = self._clean(segment)
+            if cleaned:
+                out.append(cleaned)
         rest = self._pending
         self._pending = ""
-        if not rest:
-            return out
-        cleaned = self._clean(rest)
-        if cleaned:
-            out.append(cleaned)
+        if rest:
+            cleaned = self._clean(rest)
+            if cleaned:
+                out.append(cleaned)
         return out
 
     # —— 内部实现 ——————————————————————————————————————————
@@ -139,24 +149,24 @@ class SentenceGate:
     def _take_ready_segment(self) -> tuple[str | None, str]:
         """从 pending 头部取出一个"可放行"的段。
 
-        返回 ``(段, 剩余)``；段为 None 表示还需要继续缓冲。
+        返回 ``(段, 剩余)``；段为 None 表示还需要继续缓冲（空串表示只吃掉了分隔符）。
         """
-        text = self._pending
+        text = self._pending.lstrip()
+        # 模型显式要求换一条消息：分隔符优先于任何句子边界，且绝不跟着正文下发
+        if text.startswith(_DELIMITER):
+            return "", text[len(_DELIMITER) :]
         match = _SENTENCE_END_RE.search(text)
         delim_at = text.find(_DELIMITER)
-        # 分隔符与句末谁先到就用谁收口；分隔符本身绝不发出去（网页端会当成正文显示）
-        if delim_at >= 0 and (match is None or delim_at <= match.start()):
-            if delim_at == 0:
-                # 上一段刚在分隔符处收口，这里只吃掉分隔符
-                return None, text[len(_DELIMITER) :]
-            return text[:delim_at].strip(), text[delim_at + len(_DELIMITER) :]
+        cut_delim = False
         cut = -1
-        if match is not None:
+        if delim_at > 0 and (match is None or delim_at <= match.start()):
+            cut, cut_delim = delim_at, True
+        elif match is not None:
             cut = match.end()
         if cut < 0:
             # 没有边界：超长强制放行，否则继续攒
             if len(text) < self._max_pending:
-                return None, text
+                return None, self._pending
             soft = max(
                 text.rfind("，"), text.rfind("、"), text.rfind(" "), text.rfind(";"),
                 text.rfind("；"),
@@ -167,10 +177,12 @@ class SentenceGate:
             else:
                 cut = soft + 1
         segment, keep = text[:cut], text[cut:]
+        if cut_delim:
+            keep = keep[len(_DELIMITER) :]
         # 标记未闭合 → 继续缓冲，等闭合或超限再处理
         if self._has_unclosed_marker(segment) and len(text) < self._max_pending * 3:
-            return None, text
-        return segment, keep
+            return None, self._pending
+        return segment.strip(), keep
 
     @staticmethod
     def _has_unclosed_marker(segment: str) -> bool:
@@ -192,6 +204,10 @@ class SentenceGate:
         清洗全空时保留原文的空白归一结果，避免整条回复凭空消失。
         """
         raw = segment.strip()
+        if not raw:
+            return ""
+        # 分隔符是"换一条消息"的指令，不是正文：任何路径残留下来都不许出现在屏幕上
+        raw = raw.replace(_DELIMITER, " ").strip()
         if not raw:
             return ""
         processed, images, stickers = self._processor.process(raw)

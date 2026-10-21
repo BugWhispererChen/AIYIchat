@@ -99,6 +99,21 @@ class _RuntimeSettings:
     multi_message_delay_per_char: float = 0.05  # 模拟打字延迟：每字延迟秒数
     multi_message_max_delay: float = 2.0  # 相邻消息间最大延迟秒数
 
+    # 流式主链路拟人化（C端网页；默认全部关闭，开启前行为与改动前逐字等价）
+    stream_gate_enabled: bool = False  # 按句缓冲放行：清洗在发送之前，所见即所存
+    stream_gate_max_pending: int = 40  # 缓冲上限（字数），超过则强制放行防憋死
+    stream_pacing_enabled: bool = False  # 服务端控节奏：逐条气泡之间插入真人停顿
+    stream_max_total_delay_seconds: float = 20.0  # 整轮节奏总延迟护栏，超限即全速
+    human_rhythm_enabled: bool = False  # 启用 human 档节奏参数（关闭时用 legacy 公式）
+    human_typing_ms_per_char: int = 85  # 每字时长（毫秒）
+    human_gap_min_ms: int = 700  # 气泡间隔下界
+    human_gap_max_ms: int = 2600  # 气泡间隔上界
+    human_startup_min_ms: int = 250  # 启动延迟下界
+    human_startup_max_ms: int = 900  # 启动延迟上界
+    human_jitter_ratio: float = 0.2  # 节奏抖动比例
+    human_night_factor: float = 1.6  # 深夜 2-7 点时长倍率
+    human_long_pause_prob: float = 0.25  # 偶发长停顿概率
+
     # 回复抖动检测（拦截模型复读上一条回复：命中后追加提示重试）
     reply_jitter_detection_enabled: bool = True  # 复读检测总开关
     reply_jitter_similarity: float = 0.9  # 相似度阈值（0~1，达到即判定为复读）
@@ -354,6 +369,12 @@ class _RuntimeSettings:
             "topic_stall_similarity",
             "multi_message_enabled", "multi_message_max_count",
             "multi_message_delay_per_char", "multi_message_max_delay",
+            "stream_gate_enabled", "stream_gate_max_pending",
+            "stream_pacing_enabled", "stream_max_total_delay_seconds",
+            "human_rhythm_enabled", "human_typing_ms_per_char",
+            "human_gap_min_ms", "human_gap_max_ms",
+            "human_startup_min_ms", "human_startup_max_ms",
+            "human_jitter_ratio", "human_night_factor", "human_long_pause_prob",
             "reply_jitter_detection_enabled", "reply_jitter_similarity",
             "reply_jitter_similarity_warn",
             "reply_jitter_window", "reply_jitter_retry_max",
@@ -454,6 +475,19 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         multi_message_max_count: int = Field(default=5)
         multi_message_delay_per_char: float = Field(default=0.05)
         multi_message_max_delay: float = Field(default=2.0)
+        stream_gate_enabled: bool = Field(default=False)
+        stream_gate_max_pending: int = Field(default=40)
+        stream_pacing_enabled: bool = Field(default=False)
+        stream_max_total_delay_seconds: float = Field(default=20.0)
+        human_rhythm_enabled: bool = Field(default=False)
+        human_typing_ms_per_char: int = Field(default=85)
+        human_gap_min_ms: int = Field(default=700)
+        human_gap_max_ms: int = Field(default=2600)
+        human_startup_min_ms: int = Field(default=250)
+        human_startup_max_ms: int = Field(default=900)
+        human_jitter_ratio: float = Field(default=0.2)
+        human_night_factor: float = Field(default=1.6)
+        human_long_pause_prob: float = Field(default=0.25)
         reply_jitter_detection_enabled: bool = Field(default=True)
         reply_jitter_similarity: float = Field(default=0.9)
         reply_jitter_similarity_warn: float = Field(default=0.75)

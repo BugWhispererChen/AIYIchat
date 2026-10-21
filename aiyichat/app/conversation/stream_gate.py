@@ -31,6 +31,23 @@ _OPEN_MARKERS = ("[", "（", "(")
 _DANGLING_RE = re.compile(r"\[[^\]]*$|[（(][^）)]*$|\*[^*]*$")
 
 
+@dataclass(frozen=True)
+class StreamEvent:
+    """流式下发事件。
+
+    只在开启放行闸门时使用；未开启时引擎继续 yield 裸 str，SSE 输出与改动前逐字节一致，
+    老前端与既有测试契约都不会被波及。
+
+    kind:
+    - ``msg``：一条新气泡，``text`` 为整条气泡文本（已清洗）；节奏由服务端在 yield 之前
+      sleep 掉，因此不往协议里塞 delay_ms——前端收到时那条气泡就已经"到点了"；
+    - ``reset``：收回本轮已显示的全部气泡（复读重跑时用），text 为空。
+    """
+
+    kind: str
+    text: str = ""
+
+
 @dataclass
 class GateStats:
     """闸门累计计数，供日志与评测观察。"""

@@ -57,6 +57,9 @@ def _make_profile(**overrides):
     base = dict(
         id="prof-1", slug="companion", voice_id="voice-1",
         is_active=True, visibility="public", account_id="acc-1",
+        # 真实 PromptProfileInDB 一定带 language_style.forbidden_words，
+        # 放行闸门读取它；替身缺这个字段会让闸门用例测不出真实路径
+        language_style=SimpleNamespace(forbidden_words=[]),
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -940,3 +943,161 @@ class TestReplyJitterDetection:
         assert result.text == repeated
         provider.complete_with_usage.assert_awaited_once()
 
+
+
+class TestStreamGateAndPacing:
+    """放行闸门与节奏：清洗前移到放行之前，气泡边界与停顿由服务端控。
+
+    默认开关全关，因此本类必须显式打开；关掉时"逐字节等价改动前"由
+    test_stream_frames.py 与上面的既有用例共同守住。
+    """
+
+    @staticmethod
+    def _collect(items: list[Any]) -> tuple[list[str], list[str]]:
+        """把引擎产出拆成 (控制帧序列, 正文序列)。"""
+        kinds = [
+            "msg" if isinstance(i, str) else getattr(i, "kind", "") for i in items
+        ]
+        texts = [i if isinstance(i, str) else getattr(i, "text", "") for i in items]
+        return kinds, [t for t in texts if t]
+
+    def test_gate_off_yields_plain_str(self) -> None:
+        """闸门关闭时不得混入 StreamEvent——老前端只认裸文本帧。"""
+        engine = _build_engine()
+        result, _ = _run(engine, "今天想出门走走", stream=True)
+        assert all(isinstance(i, str) for i in result)
+        assert "".join(result) == "你好呀，今天过得怎么样？"
+
+    def test_markers_never_reach_the_screen(self) -> None:
+        """（微笑）/[表情:]/[IMG:] 必须在放行之前就被删掉。"""
+        engine = _build_engine()
+        dirty = "辛苦啦（微笑）[表情:一个抱抱]早点休息哦。[IMG:窗边的猫]"
+        with patch.object(settings, "stream_gate_enabled", True):
+            result, _ = _run(engine, "今天好累", reply=dirty, stream=True)
+        _, texts = self._collect(result)
+        joined = "".join(texts)
+        assert "（微笑）" not in joined
+        assert "[表情" not in joined and "[IMG" not in joined
+        assert "辛苦啦" in joined and "早点休息" in joined
+
+    def test_stored_text_equals_released_text(self) -> None:
+        """所见即所存：落库文本必须就是屏幕上那份，而不是重新清洗的原文。"""
+        engine = _build_engine()
+        dirty = "在的呀（偷笑）今天怎么这么晚。"
+        with patch.object(settings, "stream_gate_enabled", True):
+            result, _ = _run(engine, "在吗", reply=dirty, stream=True)
+        _, texts = self._collect(result)
+        stored = engine.turn_recorder.record_assistant_message.await_args.kwargs["clean_text"]
+        assert stored == "\n".join(texts)
+        assert "（偷笑）" not in stored
+
+    def test_ai_tells_stripped_before_release(self) -> None:
+        """助手腔整句在放行前就被剔除，不会先显示再消失。"""
+        engine = _build_engine()
+        with patch.object(settings, "stream_gate_enabled", True):
+            result, _ = _run(
+                engine, "帮我看看",
+                reply="当然可以。我陪你一起想办法。", stream=True,
+            )
+        _, texts = self._collect(result)
+        joined = "".join(texts)
+        assert "当然可以" not in joined
+        assert "我陪你一起想办法" in joined
+
+    def test_pacing_off_does_not_call_rhythm(self) -> None:
+        """节奏未开启：不得计算停顿，也不得 sleep。"""
+        engine = _build_engine()
+        sleep_mock = AsyncMock()
+        with patch.object(settings, "stream_gate_enabled", True), patch(
+            "app.conversation.engine.message_gap_ms", side_effect=AssertionError
+        ), patch("app.conversation.engine.asyncio.sleep", sleep_mock):
+            _run(engine, "在吗", reply="在的呀。怎么啦？", stream=True)
+        sleep_mock.assert_not_awaited()
+
+    def test_pacing_on_inserts_gaps_between_bubbles(self) -> None:
+        """节奏开启：首条走 thinking 延迟，后续走气泡间隔，且都真的 sleep。"""
+        engine = _build_engine()
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_pacing_enabled", True
+        ), patch.object(settings, "human_rhythm_enabled", True), patch(
+            "app.conversation.engine.thinking_ms", return_value=800
+        ), patch(
+            "app.conversation.engine.message_gap_ms", return_value=1500
+        ), patch(
+            "app.conversation.engine.asyncio.sleep", side_effect=fake_sleep
+        ):
+            result, _ = _run(engine, "在吗", reply="在的呀。怎么啦？", stream=True)
+        assert sleeps == [0.8, 1.5]
+        assert len(self._collect(result)[1]) == 2
+
+    def test_delay_budget_guard(self) -> None:
+        """总延迟护栏到顶后不再 sleep，长回复不能被节奏拖死。"""
+        engine = _build_engine()
+        sleep_mock = AsyncMock()
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_pacing_enabled", True
+        ), patch.object(settings, "human_rhythm_enabled", True), patch.object(
+            settings, "stream_max_total_delay_seconds", 0.0
+        ), patch(
+            "app.conversation.engine.message_gap_ms", return_value=1500
+        ), patch(
+            "app.conversation.engine.asyncio.sleep", sleep_mock
+        ):
+            _run(engine, "在吗", reply="在的呀。怎么啦？", stream=True)
+        sleep_mock.assert_not_awaited()
+
+    def test_all_dropped_releases_fallback(self) -> None:
+        """整段都是越界内容时兜底一句，屏幕不能空着。"""
+        engine = _build_engine()
+        with patch.object(settings, "stream_gate_enabled", True):
+            result, _ = _run(
+                engine, "你是谁", reply="我是AI助手。作为语言模型我只能这样说。",
+                stream=True,
+            )
+        _, texts = self._collect(result)
+        assert texts == ["刚才那句我没说好，你再说一次？"]
+
+    def test_client_abort_still_persists(self) -> None:
+        """客户端中止：已放行部分交给后台任务落库，不留在空气泡里。"""
+        engine = _build_engine()
+        spawned: list[Any] = []
+        agen = None
+
+        async def flow() -> None:
+            nonlocal agen
+            agen = engine.handle_message_stream(
+                platform="qq", platform_id="openid-1", text="在吗"
+            )
+            first = await agen.__anext__()
+            assert first is not None
+            await agen.aclose()
+
+        with patch.object(settings, "stream_gate_enabled", True), patch(
+            "app.conversation.engine.spawn",
+            side_effect=lambda coro: (spawned.append(coro), MagicMock())[0],
+        ):
+            with patch("app.conversation.engine.get_llm_provider") as get_provider:
+                provider = MagicMock()
+                provider.model_name = "test-model"
+
+                async def stream_reply(**kwargs: Any) -> AsyncIterator[str]:
+                    kwargs["usage_sink"].update(prompt_tokens=1, completion_tokens=2)
+                    yield "在的呀。"
+                    yield "怎么啦？"
+
+                provider.stream_complete = MagicMock(side_effect=stream_reply)
+                get_provider.return_value = provider
+                with patch(
+                    "app.conversation.engine.spawn_with_limit",
+                    side_effect=_discard_background,
+                ):
+                    asyncio.run(flow())
+
+        # 中止路径必须把落库交给后台任务（在 finally 里 await 会触发 GeneratorExit 冲突）
+        assert len(spawned) == 1
+        spawned[0].close()  # 关掉未执行的协程，避免 RuntimeWarning

@@ -7,8 +7,10 @@
 两档语义要分清，混用会把节奏拖慢一倍：
 - ``message_gap_ms``：**气泡之间**的发送停顿。真人 IM 里整条气泡是突然出现、下一条隔一会儿
   才来，所以这是"发完一条歇多久"，取 700~2600ms 一档。
-- ``typing_frames``：**气泡内部**逐字长出来的时长。真实 IM 不做逐字浮现，逐字效果是我们的
-  网页端可选呈现方式，默认不启用；只有开启时才按每字时长计算。
+- ``thinking_ms``：**第一条气泡之前**的已读+思考延迟。真人看完消息要想一下才动手。
+
+逐字浮现（气泡内部一字数出）刻意不做：真实 IM 里气泡是整条出现的，逐字长出来反而是
+最强的 AI 特征之一，我们已有的流式增量只用于"尽快把内容送到用户眼前"。
 
 参数取值为业界开源配方（均为 MIT 许可，只取参数与算法，不抄代码）：
 - ai-companion-kit/humanize.js：msPerChar=85、gap[700,2600]、jitter0.2、burstMax=4、
@@ -59,9 +61,6 @@ class RhythmConfig:
     long_pause_max_ms: int = 9000
     think_per_input_char_ms: int = 8  # 按对方消息长度追加的思考时长
     think_cap_ms: int = 2500  # 思考时长上限
-    chars_per_frame: int = 6  # 网页逐帧吐字的每帧字符数
-    frame_total_min_ms: int = 300  # 逐帧整条总时长下界（防止短消息一闪而过）
-    frame_total_max_ms: int = 8000  # 逐帧整条总时长上界（防止长消息拖太久）
 
     @classmethod
     def legacy(
@@ -96,9 +95,6 @@ class RhythmConfig:
             jitter_ratio=float(getattr(settings, "human_jitter_ratio", 0.2)),
             night_factor=float(getattr(settings, "human_night_factor", 1.6)),
             long_pause_prob=float(getattr(settings, "human_long_pause_prob", 0.25)),
-            chars_per_frame=int(
-                getattr(settings, "stream_typing_chars_per_frame", 6)
-            ),
         )
 
     def without_randomness(self) -> RhythmConfig:
@@ -192,32 +188,3 @@ def thinking_ms(
     if cfg.jitter_ratio > 0:
         total *= 1.0 + cfg.jitter_ratio * rng.uniform(-1.0, 1.0)
     return int(max(0, total))
-
-
-def typing_frames(
-    text: str,
-    cfg: RhythmConfig,
-    *,
-    rng: Random,
-    hour: int | None = None,
-    energy: float = 1.0,
-) -> list[tuple[str, int]]:
-    """把一段已放行的文本切成 ``(帧文本, 该帧前等待毫秒)`` 序列（逐字浮现，默认不启用）。
-
-    整条总时长被夹在 ``frame_total_min_ms``~``frame_total_max_ms``：过短会一闪而过不像人，
-    过长会让用户以为卡住。帧数由 ``chars_per_frame`` 决定，切不满一帧的尾巴单独成帧。
-    """
-    if not text:
-        return []
-    if not cfg.human_mode:
-        return [(text, 0)]
-    size = max(1, cfg.chars_per_frame)
-    pieces = [text[i : i + size] for i in range(0, len(text), size)]
-    # 目标总时长：按每字时长估，再叠长句曲线、能量与昼夜，最后夹进上下界
-    target = len(text) * cfg.ms_per_char * _length_curve(len(text), cfg)
-    target *= _energy_factor(energy, cfg) * _day_night_factor(hour, cfg)
-    if cfg.jitter_ratio > 0:
-        target *= 1.0 + cfg.jitter_ratio * rng.uniform(-1.0, 1.0)
-    target = min(max(target, cfg.frame_total_min_ms), cfg.frame_total_max_ms)
-    per_frame = target / len(pieces)
-    return [(p, int(max(0, per_frame))) for p in pieces]

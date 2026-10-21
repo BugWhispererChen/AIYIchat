@@ -14,7 +14,6 @@ from app.conversation.human_rhythm import (
     message_gap_ms,
     pacing_delay_seconds,
     thinking_ms,
-    typing_frames,
 )
 
 LEGACY = RhythmConfig.legacy(0.05, 2.0)
@@ -40,9 +39,13 @@ class TestLegacyEquivalence:
             500, 1500, 2000, 2000,
         ]
 
-    def test_thinking_and_frames_are_noops(self) -> None:
+    def test_legacy_frames_are_gone_by_design(self) -> None:
+        # 逐字浮现被否决：真实 IM 气泡整条出现，逐字长出来反而最像 AI
+        assert not hasattr(RhythmConfig(), "chars_per_frame")
+        assert not hasattr(RhythmConfig(), "frame_total_min_ms")
+
+    def test_thinking_and_legacy(self) -> None:
         assert thinking_ms(LEGACY, rng=Random(1), input_chars=50) == 0
-        assert typing_frames("你好世界", LEGACY, rng=Random(1)) == [("你好世界", 0)]
 
 
 class TestHumanGapShape:
@@ -112,25 +115,6 @@ class TestFactors:
         assert gap("字" * 20, WIDE, energy=-3.0) == gap("字" * 20, WIDE, energy=0.0)
 
 
-class TestTypingFrames:
-    """逐字浮现帧。"""
-
-    def test_joins_back_to_source(self) -> None:
-        src = "今晚加班到十点，饭都没吃，有点撑不住了。" * 3
-        frames = typing_frames(src, HUMAN, rng=Random(3))
-        assert "".join(t for t, _ in frames) == src
-        assert all(d >= 0 for _, d in frames)
-        assert len(frames) == (len(src) + HUMAN.chars_per_frame - 1) // HUMAN.chars_per_frame
-
-    def test_total_clamped_both_ends(self) -> None:
-        assert sum(d for _, d in typing_frames("嗯嗯", DET, rng=Random(0))) >= 300
-        assert sum(d for _, d in typing_frames("字" * 2000, DET, rng=Random(0))) <= 8000 + 400
-        assert 3000 <= sum(d for _, d in typing_frames("字" * 40, DET, rng=Random(0))) <= 8000
-
-    def test_empty_returns_empty(self) -> None:
-        assert typing_frames("", HUMAN, rng=Random(1)) == []
-
-
 class TestThinking:
     """首条气泡前的思考延迟。"""
 
@@ -172,7 +156,6 @@ class TestFromSettings:
         human_jitter_ratio = 0.1
         human_night_factor = 1.5
         human_long_pause_prob = 0.3
-        stream_typing_chars_per_frame = 8
 
     def test_missing_switch_falls_back_to_legacy(self) -> None:
         cfg = RhythmConfig.from_settings(self._Base())
@@ -183,7 +166,6 @@ class TestFromSettings:
         cfg = RhythmConfig.from_settings(self._Enabled())
         assert cfg.human_mode is True
         assert (cfg.ms_per_char, cfg.gap_min_ms, cfg.gap_max_ms) == (90.0, 800, 3000)
-        assert cfg.chars_per_frame == 8
 
     def test_pacing_entrypoint_matches_legacy(self) -> None:
         # 适配器共用入口：默认档下逐条间隔应与旧的秒级公式一致

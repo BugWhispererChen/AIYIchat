@@ -118,6 +118,33 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
     ]
 
 
+def _sse_frame(payload: str) -> str:
+    """SSE 数据帧：换行转义避免破坏协议，客户端 payloadOf 再反解回来。"""
+    safe = payload.replace("\r", "").replace("\n", "\\n")
+    return f"data: {safe}\n\n"
+
+
+def stream_frames(item: object) -> list[str]:
+    """把引擎的一个产出编码成若干 SSE 帧。
+
+    两种产出都要能吃：未开放行闸门时引擎 yield 裸 str，输出与改动前**逐字节一致**；
+    开闸门时 yield StreamEvent，气泡边界用 ``[MSG]`` 控制帧表达、正文另起一帧，
+    复读重跑用 ``[RESET]`` 让前端收回本轮气泡。
+
+    控制帧刻意保持纯文本而不是 JSON——payloadOf 会对每个 payload 无差别地把
+    ``\\n`` 反解成真实换行，JSON 载荷会被这一步破坏。
+    """
+    if isinstance(item, str):
+        return [_sse_frame(item)]
+    kind = getattr(item, "kind", "msg")
+    if kind == "reset":
+        return [_sse_frame("[RESET]")]
+    body = getattr(item, "text", "")
+    if not body:
+        return []
+    return [_sse_frame("[MSG]"), _sse_frame(body)]
+
+
 @conversations_router.post("/chat/stream")
 async def chat_stream(req: StreamChatRequest, request: Request):
     """流式对话接口（SSE）。逐块返回 AI 回复文本，以 data: 帧传输，[DONE] 结束。
@@ -173,18 +200,17 @@ async def chat_stream(req: StreamChatRequest, request: Request):
 
     async def event_gen():
         try:
-            async for chunk in engine.handle_message_stream(
+            async for item in engine.handle_message_stream(
                 platform=platform,
                 platform_id=platform_id,
                 text=req.text,
                 nickname=nickname,
                 service_id=service_id,
             ):
-                # SSE 数据帧：对换行做转义避免破坏协议，客户端反转义
-                safe = chunk.replace("\r", "").replace("\n", "\\n")
-                yield f"data: {safe}\n\n"
+                for frame in stream_frames(item):
+                    yield frame
         except Exception as e:
-            yield f"data: [ERROR] {e}\n\n"
+            yield _sse_frame(f"[ERROR] {e}")
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")

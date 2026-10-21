@@ -76,9 +76,15 @@
         streamBox.textContent = '';
     }
 
-    /* 流式回复按 ||| 拆成多条气泡：与非流式链路的消息拆分一致，
-       也让分隔符本身不再原样出现在页面上（落库存的是拆分后文本，重进页面时看不到 |||）。 */
+    /* 流式回复的气泡呈现有两条路，取决于后端有没有开启放行闸门：
+       - 闸门开启：正文已在服务端按句清洗过，气泡边界由 [MSG] 控制帧给出，节奏也在服务端
+         控好（下一条到达时正该出现），前端只做"开一条新气泡 + 往里追加"；
+       - 闸门关闭（默认）：后端仍逐 token 下发未清洗增量，沿用原来的累计全文重绘 +
+         本地按 ||| 拆气泡，保证老行为与老前端一致。
+       两条路都保留一版是灰度期的必要代价：开关一旦回退，页面不能变成一坨带 ||| 的文本。 */
     var MSG_DELIM = '|||';
+    var MSG_FRAME = '[MSG]';
+    var RESET_FRAME = '[RESET]';
 
     function renderReply(bubble, extras, text, done) {
         if (!done) {
@@ -102,10 +108,36 @@
         scrollToEnd();
     }
 
+    /* 闸门模式：往当前气泡里追加已清洗文本（绝不重绘整段，也不注入 HTML） */
+    function appendInto(node, text) {
+        node.lastChild.textContent += text;
+        scrollToEnd();
+    }
+
+    /* 开一条新气泡：本轮首条复用带"正在输入"占位的那条，后续只追加不署名。
+       opened 标记由调用方持有，重置本轮时一并归零。 */
+    function openBubble(bubble, extras, opened) {
+        if (!opened) {
+            bubble.classList.remove('typing');
+            return bubble;
+        }
+        var node = addBubble('assistant', '', '', '');
+        extras.push(node);
+        scrollToEnd();
+        return node;
+    }
+
     /* 出错/中止时收回已拆出的后续气泡：首条会被改写为错误说明，留下半截回复只会更乱 */
     function dropExtras(extras) {
         extras.forEach(function (node) { node.remove(); });
         extras.length = 0;
+    }
+
+    /* 复读命中后服务端下发 [RESET]：整轮气泡收回重来，避免"半截复读"留在屏幕上 */
+    function resetTurn(bubble, extras) {
+        dropExtras(extras);
+        bubble.lastChild.textContent = '';
+        bubble.classList.add('typing');
     }
 
     function partnerLabel() {
@@ -286,6 +318,9 @@
         var extras = [];
         var reply = '';
         var buffer = '';
+        var current = bubble;
+        var paced = false;   // 收到过 [MSG] 即进入闸门模式（服务端控气泡边界与节奏）
+        var opened = false;  // 本轮首条气泡是否已经开过（[RESET] 后归零）
         try {
             var resp = await fetch(STREAM_URL, {
                 method: 'POST',
@@ -314,6 +349,13 @@
                 consumed.frames.forEach(function (frame) {
                     payloadOf(frame).forEach(function (payload) {
                         if (payload === '[DONE]') return;
+                        if (payload === RESET_FRAME) {
+                            resetTurn(bubble, extras);
+                            current = bubble;
+                            opened = false;
+                            reply = '';
+                            return;
+                        }
                         if (payload.indexOf('[ERROR]') === 0) {
                             dropExtras(extras);
                             bubble.classList.remove('typing');
@@ -321,13 +363,20 @@
                             bubble.lastChild.textContent = payload.slice(7).trim() || '对话服务返回异常。';
                             return;
                         }
+                        if (payload === MSG_FRAME) {
+                            paced = true;
+                            current = openBubble(bubble, extras, opened);
+                            opened = true;
+                            return;
+                        }
                         reply += payload;
-                        renderReply(bubble, extras, reply, false);
+                        if (paced) appendInto(current, payload);
+                        else renderReply(bubble, extras, reply, false);
                     });
                 });
             }
             bubble.classList.remove('typing');
-            renderReply(bubble, extras, reply, true);
+            if (!paced) renderReply(bubble, extras, reply, true);
             if (!reply && !bubble.classList.contains('bubble-error')) {
                 bubble.lastChild.textContent = '（本次没有收到回复，可能是额度已用尽）';
             }

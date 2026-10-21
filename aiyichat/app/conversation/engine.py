@@ -27,6 +27,12 @@ from app.conversation.reply_jitter import normalize_text
 from app.conversation.response_processor import ResponseProcessor
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX, StickerTask
+from app.conversation.human_rhythm import (
+    RhythmConfig,
+    message_gap_ms,
+    thinking_ms,
+)
+from app.conversation.stream_gate import SentenceGate, StreamEvent
 from app.conversation.support_strategy import (
     NEGATIVE_EMOTIONS,
     SupportStrategySelector,
@@ -873,67 +879,152 @@ class ConversationEngine:
         start_time = time.monotonic()
         chunks: list[str] = []
         usage_sink: dict = {}
-        try:
-            stream = provider.stream_complete(
-                messages=messages,
-                temperature=settings.chat_temperature,
-                max_tokens=settings.chat_max_tokens,
-                usage_sink=usage_sink,
-                presence_penalty=settings.chat_presence_penalty,
+        # 拟人放行闸门：开启后清洗发生在"发送之前"，屏幕所见即落库所持。
+        # 默认关闭，关闭时逐字节等价改动前（继续 yield 裸 str），老前端与既有契约不受影响。
+        gate: Optional[SentenceGate] = None
+        if settings.stream_gate_enabled:
+            gate = SentenceGate(
+                profile.language_style.forbidden_words,
+                max_pending=settings.stream_gate_max_pending,
             )
-            async for delta in ResponseProcessor.strip_time_tags_stream(stream):
-                chunks.append(delta)
-                yield delta
-        except Exception as e:
-            logger.error("LLM stream failed: %s", e)
-            # 错误追踪：聚合相同错误，避免日志洪水
-            from app.utils.error_tracker import track_error
+        rhythm = RhythmConfig.from_settings(settings)
+        pacing_on = bool(settings.stream_pacing_enabled and rhythm.human_mode)
+        rng = random.Random()
+        # 昼夜与提醒共用"单一时区源"，与时间感知注入保持同一口径
+        pace_hour = (received_at + timedelta(hours=settings.default_timezone_offset)).hour
+        delay_budget = float(settings.stream_max_total_delay_seconds)
+        settled = False
+        first_segment = True
 
-            await track_error(e, context={
-                "bot_id": self.bot_id,
-                "identity_id": identity.id,
-                "service_id": service.id,
-            })
-            if not chunks:
-                # 完全失败（未产出任何内容）：预检未预扣，失败不产生费用，无需退款补偿
-                yield "网络有点开小差了，你可以再发一次吗？"
-                return
+        async def release(seg: str) -> StreamEvent:
+            """放行一条气泡：真人停顿在 yield 之前 sleep 掉，前端收到即该出现了。"""
+            nonlocal first_segment, delay_budget
+            if pacing_on and delay_budget > 0:
+                gap_ms = (
+                    thinking_ms(rhythm, rng=rng, input_chars=len(text), hour=pace_hour)
+                    if first_segment
+                    else message_gap_ms(seg, rhythm, rng=rng, hour=pace_hour)
+                )
+                gap_ms = max(0, min(gap_ms, int(delay_budget * 1000)))
+                delay_budget -= gap_ms / 1000.0
+                if gap_ms > 0:
+                    await asyncio.sleep(gap_ms / 1000.0)
+            first_segment = False
+            return StreamEvent(kind="msg", text=seg)
 
-        # 流式结束后：清洗、记账、持久化、异步记忆任务（与主链路共用）
-        latency_ms = int((time.monotonic() - start_time) * 1000)
-        response_text = "".join(chunks)
-        clean_text, _, _, _ = self._postprocess_response(
-            response_text, profile, identity.id
-        )
+        async def settle(clean_text: str, latency: int) -> None:
+            """记账、落库与异步记忆任务（正常收尾与客户端中止两条路共用）。"""
+            await self._settle_usage(
+                service.account_id,
+                LLMUsage(
+                    prompt_tokens=usage_sink.get("prompt_tokens", 0),
+                    completion_tokens=usage_sink.get("completion_tokens", 0),
+                ),
+            )
+            await self._finalize_turn(
+                conversation=conversation,
+                identity=identity,
+                service=service,
+                service_memory=service_memory,
+                text=text,
+                clean_text=clean_text,
+                emotion_tag=emotion_tag,
+                llm_model=provider.model_name,
+                latency_ms=latency,
+                rough_intensity=rough_intensity,
+                history=history,
+                memory_facts=memory_facts,
+                current_topic=current_topic,
+                content_type=content_type,
+                mood=mood,
+                profile=profile,
+                scored_facts=scored_facts,
+                summary=summary,
+                injected_entities=injected_entities,
+                received_at=received_at,
+            )
 
-        # 按 API 实际 usage 结算本轮 token 消耗（后端未返回时按零值跳过）
-        stream_usage = LLMUsage(
-            prompt_tokens=usage_sink.get("prompt_tokens", 0),
-            completion_tokens=usage_sink.get("completion_tokens", 0),
+        try:
+            try:
+                stream = provider.stream_complete(
+                    messages=messages,
+                    temperature=settings.chat_temperature,
+                    max_tokens=settings.chat_max_tokens,
+                    usage_sink=usage_sink,
+                    presence_penalty=settings.chat_presence_penalty,
+                )
+                if gate is None:
+                    async for delta in ResponseProcessor.strip_time_tags_stream(stream):
+                        chunks.append(delta)
+                        yield delta
+                else:
+                    async for delta in ResponseProcessor.strip_time_tags_stream(stream):
+                        chunks.append(delta)
+                        for seg in gate.feed(delta):
+                            yield await release(seg)
+                    for seg in gate.flush():
+                        yield await release(seg)
+            except Exception as e:
+                logger.error("LLM stream failed: %s", e)
+                # 错误追踪：聚合相同错误，避免日志洪水
+                from app.utils.error_tracker import track_error
+
+                await track_error(e, context={
+                    "bot_id": self.bot_id,
+                    "identity_id": identity.id,
+                    "service_id": service.id,
+                })
+                if not chunks:
+                    # 完全失败（未产出任何内容）：预检未预扣，失败不产生费用，无需退款补偿
+                    yield "网络有点开小差了，你可以再发一次吗？"
+                    return
+
+            # 流式结束后：清洗、记账、持久化、异步记忆任务（与主链路共用）
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+            response_text = "".join(chunks)
+            clean_text = self._resolve_stream_text(
+                response_text, gate, profile, identity.id
+            )
+            if gate is not None and not clean_text:
+                # 全部放行内容都被清洗吃掉（模型整段出戏/整段套话）：兜底一句，别让客户看到空屏
+                clean_text = "刚才那句我没说好，你再说一次？"
+                yield await release(clean_text)
+            await settle(clean_text, latency_ms)
+            settled = True
+        finally:
+            if not settled and chunks:
+                # 客户端中止/断连：已放行部分仍要落库。绝不在 finally 里 await
+                # （异步生成器关闭时 await 会触发 ignored GeneratorExit），改交后台任务。
+                spawn(
+                    settle(
+                        self._resolve_stream_text(
+                            "".join(chunks), gate, profile, identity.id
+                        ),
+                        int((time.monotonic() - start_time) * 1000),
+                    )
+                )
+
+    def _resolve_stream_text(
+        self, response_text: str, gate: Optional[SentenceGate], profile, identity_id: str
+    ) -> str:
+        """确定本轮落库文本，并核查"所见即所存"。
+
+        开启闸门时以**已放行文本**为权威——用户看到什么就存什么；同时把原文再跑一遍
+        后处理做幂等自检，两份不一致说明有规则只在单侧生效，记 WARNING 便于发现漂移。
+        未开启闸门时保持改动前行为（对原文跑后处理）。
+        """
+        postprocessed, _, _, _ = self._postprocess_response(
+            response_text, profile, identity_id
         )
-        await self._settle_usage(service.account_id, stream_usage)
-        await self._finalize_turn(
-            conversation=conversation,
-            identity=identity,
-            service=service,
-            service_memory=service_memory,
-            text=text,
-            clean_text=clean_text,
-            emotion_tag=emotion_tag,
-            llm_model=provider.model_name,
-            latency_ms=latency_ms,
-            rough_intensity=rough_intensity,
-            history=history,
-            memory_facts=memory_facts,
-            current_topic=current_topic,
-            content_type=content_type,
-            mood=mood,
-            profile=profile,
-            scored_facts=scored_facts,
-            summary=summary,
-            injected_entities=injected_entities,
-            received_at=received_at,
-        )
+        if gate is None:
+            return postprocessed
+        released = gate.released_text
+        if normalize_text(released) != normalize_text(postprocessed):
+            logger.warning(
+                "流式所见非所存：released=%r postprocessed=%r",
+                released[:80], postprocessed[:80],
+            )
+        return released
 
     async def _find_or_create_conversation(
         self,

@@ -4,6 +4,7 @@ import logging
 import random
 import re
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -23,7 +24,7 @@ from app.conversation.focus_tracker import FocusTracker
 from app.conversation.image_task import ImageTask
 from app.conversation.message_splitter import split_messages
 from app.conversation.mood_manager import MoodManager
-from app.conversation.reply_jitter import normalize_text
+from app.conversation.reply_jitter import normalize_text, prefix_repeat_ratio
 from app.conversation.response_processor import ResponseProcessor
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX, StickerTask
@@ -126,6 +127,13 @@ _STICKER_ONLY_RE = re.compile(r"^(\[表情(?:[:：][^\]]*)?\]\s*)+$")
 
 # 【待跟进的事】单轮最多注入条数：控制 token 增量，优先保留最接近当前的事件
 _MAX_PENDING_EVENTS = 5
+
+# 复读重跑提示：非流式重试与流式收回重跑共用一条，避免两边话术漂移
+REPEAT_RETRY_HINT = (
+    "你上一条回复与本次即将发送的内容高度雷同。"
+    "请针对对方最新消息换全新的表达回应，严禁重复之前说过的话。"
+    "请从完全不同的角度回应，提供新的信息或视角。"
+)
 
 
 @dataclass
@@ -551,11 +559,7 @@ class ConversationEngine:
                     )
                     retry_messages = messages + [{
                         "role": "system",
-                        "content": (
-                            "你上一条回复与本次即将发送的内容高度雷同。"
-                            "请针对对方最新消息换全新的表达回应，严禁重复之前说过的话。"
-                            "请从完全不同的角度回应，提供新的信息或视角。"
-                        ),
+                        "content": REPEAT_RETRY_HINT,
                     }]
                     try:
                         retry_text, usage = await provider.complete_with_usage(
@@ -895,6 +899,7 @@ class ConversationEngine:
         delay_budget = float(settings.stream_max_total_delay_seconds)
         settled = False
         first_segment = True
+        resets = 0  # 本轮已"收回重跑"次数，受 stream_jitter_reset_max 约束
 
         async def release(seg: str) -> StreamEvent:
             """放行一条气泡：真人停顿在 yield 之前 sleep 掉，前端收到即该出现了。"""
@@ -958,12 +963,45 @@ class ConversationEngine:
                         chunks.append(delta)
                         yield delta
                 else:
+                    guard_on = bool(settings.stream_jitter_guard_enabled)
+                    recent_assistant = self._recent_assistant_texts(history)
+                    repeat_suspect = False
                     async for delta in ResponseProcessor.strip_time_tags_stream(stream):
                         chunks.append(delta)
                         for seg in gate.feed(delta):
                             yield await release(seg)
-                    for seg in gate.flush():
-                        yield await release(seg)
+                            # 边放行边判：真复读的特征是逐字照抄旧回复开头，
+                            # 等全文再判已经全显示在屏幕上了
+                            if guard_on and self._looks_like_stream_repeat(
+                                gate.released_text, recent_assistant
+                            ):
+                                repeat_suspect = True
+                                break
+                        if repeat_suspect:
+                            break
+                    if not repeat_suspect:
+                        for seg in gate.flush():
+                            yield await release(seg)
+                        # 前缀没命中但全文高度雷同（改写式复读）时的兜底判定
+                        repeat_suspect = guard_on and bool(
+                            recent_assistant
+                        ) and self._get_repeat_similarity(
+                            "".join(chunks), history
+                        ) >= settings.reply_jitter_similarity
+                    if repeat_suspect and resets < settings.stream_jitter_reset_max:
+                        resets += 1
+                        async for event in self._recover_stream_repeat(
+                            provider=provider,
+                            messages=messages,
+                            history=history,
+                            gate=gate,
+                            release=release,
+                            chunks=chunks,
+                            usage_sink=usage_sink,
+                            identity_id=identity.id,
+                            conversation_id=conversation.id,
+                        ):
+                            yield event
             except Exception as e:
                 logger.error("LLM stream failed: %s", e)
                 # 错误追踪：聚合相同错误，避免日志洪水
@@ -1025,6 +1063,93 @@ class ConversationEngine:
                 released[:80], postprocessed[:80],
             )
         return released
+
+    def _recent_assistant_texts(self, history: list) -> list[str]:
+        """取最近 N 条 assistant 文本（时间升序），供复读比对。"""
+        window = max(settings.reply_jitter_window, 1)
+        recent: list[str] = []
+        for msg in reversed(history):
+            if getattr(msg, "role", "") != "assistant":
+                continue
+            content = (getattr(msg, "content", "") or "").strip()
+            if content:
+                recent.append(content)
+            if len(recent) >= window:
+                break
+        recent.reverse()
+        return recent
+
+    def _looks_like_stream_repeat(
+        self, released_text: str, recent_assistant: list[str]
+    ) -> bool:
+        """流式早期复读判定：攒够字数后看公共前缀占比。"""
+        if not recent_assistant or len(released_text) < settings.stream_jitter_precheck_chars:
+            return False
+        return (
+            prefix_repeat_ratio(released_text, recent_assistant)
+            >= settings.stream_jitter_prefix_ratio
+        )
+
+    async def _recover_stream_repeat(
+        self,
+        *,
+        provider,
+        messages: list[dict],
+        history: list,
+        gate: SentenceGate,
+        release,
+        chunks: list[str],
+        usage_sink: dict,
+        identity_id: str,
+        conversation_id: str,
+    ) -> AsyncIterator[StreamEvent]:
+        """复读收回重跑：下发 [RESET] 让前端清掉半截复读，再非流式重生成一次。
+
+        重跑走整段生成是因为此时已经确定模型在照抄，逐 token 再流一次只会把
+        另一段半截内容也撒到屏幕上；成本是多一次调用，因此受 reset_max 严格限流。
+        """
+        similarity = self._get_repeat_similarity("".join(chunks), history)
+        is_severe = similarity >= settings.reply_jitter_similarity
+        logger.warning(
+            "流式复读命中（%s，相似度=%.2f）: user=%s, conv=%s",
+            "整段" if is_severe else "前缀", similarity, identity_id, conversation_id,
+        )
+        yield StreamEvent(kind="reset")
+        gate.reset()
+        chunks.clear()
+        retry_temp = (
+            min(settings.chat_temperature + settings.reply_jitter_retry_temp_step, 1.0)
+            if is_severe
+            else settings.chat_temperature
+        )
+        try:
+            retry_text, retry_usage = await provider.complete_with_usage(
+                messages=messages + [{"role": "system", "content": REPEAT_RETRY_HINT}],
+                temperature=retry_temp,
+                max_tokens=settings.chat_max_tokens,
+                presence_penalty=settings.chat_presence_penalty,
+            )
+        except Exception as e:
+            logger.warning("流式复读重跑失败，保留已放行内容: %s", e)
+            return
+        # 重跑的 token 也要记账，否则这轮实际成本被漏记
+        usage_sink["prompt_tokens"] = (
+            int(usage_sink.get("prompt_tokens", 0)) + retry_usage.prompt_tokens
+        )
+        usage_sink["completion_tokens"] = (
+            int(usage_sink.get("completion_tokens", 0)) + retry_usage.completion_tokens
+        )
+        chunks.append(retry_text)
+        segments: list[str] = []
+        for seg in gate.feed(retry_text):
+            segments.append(seg)
+        segments.extend(gate.flush())
+        if not segments:
+            fallback = "让我换个说法再说一次？"
+            segments = [fallback]
+            chunks[-1] = fallback
+        for seg in segments:
+            yield await release(seg)
 
     async def _find_or_create_conversation(
         self,

@@ -6,7 +6,12 @@
 from types import SimpleNamespace
 
 from app.config import settings
-from app.conversation.reply_jitter import is_repeat_reply, normalize_text
+from app.conversation.reply_jitter import (
+    MIN_PREFIX_REPEAT_CHARS,
+    is_repeat_reply,
+    normalize_text,
+    prefix_repeat_ratio,
+)
 
 
 class TestNormalizeText:
@@ -168,3 +173,40 @@ class TestEngineRepeatDetection:
         finally:
             settings.reply_jitter_similarity = old_sim
             settings.reply_jitter_similarity_warn = old_warn
+
+
+class TestPrefixRepeatRatio:
+    """流式早期复读信号：公共前缀占旧回复长度的比例。"""
+
+    OLD = "今天天气真的很好呀，我们一起去公园走走怎么样，我顺便买两杯奶茶回来。"
+
+    def test_zero_on_empty_inputs(self) -> None:
+        assert prefix_repeat_ratio("", [self.OLD]) == 0.0
+        assert prefix_repeat_ratio("随便说点什么", []) == 0.0
+        assert prefix_repeat_ratio("随便说点什么", [""]) == 0.0
+
+    def test_verbatim_prefix_scores_high(self) -> None:
+        # 照抄前半句：已经足够判定为复读前兆
+        ratio = prefix_repeat_ratio(self.OLD[:24], [self.OLD])
+        assert ratio >= 0.5
+
+    def test_full_copy_is_one(self) -> None:
+        assert prefix_repeat_ratio(self.OLD, [self.OLD]) == 1.0
+
+    def test_short_common_head_ignored(self) -> None:
+        # 共同开头不足 MIN_PREFIX_REPEAT_CHARS：不能因为都从"今天"起头就判复读
+        assert prefix_repeat_ratio("今天有点忙", [self.OLD]) == 0.0
+
+    def test_rewritten_reply_scores_low(self) -> None:
+        assert prefix_repeat_ratio("是呀，不过我更想在家躺着看剧", [self.OLD]) == 0.0
+
+    def test_takes_max_over_recent(self) -> None:
+        ratio = prefix_repeat_ratio(self.OLD[:20], ["完全不一样的一句话内容呀", self.OLD])
+        assert ratio >= prefix_repeat_ratio(self.OLD[:20], ["完全不一样的一句话内容呀"])
+
+    def test_whitespace_differences_do_not_break_prefix(self) -> None:
+        spaced = normalize_text(self.OLD).replace(" ", "")
+        assert prefix_repeat_ratio(spaced[:24], [self.OLD]) >= 0.5
+
+    def test_min_prefix_constant_exported(self) -> None:
+        assert MIN_PREFIX_REPEAT_CHARS == 16

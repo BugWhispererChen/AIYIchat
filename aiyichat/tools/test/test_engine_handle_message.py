@@ -1101,3 +1101,154 @@ class TestStreamGateAndPacing:
         # 中止路径必须把落库交给后台任务（在 finally 里 await 会触发 GeneratorExit 冲突）
         assert len(spawned) == 1
         spawned[0].close()  # 关掉未执行的协程，避免 RuntimeWarning
+
+
+class TestStreamRepeatGuard:
+    """流式复读护栏：边放行边判，命中即 [RESET] 收回并重跑一次。"""
+
+    OLD = "今天天气真的很好呀，我们一起去公园走走怎么样，我顺便买两杯奶茶回来。"
+    FRESH = "是呀，不过我更想在家窝着把昨天那集剧看完。"
+
+    @staticmethod
+    def _engine_with_history(old_text: str):
+        engine = _build_engine()
+        engine.context_manager.get_context = AsyncMock(
+            return_value=(_make_history(old_text), "")
+        )
+        return engine
+
+    @staticmethod
+    def _provider(repeat_text: str, fresh_text: str):
+        provider = MagicMock()
+        provider.model_name = "test-model"
+
+        async def stream_reply(**kwargs: Any) -> AsyncIterator[str]:
+            kwargs["usage_sink"].update(prompt_tokens=10, completion_tokens=20)
+            for i in range(0, len(repeat_text), 6):
+                yield repeat_text[i : i + 6]
+
+        provider.stream_complete = MagicMock(side_effect=stream_reply)
+        provider.complete_with_usage = AsyncMock(
+            return_value=(fresh_text, LLMUsage(5, 7))
+        )
+        return provider
+
+    def _collect(self, engine, provider, text: str) -> list[Any]:
+        async def flow() -> list[Any]:
+            agen = engine.handle_message_stream(
+                platform="qq", platform_id="openid-1", text=text
+            )
+            try:
+                return [item async for item in agen]
+            finally:
+                await agen.aclose()
+
+        # 一次性叠好所有替身：在循环里 return 只会生效第一个 flag
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("app.conversation.engine.get_llm_provider", return_value=provider)
+            )
+            stack.enter_context(
+                patch(
+                    "app.conversation.engine.spawn_with_limit",
+                    side_effect=_discard_background,
+                )
+            )
+            for flag in (
+                "function_calling_enabled", "emotion_llm_fallback_enabled",
+                "support_strategy_enabled", "consistency_check_enabled",
+                "character_mood_enabled", "sticker_enabled", "embedding_enabled",
+            ):
+                stack.enter_context(patch.object(settings, flag, False))
+            return asyncio.run(flow())
+
+    def test_prefix_repeat_triggers_reset_and_retry(self) -> None:
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", True
+        ):
+            items = self._collect(engine, provider, "周末干嘛")
+        kinds = [getattr(i, "kind", "text") for i in items]
+        assert "reset" in kinds
+        provider.complete_with_usage.assert_awaited_once()
+        tail = "".join(
+            getattr(i, "text", "")
+            for i in items[kinds.index("reset") + 1 :]
+            if getattr(i, "kind", "") == "msg"
+        )
+        # 收回之后的新内容必须来自重跑，而不是那段照抄的旧回复
+        assert "是呀" in tail and self.OLD not in tail
+
+    def test_stored_text_is_the_retry_not_the_repeat(self) -> None:
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", True
+        ):
+            self._collect(engine, provider, "周末干嘛")
+        stored = engine.turn_recorder.record_assistant_message.await_args.kwargs["clean_text"]
+        assert self.OLD not in stored
+        assert "是呀" in stored
+
+    def test_retry_usage_billed(self) -> None:
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", True
+        ):
+            self._collect(engine, provider, "周末干嘛")
+        # 流式 10+20 与重跑 5+7 都要计入，重跑的真实成本不能被漏记
+        engine.quota_repo.deduct.assert_awaited_once()
+        assert 42 in engine.quota_repo.deduct.await_args.args
+
+    def test_guard_off_no_retry(self) -> None:
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", False
+        ):
+            items = self._collect(engine, provider, "周末干嘛")
+        assert "reset" not in [getattr(i, "kind", "text") for i in items]
+        provider.complete_with_usage.assert_not_awaited()
+
+    def test_reset_max_zero_disables_recovery(self) -> None:
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", True
+        ), patch.object(settings, "stream_jitter_reset_max", 0):
+            items = self._collect(engine, provider, "周末干嘛")
+        assert "reset" not in [getattr(i, "kind", "text") for i in items]
+        provider.complete_with_usage.assert_not_awaited()
+
+    def test_gate_off_guard_is_inert(self) -> None:
+        """闸门关闭时护栏必须完全不起作用：输出仍要与改动前逐字节一致。"""
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        with patch.object(settings, "stream_jitter_guard_enabled", True):
+            items = self._collect(engine, provider, "周末干嘛")
+        assert all(isinstance(i, str) for i in items)
+        provider.complete_with_usage.assert_not_awaited()
+
+    def test_retry_failure_falls_back_without_blank_screen(self) -> None:
+        """重跑失败：收回复读后必须还给用户一句话，不能只剩一个被清空的回合。"""
+        engine = self._engine_with_history(self.OLD)
+        provider = self._provider(self.OLD, self.FRESH)
+        provider.complete_with_usage = AsyncMock(side_effect=RuntimeError("上游炸了"))
+        with patch.object(settings, "stream_gate_enabled", True), patch.object(
+            settings, "stream_jitter_guard_enabled", True
+        ):
+            items = self._collect(engine, provider, "周末干嘛")
+        kinds = [getattr(i, "kind", "text") for i in items]
+        assert "reset" in kinds
+        after_reset = kinds.index("reset")
+        tail_texts = [
+            getattr(i, "text", "")
+            for i in items[after_reset + 1 :]
+            if getattr(i, "kind", "") == "msg"
+        ]
+        # 复读内容不许在收回后重新出现，屏幕上只剩兜底句
+        assert tail_texts and self.OLD not in "".join(tail_texts)
+        stored = engine.turn_recorder.record_assistant_message.await_args.kwargs["clean_text"]
+        assert self.OLD not in stored and stored

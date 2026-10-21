@@ -97,6 +97,15 @@ class SentenceGate:
         """已放行的全部文本（换行拼接），落库以它为准。"""
         return "\n".join(self._released)
 
+    def reset(self) -> None:
+        """清空缓冲与已放行记录（复读重跑时用）。
+
+        计数保留：一次回合里"收回重跑"了几次、剔了多少痕迹，是后台要看的东西，
+        跟放行内容本身无关，不该随缓冲一起清掉。
+        """
+        self._pending = ""
+        self._released = []
+
     def feed(self, delta: str) -> list[str]:
         """喂入一个 token 增量，返回本次可以放行并已清洗好的段。"""
         if not delta:

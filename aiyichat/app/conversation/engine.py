@@ -149,6 +149,42 @@ def _mirror_hint(text: str) -> str:
     return _MIRROR_LONG
 
 
+# 短而有味的允许：长度治理把情绪外显符号一起裁掉了——同批 13 用例的 emoji 命中率 11/13 → 6/13，
+# "我升职了！！！"被回成"太好了，这段时间的辛苦总算没白费"（16 字、无语气词无表情、书面逗号），
+# 裁判点名"像一条普通短信而非微信聊天"。这里不放宽长短与条数，只规定这唯一一句短话
+# **要先给反应**：短不等于冷。只在带着情绪来的消息上追加，中性消息不注入——
+# 否则等于给每条都挂一个表情，腻成另一种模板。
+_WARMTH_CELEBRATE_TAGS = {"happy", "excited", "grateful"}
+_WARMTH_VENT_TAGS = {"sad", "anxious", "lonely", "angry", "tired"}
+# 情绪词表覆盖不到的地方用书写特征兜底："我升职了！！！"不含任何 happy 关键词，
+# 而流式链路为省首字延迟不做 LLM 情绪降级，光靠标签判定会整批漏掉报喜。
+_CELEBRATION_RE = re.compile(
+    r"[!！]{2,}|(?:升职|加薪|涨薪|脱单|上岸|考上|录取|中了|拿到了|好消息)"
+)
+_VENT_RE = re.compile(r"(?:难受|委屈|心疼|想哭|难过|压力大|撑不住|孤单|崩溃|一个人)")
+
+_WARMTH_CELEBRATE = (
+    "对方在报喜：这一句先跟对方一起高兴，再留个话头（如「哇 恭喜呀🥳」），"
+    "别只回一句事实性祝贺；语气词或表情挑一个用，不加条数也不改长短。"
+)
+_WARMTH_VENT = (
+    "对方在倾诉：这一句先接住情绪再问一句（如「心疼你 慢慢说」），"
+    "可以带一个语气词或一个表情，别急着给建议；不加条数也不改长短。"
+)
+
+
+def _warmth_instruction(emotion_tag: str, user_text: str) -> str:
+    """报喜与倾诉这两类"带着情绪来"的消息，允许那一句短话带点味道；其余返回空串。"""
+    if not settings.reply_warmth_enabled:
+        return ""
+    text = user_text or ""
+    if emotion_tag in _WARMTH_CELEBRATE_TAGS or _CELEBRATION_RE.search(text):
+        return _WARMTH_CELEBRATE
+    if emotion_tag in _WARMTH_VENT_TAGS or _VENT_RE.search(text):
+        return _WARMTH_VENT
+    return ""
+
+
 # 纯表情包消息匹配：仅由一个或多个 [表情:描述] 标签组成（QQ 内置表情解析产物）
 _STICKER_ONLY_RE = re.compile(r"^(\[表情(?:[:：][^\]]*)?\]\s*)+$")
 
@@ -492,6 +528,7 @@ class ConversationEngine:
             text=text,
             summary=summary,
             emotion_hint=emotion_hint,
+            emotion_tag=emotion_tag or "",
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
@@ -879,6 +916,7 @@ class ConversationEngine:
             text=text,
             summary=summary,
             emotion_hint=emotion_hint,
+            emotion_tag=emotion_tag or "",
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
@@ -1582,10 +1620,13 @@ class ConversationEngine:
         )
 
     @staticmethod
-    def _length_instruction_for(verbosity: str, user_text: str = "") -> str:
-        """生成本轮长度引导：基础条数约束 + 角色风格倾向 + 对方长短镜像。
+    def _length_instruction_for(
+        verbosity: str, user_text: str = "", emotion_tag: str = ""
+    ) -> str:
+        """生成本轮长度引导：基础条数约束 + 角色风格倾向 + 对方长短镜像 + 带情绪时的味道允许。
 
         standard 档不再"什么都不说"——实测整轮中位 99 字正是从这个默认档长出来的。
+        味道允许只改"这一句承担什么"，不改条数与长短，避免刚收住的长度重新长回去。
         """
         guide = _LENGTH_SOFT_GUIDE
         if verbosity == "concise":
@@ -1594,8 +1635,14 @@ class ConversationEngine:
             guide += "\n你比一般人爱聊，可以多说一句，但仍按条发、每条一句，不写小作文。"
         else:
             guide += "\n你不刻意摆话痨姿态，通常一到两条就说完这一轮。"
+        parts = [guide]
         mirror = _mirror_hint(user_text)
-        return f"{guide}\n{mirror}" if mirror else guide
+        if mirror:
+            parts.append(mirror)
+        warmth = _warmth_instruction(emotion_tag or "", user_text)
+        if warmth:
+            parts.append(warmth)
+        return "\n".join(parts)
 
     async def _reset_topic_after_gap(
         self, service_id: str, current_topic: str, topic_history: list[str], topic_context: str,
@@ -1635,6 +1682,7 @@ class ConversationEngine:
         topic_context: str,
         strategy_instruction: str,
         mood: CharacterMood | None = None,
+        emotion_tag: str = "",
         sticker_available: bool = False,
         memory_fact_objs: list[MemoryFact] | None = None,
         dynamic_memory_facts: list[str] | None = None,
@@ -1653,6 +1701,7 @@ class ConversationEngine:
             conversation: 当前会话，提供摘要覆盖的时间范围
             time_audit: 传入时由组装器就地填充，随后由 _log_time_audit 留痕
             topic_stall_hint: 话题停滞引导提示（命中停滞时注入换话题引导）
+            emotion_tag: 对方情绪标签，报喜/倾诉档据此追加"短而有味"的允许
         """
         mood_hint = MoodManager.render_mood_hint(mood)
         messages = self.prompt_assembler.assemble(
@@ -1664,7 +1713,9 @@ class ConversationEngine:
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
-            length_instruction=self._length_instruction_for(verbosity, text),
+            length_instruction=self._length_instruction_for(
+                verbosity, text, emotion_tag
+            ),
             topic_context=topic_context,
             strategy_instruction=strategy_instruction,
             mood_hint=mood_hint,

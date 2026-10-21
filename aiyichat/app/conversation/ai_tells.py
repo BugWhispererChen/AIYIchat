@@ -33,6 +33,12 @@ def _split_sentences(text: str) -> list[str]:
 # 引号内的命中降级：角色复述对方原话不是 AI 腔
 _QUOTED_RE = re.compile("[“\"'『「][^”\"'』」]{1,60}[”\"'』」]")
 
+# "这句有没有内容"的判定。emoji 也算内容：真人报喜会单独甩一条 🎉，
+# 把它当无字空句吞掉，等于在最该有情绪反应的地方把味道裁掉
+# （长度治理实测：整轮字数 76→18 的同时 emoji 命中率 11/13→6/13，"升职"被回成书面祝贺）。
+_TEXTUAL_RE = re.compile(r"[0-9A-Za-z\u4e00-\u9fff]")
+_EMOJI_RE = re.compile(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]")
+
 # —— blocking：一眼假的助手腔，删掉不影响角色在说什么 ——
 _BLOCKING_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
@@ -168,7 +174,7 @@ def scan(text: str, *, keep_if_all_blocked: bool = True) -> ScanResult:
                 stripped = candidate.lstrip()
                 blocking.append("list_marker")
                 break
-        if not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", stripped):
+        if not (_TEXTUAL_RE.search(stripped) or _EMOJI_RE.search(stripped)):
             continue
         unquoted = _QUOTED_RE.sub("", stripped)
         hit = [name for name, pat in _BLOCKING_PATTERNS if pat.search(unquoted)]

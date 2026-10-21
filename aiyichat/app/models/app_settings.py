@@ -225,8 +225,9 @@ class AppSettingsDocument(BaseModel):
     multi_message_delay_per_char: float = 0.05
     multi_message_max_delay: float = 2.0
 
-    # 回复长度治理：长度镜像、超长节奏分条阈值、流式单轮气泡上限
+    # 回复长度治理：长度镜像、短而有味的允许、超长节奏分条阈值、流式单轮气泡上限
     reply_length_mirror_enabled: bool = True
+    reply_warmth_enabled: bool = True
     pacing_split_enabled: bool = True
     pacing_auto_split_threshold: int = 120
     pacing_target_chunk_chars: int = 60

@@ -129,6 +129,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         # 拟人化多消息与流式放行闸门/节奏/复读护栏
         "multi_message_enabled",
         "reply_length_mirror_enabled", "pacing_split_enabled",
+        "reply_warmth_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }

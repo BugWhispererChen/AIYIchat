@@ -21,6 +21,13 @@ class TestNoFalsePositive:
             assert scan(text).kept == text, text
             assert scan(text).blocking == [], text
 
+    def test_emoji_only_reply_kept(self) -> None:
+        # 真人报喜会单独甩一条表情：emoji 也是内容，不能被当成"没有实义字符的空句"吞掉
+        # （长度治理实测 emoji 命中 11/13→6/13，其中就有单独表情被清洗链吃掉的情况）
+        for text in ("🎉🎉", "😊", "❤️", "👍", "🥳 恭喜呀"):
+            assert scan(text).kept == text, text
+            assert scan(text).blocking == [], text
+
     def test_natural_oral_markers_not_stripped(self) -> None:
         # 语气词与口语收尾是本项目角色风格的地基，绝不能在 blocking 档被删
         text = "好累呀。要不你先去吃点东西嘛！"

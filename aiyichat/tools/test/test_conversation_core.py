@@ -150,6 +150,71 @@ class TestLengthSoftGuide:
         )
 
 
+class TestReplyWarmth:
+    """短而有味：长度收住之后，报喜/倾诉那一句仍要带情绪反应，不能塌成一条通知。
+
+    实测教训（13 用例改前/改后对照）：整轮字数 76→18 的同时 emoji 命中率 11/13→6/13，
+    "我升职了！！！"被回成"太好了，这段时间的辛苦总算没白费"，裁判点名"像普通短信"。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _warmth_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "reply_warmth_enabled", True)
+
+    def test_celebration_detected_without_emotion_tag(self) -> None:
+        from app.conversation.engine import _warmth_instruction
+
+        # "我升职了！！！"压根不在情绪词表里，且流式链路不做 LLM 情绪降级：
+        # 靠连跑感叹号与报喜动词兜底，否则这条最典型的用例永远走不到味道分支
+        assert "报喜" in _warmth_instruction("", "我升职了！！！")
+        assert "报喜" in _warmth_instruction("", "上岸了 我终于上岸了")
+        assert "报喜" in _warmth_instruction("happy", "今天心情特别好")
+
+    def test_vent_detected(self) -> None:
+        from app.conversation.engine import _warmth_instruction
+
+        assert "倾诉" in _warmth_instruction("", "今天又一个人吃饭，好难受")
+        assert "倾诉" in _warmth_instruction("sad", "心情不太好")
+
+    def test_neutral_message_gets_no_warmth(self) -> None:
+        from app.conversation.engine import _warmth_instruction
+
+        # 中性消息不注入：否则等于给每条都挂表情，腻成另一种模板
+        assert _warmth_instruction("", "晚上不知道吃啥，你有推荐吗") == ""
+
+    def test_celebration_wins_over_vent(self) -> None:
+        from app.conversation.engine import _warmth_instruction
+
+        assert "报喜" in _warmth_instruction("", "熬了三个月终于升职！！！好累")
+
+    def test_switch_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+        from app.conversation.engine import _warmth_instruction
+
+        monkeypatch.setattr(settings, "reply_warmth_enabled", False)
+        assert _warmth_instruction("happy", "我升职了！！！") == ""
+
+    def test_warmth_does_not_relax_length_or_bubbles(self) -> None:
+        from app.conversation.engine import ConversationEngine
+
+        guide = ConversationEngine._length_instruction_for(
+            "standard", "我升职了！！！", "happy"
+        )
+        assert "报喜" in guide
+        # 条数与一句一意的约束必须原样保留，否则长度治理的成果被这轮吃掉
+        assert "最多两条" in guide
+        assert "|||" in guide
+        assert "不列点" in guide
+
+    def test_emotion_tag_is_optional_for_callers(self) -> None:
+        from app.conversation.engine import ConversationEngine
+
+        # 既有调用方（含评测脚本）只传两参：新增形参必须带默认值，不能破坏签名
+        assert ConversationEngine._length_instruction_for("standard", "在吗")
+
+
 class TestTopicManager:
     """话题管理。"""
 

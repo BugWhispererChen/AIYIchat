@@ -253,6 +253,14 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="free",
     ),
     FeatureToggle(
+        key="reply_warmth_enabled",
+        label="短而有味（报喜/倾诉带反应）",
+        desc="对方报喜或倾诉时，允许那一句短话先给情绪反应、带一个语气词或表情"
+        "（如「哇 恭喜呀🥳」「心疼你 慢慢说」）。只改这一句承担什么，不放宽长短与条数。",
+        dependency="与「回复长度镜像」同时生效；中性消息不注入，避免每条都挂表情腻成模板",
+        cost="free",
+    ),
+    FeatureToggle(
         key="pacing_split_enabled",
         label="超长回复按句末分条",
         desc="单条超过阈值（默认 120 字）时按句末边界切成适合逐条发送的小块，"

@@ -101,6 +101,9 @@ class _RuntimeSettings:
 
     # 回复长度治理（G35：整轮字数与气泡条数失控——实测角色中位 99 字 / 4.5 条，对方只说 13 字）
     reply_length_mirror_enabled: bool = True  # 按对方这条消息的长度分档镜像（只给档位词，不写数字）
+    # 短而有味：报喜/倾诉那一句允许带一个语气词或表情（长度治理把情绪外显符号一起裁掉了，
+    # 实测 emoji 命中 11/13 → 6/13、"我升职了！！！"回成 16 字书面祝贺被点名"像普通短信"）
+    reply_warmth_enabled: bool = True
     pacing_split_enabled: bool = True  # 超长单条按句末再切分（接通 split_for_pacing）
     pacing_auto_split_threshold: int = 120  # 单条超过此字数才考虑再切
     pacing_target_chunk_chars: int = 60  # 切到接近此字数即收口
@@ -385,6 +388,7 @@ class _RuntimeSettings:
             "multi_message_enabled", "multi_message_max_count",
             "multi_message_delay_per_char", "multi_message_max_delay",
             "reply_length_mirror_enabled", "pacing_split_enabled",
+            "reply_warmth_enabled",
             "pacing_auto_split_threshold", "pacing_target_chunk_chars",
             "pacing_min_chunk_chars", "stream_max_bubbles",
             "stream_gate_enabled", "stream_gate_max_pending",
@@ -497,6 +501,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         multi_message_delay_per_char: float = Field(default=0.05)
         multi_message_max_delay: float = Field(default=2.0)
         reply_length_mirror_enabled: bool = Field(default=True)
+        reply_warmth_enabled: bool = Field(default=True)
         pacing_split_enabled: bool = Field(default=True)
         pacing_auto_split_threshold: int = Field(default=120)
         pacing_target_chunk_chars: int = Field(default=60)

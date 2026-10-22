@@ -122,16 +122,14 @@ class QQWebSocketClient:
                 "clientSecret": self.bot_config.app_secret,
             })
             data = resp.json()
-            logger.info(
-                "%s Token response: %s",
-                self._label,
-                json.dumps(data, ensure_ascii=False),
-            )
+            # 该响应含 access_token 与 refresh_token，原文一律不许落日志：只记字段名，
+            # 有效期在下面的成功分支单独打印（同 app/utils/redaction.py 的写侧约定）
+            logger.info("%s Token 响应字段: %s", self._label, list(data.keys()))
 
             if "access_token" not in data:
                 raise RuntimeError(
                     f"{self._label} 获取 access_token 失败: "
-                    f"{data}"
+                    f"errcode={data.get('errcode')} errmsg={data.get('errmsg')}"
                 )
 
             self._access_token = data["access_token"]

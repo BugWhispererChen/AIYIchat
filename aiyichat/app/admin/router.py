@@ -30,6 +30,7 @@ from app.admin.routes.web_credentials import web_credentials_router
 from app.admin.routes.wechat_bots import wechat_bots_router
 from app.admin.stats import get_dashboard_charts, get_dashboard_stats
 from app.admin.system_metrics import get_all_metrics
+from app.utils.redaction import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +104,9 @@ async def dashboard(request: Request, _s: str = Depends(require_admin)):
 
 
 def _mask_api_key(api_key: str) -> str:
-    """对 API Key 做脱敏：长度≥8 显示前4+****+后4，否则等长度全部用 * 替代。"""
-    if not api_key:
-        return ""
-    if len(api_key) >= 8:
-        return f"{api_key[:4]}****{api_key[-4:]}"
-    return "*" * len(api_key)
+    """对 API Key 做脱敏。实现收敛到 `app.utils.redaction.mask_secret`，此处保留别名
+    是因为既有调用方与测试仍从本模块引用它。"""
+    return mask_secret(api_key)
 
 
 def _group_field(group, key: str) -> str:

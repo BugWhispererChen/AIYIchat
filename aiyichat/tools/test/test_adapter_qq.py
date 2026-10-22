@@ -7,6 +7,7 @@
 import asyncio
 import base64
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -114,6 +115,50 @@ class TestTokenAndGateway:
                     raise AssertionError("应抛 RuntimeError")
                 except RuntimeError:
                     pass
+
+        _run(body())
+
+    def test_get_access_token_never_logs_credentials(self, caplog) -> None:
+        """令牌原文一律不许落日志：只允许字段名与有效期。
+
+        这是本轮修的凭据泄露点位（原实现 `Token response: {整串 JSON}`），
+        响应里同时带 access_token 与 refresh_token，二者任一被截走都能直接冒用 Bot。
+        """
+        async def body():
+            client = _make_client()
+            FakeHttpxClient._response = FakeHttpxResponse(json_data={
+                "access_token": "AT_leak_probe_1234567890",
+                "refresh_token": "RT_leak_probe_0987654321",
+                "expires_in": 7200,
+            })
+            with caplog.at_level(logging.INFO, logger="app.adapters.qq_websocket"):
+                with patch(
+                    "app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient
+                ):
+                    assert await client.get_access_token() == "AT_leak_probe_1234567890"
+            text = caplog.text
+            assert "AT_leak_probe_1234567890" not in text
+            assert "RT_leak_probe_0987654321" not in text
+            # 排查需要的信息仍然在：字段名 + 有效期
+            assert "Token 响应字段" in text
+            assert "有效期" in text
+
+        _run(body())
+
+    def test_get_access_token_failure_message_has_no_body(self, caplog) -> None:
+        """失败分支只报 errcode/errmsg，不把整个响应体塞进异常文本。"""
+        async def body():
+            client = _make_client()
+            FakeHttpxClient._response = FakeHttpxResponse(json_data={
+                "errcode": 40001, "errmsg": "invalid app_secret",
+            })
+            with patch("app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient):
+                try:
+                    await client.get_access_token()
+                    raise AssertionError("应抛 RuntimeError")
+                except RuntimeError as exc:
+                    assert "40001" in str(exc)
+                    assert "invalid app_secret" in str(exc)
 
         _run(body())
 

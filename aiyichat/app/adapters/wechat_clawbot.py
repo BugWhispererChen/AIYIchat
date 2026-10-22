@@ -783,9 +783,11 @@ class WeChatClient(ChannelAdapter):
         """调用 getuploadurl 获取 CDN 上传参数。"""
         try:
             session = await self._ensure_session()
+            # 请求体一律只记字段名（与本方法内响应日志同口径）：静态护栏禁止把
+            # json.dumps 的结果打进日志，见 tools/test/test_no_credential_logging.py
             logger.debug(
-                "%s getuploadurl 请求: %s",
-                self._label, json.dumps(kwargs, default=str)[:200],
+                "%s getuploadurl 请求字段: %s",
+                self._label, list(kwargs.keys()),
             )
             async with session.post(
                 GETUPLOADURL_URL,
@@ -803,10 +805,11 @@ class WeChatClient(ChannelAdapter):
                     return None
                 ret = data.get("ret", 0)
                 if ret != 0:
+                    # 失败响应里带 upload_id / 临时上传地址这类一次性凭据，只记字段名
                     logger.error(
-                        "%s getuploadurl 失败: ret=%s, msg=%s, 响应=%s",
+                        "%s getuploadurl 失败: ret=%s, msg=%s, 响应字段=%s",
                         self._label, ret, data.get("msg", ""),
-                        json.dumps(data, default=str)[:300],
+                        list(data.keys()),
                     )
                     return None
                 logger.debug(

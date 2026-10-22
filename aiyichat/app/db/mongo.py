@@ -6,6 +6,7 @@ from pymongo.errors import OperationFailure
 from pymongo.monitoring import CommandListener
 
 from app.config import settings
+from app.utils.redaction import mask_uri
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,8 @@ async def connect_db() -> None:
         register(SlowQueryListener())
         _client = AsyncIOMotorClient(settings.mongodb_uri)
         _db = _client[settings.mongodb_database]
-        logger.info("Connected to MongoDB: %s", settings.mongodb_uri)
+        # URI 可含 user:pass，启动日志不得输出原文（详见 app/utils/redaction.py）
+        logger.info("Connected to MongoDB: %s", mask_uri(settings.mongodb_uri))
 
     # 确保 _db 已设置后再创建索引
     if _db is not None:

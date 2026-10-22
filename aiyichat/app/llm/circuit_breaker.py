@@ -206,6 +206,11 @@ class CircuitBreaker:
         elapsed = time.monotonic() - self.stats.last_failure_time
         return max(0.0, self.config.recovery_timeout - elapsed)
 
+    @property
+    def recovery_seconds(self) -> float:
+        """熔断状态下距下次半开试探的剩余秒数（非 OPEN 状态为 0）。"""
+        return self._time_until_half_open()
+
     def get_stats(self) -> dict[str, Any]:
         """获取熔断器统计信息（用于监控）。"""
         return {

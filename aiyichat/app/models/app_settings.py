@@ -163,6 +163,7 @@ class AppSettingsDocument(BaseModel):
     # 文本向量化（长期记忆语义检索/去重）
     embedding_enabled: bool = False
     embedding_config_id: str = DASHSCOPE_DEFAULT_CONFIG_ID
+    embedding_breaker_enabled: bool = True
 
     # 记忆语义检索
     memory_retrieve_topk: int = 8
@@ -233,6 +234,7 @@ class AppSettingsDocument(BaseModel):
     pacing_target_chunk_chars: int = 60
     pacing_min_chunk_chars: int = 12
     stream_max_bubbles: int = 5
+    empty_reply_fallback_enabled: bool = True
 
     # 流式主链路拟人化：放行闸门、气泡节奏与流式复读护栏
     stream_gate_enabled: bool = False

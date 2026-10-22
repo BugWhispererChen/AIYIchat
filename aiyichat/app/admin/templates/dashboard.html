@@ -20,6 +20,13 @@
     <p class="muted">
         Embedding 请求累计失败 {{ embedding_status.fail_count }} 次，记忆检索已自动回退到规则排序。
     </p>
+    {% if embedding_status.breaker_state == 'open' %}
+    <p class="muted">
+        连续失败已触发熔断：冷却期内不再发出向量化请求，
+        约 {{ embedding_status.recovery_in_seconds }} 秒后自动试探一次恢复。
+        若反复熔断，多为免费额度耗尽或服务端限流，请检查供应商额度。
+    </p>
+    {% endif %}
     <p class="mono-block">
         最近错误：<code>{{ embedding_status.last_error[:120] }}</code>
         {% if embedding_status.last_error_at %}

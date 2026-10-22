@@ -137,6 +137,14 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="dashscope",
     ),
     FeatureToggle(
+        key="embedding_breaker_enabled",
+        label="向量化失败熔断",
+        desc="连续失败（免费额度耗尽、端点故障）达窗口阈值后暂停向量化 10 分钟并定期试探恢复，"
+        "期间记忆检索自动走规则排序，避免每条消息都白打一次 HTTP 且失败只落在日志里。",
+        dependency="仅在「语义记忆检索」开启时起作用；关闭则回到失败也照打的行为",
+        cost="free",
+    ),
+    FeatureToggle(
         key="function_calling_enabled",
         label="自主工具调用",
         desc="允许模型自主决定检索记忆或生成配图（Function Calling）。",
@@ -266,6 +274,14 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         desc="单条超过阈值（默认 120 字）时按句末边界切成适合逐条发送的小块，"
         "避免一整段 300 字砸在屏幕上；代码块、表格与编号清单内部不切。",
         dependency="只改「怎么切」不改「说什么」；总字数要靠长度引导与镜像收口",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="empty_reply_fallback_enabled",
+        label="空回复兜底一句",
+        desc="整轮被清洗成空（模型只出了动作/图片/表情标签）且本轮没有任何图片或表情包可发时，"
+        "补一句「刚才那句我没说好，你再说一次？」，避免把空串发往平台。",
+        dependency="关闭时空回复将直接不发送（QQ 侧空 content 会被平台以 400 拒绝，微信同理）",
         cost="free",
     ),
 ]

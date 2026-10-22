@@ -401,7 +401,14 @@ class QQWebSocketClient:
                     settings.multi_message_max_count,
                 )
             else:
-                texts = [response_text]
+                texts = [response_text] if response_text.strip() else []
+            if not texts:
+                # 整轮被清洗成空（模型只出了标签/表情）：不发文本，图片与表情包照常。
+                # 空 content 会被 QQ 以 400/40034030 拒绝，且失败仅落日志、对方看到的是已读不回
+                logger.info(
+                    "%s 本轮无文本内容可发，跳过文本发送: user=%s",
+                    self._label, user_id,
+                )
             for i, text in enumerate(texts):
                 if i > 0:
                     # 逐条间隔统一走节奏层：默认配置下与旧的
@@ -477,6 +484,10 @@ class QQWebSocketClient:
             is_wakeup: 是否使用互动召回能力（与 msg_id 互斥）。
                        设置为 True 时不传 msg_id，用于主动触达身份。
         """
+        if not content.strip():
+            # 最后一道闸：空 content 平台直接 400（40034030），失败只落日志等于已读不回
+            logger.warning("%s 拒绝发送空内容: user=%s", self._label, user_id)
+            return False
         try:
             token = await self.get_access_token()
             headers = {

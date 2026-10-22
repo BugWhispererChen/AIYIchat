@@ -92,6 +92,9 @@ _unused_spawn = spawn
 
 logger = logging.getLogger(__name__)
 
+# 整轮被清洗成空时的兜底文案（流式与非流式共用一句，避免两处漂移）
+EMPTY_REPLY_FALLBACK = "刚才那句我没说好，你再说一次？"
+
 
 def _gap_mode(idle_seconds: float) -> GapMode:
     if not settings.message_time_enabled:
@@ -690,6 +693,22 @@ class ConversationEngine:
         sticker_tasks = await self._resolve_sticker_tasks(
             sticker_specs, text, profile
         )
+
+        # 整轮被清洗成空、且本轮也没有图片/表情包可发：兜底一句再落库。
+        # 流式链路在放行结束处已有同款兜底，非流式此前会把空串一路带到适配器，
+        # QQ 侧直接 400（40034030 content 不能为空），对方看到的就是已读不回。
+        if (
+            settings.empty_reply_fallback_enabled
+            and not clean_text.strip()
+            and not image_tasks
+            and not sticker_tasks
+        ):
+            logger.info(
+                "空回复兜底: user=%s, conv=%s, raw=%r",
+                identity.id, conversation.id, response_text[:40],
+            )
+            clean_text = EMPTY_REPLY_FALLBACK
+            messages = [clean_text]
         
         # 10-13. 回合收尾：持久化、元数据、异步摘要与焦点提取（与流式链路共用）
         await self._finalize_turn(
@@ -1094,7 +1113,7 @@ class ConversationEngine:
             )
             if gate is not None and not clean_text:
                 # 全部放行内容都被清洗吃掉（模型整段出戏/整段套话）：兜底一句，别让客户看到空屏
-                clean_text = "刚才那句我没说好，你再说一次？"
+                clean_text = EMPTY_REPLY_FALLBACK
                 yield await release(clean_text)
             await settle(clean_text, latency_ms)
             settled = True

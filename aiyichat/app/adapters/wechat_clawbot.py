@@ -918,6 +918,10 @@ class WeChatClient(ChannelAdapter):
 
     async def send_text(self, to_user_id: str, text: str) -> None:
         """发送文本消息。"""
+        if not text.strip():
+            # 空文本发出去只会拿到平台失败响应，且占用一次 context_token
+            logger.info("%s 跳过空文本发送: to=%s", self._label, to_user_id)
+            return
         session = await self._ensure_session()
         payload: dict = {
             "msg": {

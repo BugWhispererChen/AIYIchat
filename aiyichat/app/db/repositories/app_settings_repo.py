@@ -130,6 +130,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "multi_message_enabled",
         "reply_length_mirror_enabled", "pacing_split_enabled",
         "reply_warmth_enabled",
+        "empty_reply_fallback_enabled",
+        "embedding_breaker_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }

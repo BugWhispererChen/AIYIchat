@@ -233,6 +233,16 @@ class TestSendReply:
 
         _run(body())
 
+    def test_send_reply_rejects_empty_content(self) -> None:
+        """空 content 连请求都不发：平台会以 400/40034030 拒绝，失败只落日志等于已读不回。"""
+        async def body():
+            client = _make_client()
+            client.get_access_token = AsyncMock()
+            assert await client._send_reply("u-1", "   ", "m-1", False, "") is False
+            client.get_access_token.assert_not_awaited()
+
+        _run(body())
+
 
 class TestMessageEvent:
     """消息事件处理（mock 引擎）。"""
@@ -255,6 +265,28 @@ class TestMessageEvent:
             await client._handle_message_event("C2C_MESSAGE_CREATE", data)
             client.engine.handle_message.assert_awaited()
             client._send_reply.assert_awaited()
+
+        _run(body())
+
+    def test_empty_reply_sends_no_text(self) -> None:
+        """整轮为空（兜底开关关闭时）：不发文本，空 content 会被平台 400 拒绝。"""
+        async def body():
+            client = _make_client()
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client._send_reply = AsyncMock()
+            data = {
+                "id": "m-1",
+                "author": {"user_openid": "u-1", "username": "小明"},
+                "content": "你好",
+                "attachments": [],
+            }
+            await client._handle_message_event("C2C_MESSAGE_CREATE", data)
+            client.engine.handle_message.assert_awaited()
+            client._send_reply.assert_not_awaited()
 
         _run(body())
 

@@ -109,6 +109,8 @@ class _RuntimeSettings:
     pacing_target_chunk_chars: int = 60  # 切到接近此字数即收口
     pacing_min_chunk_chars: int = 12  # 小于此字数的碎片回并相邻块，避免无意义独立气泡
     stream_max_bubbles: int = 5  # C 端流式单轮最多几条气泡，超出即合并成一条尾段（0=不限；仅在放行闸门开启后生效）
+    # 整轮被清洗成空时的兜底：非流式链路此前会把空串发往平台，被 QQ 以 40034030「content 不能为空」拒绝
+    empty_reply_fallback_enabled: bool = True
 
     # 流式主链路拟人化（C端网页；默认全部关闭，开启前行为与改动前逐字等价）
     stream_gate_enabled: bool = False  # 按句缓冲放行：清洗在发送之前，所见即所存
@@ -197,6 +199,8 @@ class _RuntimeSettings:
     # 文本向量化（长期记忆语义检索/去重；关闭或无密钥时自动降级到规则逻辑）
     embedding_enabled: bool = False
     embedding_config_id: str = "dashscope-default"
+    # 向量化连续失败熔断：额度耗尽/端点故障时不再每条都打 HTTP（失败只落日志、静默降级）
+    embedding_breaker_enabled: bool = True
 
     # 记忆语义检索
     memory_retrieve_topk: int = 8  # 语义检索注入的记忆条数
@@ -391,6 +395,7 @@ class _RuntimeSettings:
             "reply_warmth_enabled",
             "pacing_auto_split_threshold", "pacing_target_chunk_chars",
             "pacing_min_chunk_chars", "stream_max_bubbles",
+            "empty_reply_fallback_enabled",
             "stream_gate_enabled", "stream_gate_max_pending",
             "stream_pacing_enabled", "stream_max_total_delay_seconds",
             "human_rhythm_enabled", "human_typing_ms_per_char",
@@ -418,7 +423,7 @@ class _RuntimeSettings:
             "voice_window_max_minutes",
             "imagegen_enabled", "imagegen_config_id",
             "imagegen_edit_enabled", "imagegen_edit_config_id",
-            "embedding_enabled", "embedding_config_id",
+            "embedding_enabled", "embedding_config_id", "embedding_breaker_enabled",
             "memory_retrieve_topk", "memory_semantic_weight",
             "memory_stable_in_prefix", "memory_dynamic_max_chars",
             "memory_recall_timeout_seconds", "memory_update_requires_vector",
@@ -507,6 +512,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         pacing_target_chunk_chars: int = Field(default=60)
         pacing_min_chunk_chars: int = Field(default=12)
         stream_max_bubbles: int = Field(default=5)
+        empty_reply_fallback_enabled: bool = Field(default=True)
         stream_gate_enabled: bool = Field(default=False)
         stream_gate_max_pending: int = Field(default=40)
         stream_pacing_enabled: bool = Field(default=False)
@@ -563,6 +569,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         imagegen_edit_config_id: str = Field(default="dashscope-default")
         embedding_enabled: bool = Field(default=False)
         embedding_config_id: str = Field(default="dashscope-default")
+        embedding_breaker_enabled: bool = Field(default=True)
         memory_retrieve_topk: int = Field(default=8)
         memory_semantic_weight: float = Field(default=0.6)
         memory_stable_in_prefix: bool = Field(default=True)

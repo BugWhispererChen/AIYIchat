@@ -6,14 +6,24 @@ dashscope_api_key 未配置时，embed 返回空向量，调用方自动降级�
 
 降级可观测：请求失败时记录失败计数与最近错误，通过 status() 暴露给
 仪表盘，避免配置错误被静默降级掩盖。
+
+失败熔断：连续失败达窗口阈值（如免费额度耗尽返回 400 AllocationQuota）后暂停请求，
+冷却期到点半开试探一次。注意 enabled 不因熔断而变 False——否则调用方永远不会
+再发起请求，熔断器就失去进入半开、自动恢复的机会，变成永久锁死。
 """
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app.llm.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpen,
+)
 from app.llm.model_registry import resolve_model_config
 
 logger = logging.getLogger(__name__)
@@ -22,6 +32,20 @@ logger = logging.getLogger(__name__)
 _BATCH_LIMIT = 10
 # 单条文本截断长度，避免超出模型输入上限
 _MAX_INPUT_CHARS = 2048
+
+# 熔断参数：窗口 10 次、失败率 0.6（连续 5 次失败即触发，覆盖额度耗尽这种 100% 失败），
+# 冷却 600s 后半开放行 1 次试探，成功即恢复。
+# 必须是工厂而非模块级单例：CircuitBreaker 按引用持有 config，共享实例会让
+# 任一服务改参数就波及全部服务（也包括同进程后续测试）。
+def _new_breaker_config() -> CircuitBreakerConfig:
+    """构造向量化端点专用的熔断参数。"""
+    return CircuitBreakerConfig(
+        failure_threshold=0.6,
+        window_size=10,
+        recovery_timeout=600.0,
+        half_open_max_calls=1,
+        success_threshold=1,
+    )
 
 
 class EmbeddingService:
@@ -34,6 +58,8 @@ class EmbeddingService:
         self._fail_count: int = 0
         self._last_error: str = ""
         self._last_error_at: datetime | None = None
+        # 端点级隔离：不复用 get_circuit_breaker("chat")，避免 LLM 故障连带关闭语义检索
+        self._breaker = CircuitBreaker(_new_breaker_config())
 
     def _record_failure(self, error: Exception) -> None:
         """记录一次降级（失败计数 + 最近错误），供仪表盘展示。"""
@@ -49,6 +75,9 @@ class EmbeddingService:
             "last_error": self._last_error,
             "last_error_at": self._last_error_at,
             "degraded": self.enabled and self._fail_count > 0,
+            # 熔断状态：OPEN 表示已进入冷却期，recovery_in_seconds 到 0 时试探一次
+            "breaker_state": self._breaker.state.value,
+            "recovery_in_seconds": round(self._breaker.recovery_seconds),
         }
 
     def _ensure_client(self) -> tuple[AsyncOpenAI, str]:
@@ -74,17 +103,38 @@ class EmbeddingService:
             return False
         return bool(cfg.api_key)
 
+    async def _create(
+        self, client: AsyncOpenAI, model: str, inputs: list[str]
+    ) -> Any:
+        """真正发起向量化请求（熔断器包裹的最小单元）。"""
+        return await client.embeddings.create(model=model, input=inputs)
+
+    async def _guarded_create(
+        self, client: AsyncOpenAI, model: str, inputs: list[str]
+    ) -> Any:
+        """按开关决定是否经熔断器调用。
+
+        熔断打开时抛 CircuitBreakerOpen，由调用方降级为空向量——关键收益是
+        **不再发出 HTTP 请求**，而不是让失败静默堆积在日志里。
+        """
+        if not settings.embedding_breaker_enabled:
+            return await self._create(client, model, inputs)
+        return await self._breaker.call(self._create, client, model, inputs)
+
     async def embed(self, text: str) -> list[float]:
         """将单条文本转为向量，失败或未启用返回空列表。"""
         if not self.enabled or not text or not text.strip():
             return []
         try:
             client, model = self._ensure_client()
-            resp = await client.embeddings.create(
-                model=model,
-                input=text[:_MAX_INPUT_CHARS],
+            resp = await self._guarded_create(
+                client, model, [text[:_MAX_INPUT_CHARS]]
             )
             return list(resp.data[0].embedding)
+        except CircuitBreakerOpen as e:
+            # 冷却期内被熔断挡住：不是新故障，不再计入失败数（仪表盘已显示熔断状态）
+            logger.debug("Embedding 熔断冷却中，跳过请求: %s", e)
+            return []
         except Exception as e:
             self._record_failure(e)
             logger.warning("Embedding 单条失败: %s", e)
@@ -108,9 +158,10 @@ class EmbeddingService:
             # 分批请求，规避单批条数上限
             for start in range(0, len(pending), _BATCH_LIMIT):
                 chunk = pending[start:start + _BATCH_LIMIT]
-                resp = await client.embeddings.create(
-                    model=model,
-                    input=[t[:_MAX_INPUT_CHARS] for _, t in chunk],
+                resp = await self._guarded_create(
+                    client,
+                    model,
+                    [t[:_MAX_INPUT_CHARS] for _, t in chunk],
                 )
                 # 百炼/OpenAI 返回的每个 data 项带 index 字段（标识其对应的输入位置），
                 # API 不保证返回顺序与输入一致；按 index 回填避免向量错位。
@@ -125,6 +176,10 @@ class EmbeddingService:
                         continue
                     orig_idx = chunk[idx][0]
                     result[orig_idx] = list(item.embedding)
+            return result
+        except CircuitBreakerOpen as e:
+            # 冷却期内被熔断挡住：保留已成功的那几批，其余走规则排序降级
+            logger.debug("Embedding 熔断冷却中，跳过批量请求: %s", e)
             return result
         except Exception as e:
             self._record_failure(e)

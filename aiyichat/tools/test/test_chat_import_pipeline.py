@@ -371,7 +371,14 @@ class TestFeaturesAndSettings:
 
     def test_features_page_and_save(self) -> None:
         async def body():
+            from app.admin.routes.features import FEATURE_TOGGLES
+            from app.config import settings
+
             app = await _setup_app()
+            # 保存能力开关的路由会把 FEATURE_TOGGLES 里的每个键就地写进 settings
+            # （表单里没勾的即为关闭）。不复原就会污染同进程后续测试——
+            # 新登记的开关默认开着，跑到这里会被静默翻成 False。
+            snapshot = {f.key: getattr(settings, f.key) for f in FEATURE_TOGGLES}
             try:
                 async with _client(app) as client:
                     resp = await client.get("/admin/features")
@@ -383,6 +390,8 @@ class TestFeaturesAndSettings:
                     })
                     assert resp.status_code == 200 and "已保存并生效" in resp.text
             finally:
+                for key, value in snapshot.items():
+                    setattr(settings, key, value)
                 await _teardown(app)
 
         _run(body())

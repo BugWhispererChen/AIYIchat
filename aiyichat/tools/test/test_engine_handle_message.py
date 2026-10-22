@@ -1282,3 +1282,42 @@ class TestStreamRepeatGuard:
         assert tail_texts and self.OLD not in "".join(tail_texts)
         stored = engine.turn_recorder.record_assistant_message.await_args.kwargs["clean_text"]
         assert self.OLD not in stored and stored
+
+
+class TestEmptyReplyFallback:
+    """整轮被清洗成空时的兜底。
+
+    此前非流式链路把空串一路带到适配器，QQ 以 400/40034030「content 不能为空」拒绝，
+    失败只落日志——对方视角就是已读不回。流式链路早有同款兜底，本类补齐非流式。
+    """
+
+    def test_empty_llm_output_gets_fallback_sentence(self) -> None:
+        """模型输出为空：本轮文本落到兜底句，且落库与所见是同一份。"""
+        from app.conversation.engine import EMPTY_REPLY_FALLBACK
+
+        engine = _build_engine()
+        with patch.object(settings, "empty_reply_fallback_enabled", True):
+            result, _ = _run(engine, "今天好累", reply="")
+        assert result.text == EMPTY_REPLY_FALLBACK
+        assert result.texts == [EMPTY_REPLY_FALLBACK]
+        stored = engine.turn_recorder.record_assistant_message.await_args.kwargs["clean_text"]
+        assert stored == EMPTY_REPLY_FALLBACK
+
+    def test_disabled_switch_keeps_empty(self) -> None:
+        """关掉开关即回退旧行为：本轮没有文本可发（由适配器负责不发出去）。"""
+        engine = _build_engine()
+        with patch.object(settings, "empty_reply_fallback_enabled", False):
+            result, _ = _run(engine, "今天好累", reply="")
+        assert result.text == ""
+        assert not [t for t in result.texts if t and t.strip()]
+
+    def test_sticker_only_turn_not_polluted(self) -> None:
+        """只发表情包的一轮不该被塞进兜底文字：有可视内容时保持原样。"""
+        engine = _build_engine()
+        with patch.object(settings, "empty_reply_fallback_enabled", True), patch.object(
+            engine, "_resolve_sticker_tasks",
+            AsyncMock(return_value=[SimpleNamespace(name="smile")]),
+        ):
+            result, _ = _run(engine, "发个表情", reply="")
+        assert result.text == ""
+        assert result.sticker_tasks

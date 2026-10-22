@@ -9,6 +9,7 @@
 """
 
 import ast
+import re
 from pathlib import Path
 from typing import Iterator
 
@@ -40,6 +41,12 @@ _SENSITIVE_PARTS = (
 # 允许把敏感值变成可打形式的掩码函数名
 _MASK_FUNCS = frozenset(
     {"mask_secret", "mask_uri", "mask_ip", "brief_json", "_mask_api_key"}
+)
+
+# 模板里把凭据字段渲染进 HTML 的形态。AST 护栏只扫 `*.py`，模板是同一类泄露的另一半；
+# `*_masked` 结尾的脱敏视图是允许的回显形态。
+_SECRET_RENDER_RE = re.compile(
+    r"\{\{[^{}]*\b(?:app_secret|bot_token|context_token|api_key)\b(?!_masked)[^{}]*\}\}"
 )
 
 
@@ -157,12 +164,24 @@ def test_no_raw_credential_in_logging(path: Path) -> None:
 
 
 def test_known_leak_points_are_closed() -> None:
-    """本轮修掉的三个点位不许悄悄改回去（连同其历史文案一起钉死）。"""
+    """本轮修掉的点位不许悄悄改回去（连同其历史文案一起钉死）。"""
     cases = {
         "adapters/qq_websocket.py": "Token response:",
         "adapters/wechat_clawbot.py": "响应=%s",
         "db/mongo.py": ", settings.mongodb_uri)",
+        # 后台详情页曾把明文 App Secret 渲染进 HTML
+        "admin/templates/account_detail.html": 'name="app_secret" value="{{ bot.app_secret }}"',
     }
     for rel, banned in cases.items():
         source = (_APP_DIR / rel).read_text(encoding="utf-8")
         assert banned not in source, f"{rel} 里又出现了凭据打印文案 `{banned}`"
+
+
+def test_templates_do_not_render_secrets() -> None:
+    """模板不许把凭据字段渲染进 HTML：脱敏视图（`*_masked`）是唯一允许的回显形态。"""
+    offenders = [
+        f"{html.relative_to(_APP_DIR)} 命中 {match.group(0)}"
+        for html in sorted(_APP_DIR.rglob("*.html"))
+        for match in _SECRET_RENDER_RE.finditer(html.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "模板渲染了明文凭据：\n" + "\n".join(offenders)

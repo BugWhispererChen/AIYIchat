@@ -1,6 +1,7 @@
 """Admin 账号管理路由。"""
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -20,16 +21,41 @@ from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.models.account import AccountCreate, AccountUpdate
-from app.models.bot_config import BotConfigCreate, BotConfigUpdate
+from app.models.bot_config import BotConfigCreate, BotConfigInDB, BotConfigUpdate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.service import ServiceCreate, ServiceUpdate
 from app.models.identity import IdentityCreate, IdentityUpdate
 from app.conversation.time_context import COMMON_TIMEZONES, resolve_tz
+from app.utils.redaction import mask_secret
 
 accounts_router = APIRouter(tags=["admin"])
 _quota_repo = QuotaRepository()
 _memory_repo = ServiceMemoryRepository()
 _quota_template_repo = QuotaTemplateRepository()
+
+
+class _BotView:
+    """Bot 配置的展示视图：凭据只以脱敏形态暴露，其余字段委托原对象。
+
+    直接把 `BotConfigInDB` 交给模板会把明文 `app_secret` 写进后台 HTML，
+    一张页面截图就等于交出凭据。
+    """
+
+    def __init__(self, bot: BotConfigInDB) -> None:
+        self._bot = bot
+        self.app_secret = ""
+        self.app_secret_masked = mask_secret(bot.app_secret)
+        self.has_secret = bool(bot.app_secret)
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._bot, name)
+
+
+def _bot_views(bots: list[BotConfigInDB]) -> list[_BotView]:
+    """把 Bot 列表转成脱敏展示视图。"""
+    return [_BotView(bot) for bot in bots]
 
 
 async def _account_detail_with_error(
@@ -71,7 +97,7 @@ async def _account_detail_with_error(
         "quota": quota,
         "service_infos": service_infos,
         "identities": identities,
-        "bots": bots,
+        "bots": _bot_views(bots),
         "profiles": profiles,
         "common_timezones": COMMON_TIMEZONES,
         "active_page": "accounts",
@@ -175,7 +201,7 @@ async def account_detail(
         "quota": quota,
         "service_infos": service_infos,
         "identities": identities,
-        "bots": bots,
+        "bots": _bot_views(bots),
         "profiles": profiles,
         "quota_templates": quota_templates,
         # 身份时区下拉（常用 IANA 列表 + 手动输入）
@@ -432,10 +458,13 @@ async def account_bot_edit(
 ) -> Response:
     """在账号详情页编辑 Bot 配置，完成后返回账号详情页。"""
     form = await request.form()
+    raw_secret = str(form.get("app_secret", "")).strip()
     update = BotConfigUpdate(
         name=str(form.get("name", "")).strip() or None,
         app_id=str(form.get("app_id", "")).strip() or None,
-        app_secret=str(form.get("app_secret", "")).strip() or None,
+        # 留空或仍是脱敏串（含 *）则不更新：脱敏值一旦写回库，BotManager 巡检会
+        # 重启 Bot 并拿它去铸 token，平台侧随即全部认证失败。
+        app_secret=None if (not raw_secret or "*" in raw_secret) else raw_secret,
         sandbox_mode=form.get("sandbox_mode") == "on",
     )
     await _bot_config_repo.update(config_id, update)

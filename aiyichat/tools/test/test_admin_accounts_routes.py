@@ -300,6 +300,45 @@ class TestAccountBots:
 
         _run(flow())
 
+    def test_bot_edit_secret_masked_and_preserved(self) -> None:
+        """详情页不许回显明文 App Secret；脱敏串与留空都不许覆盖库内真值。"""
+        real_secret = "abcd1234wxyz"
+
+        async def flow() -> None:
+            app = await _setup_app()
+            try:
+                acc_id = await _seed_account()
+                bot_repo = BotConfigRepository()
+                bot = await bot_repo.create(BotConfigCreate(
+                    account_id=acc_id, name="脱敏Bot", platform="qq",
+                    app_id="app-mask", app_secret=real_secret,
+                ))
+                edit_url = f"/admin/accounts/{acc_id}/bots/{bot.id}/edit"
+                async with _client(app) as client:
+                    resp = await client.get(f"/admin/accounts/{acc_id}")
+                    assert resp.status_code == 200
+                    assert real_secret not in resp.text, "明文凭据仍被渲染进 HTML"
+                    assert "abcd****wxyz" in resp.text, "脱敏占位符未出现"
+
+                    # 提交脱敏串或留空：一律保持库内原值
+                    for payload in ({"app_secret": "abcd****wxyz"}, {"app_secret": "  "}):
+                        resp = await client.post(edit_url, data=payload)
+                        assert resp.status_code == 303
+                        kept = await bot_repo.find_by_id(bot.id)
+                        assert kept is not None and kept.app_secret == real_secret
+
+                    # 只有真值才替换（凭据轮换走的就是这条路）
+                    resp = await client.post(
+                        edit_url, data={"app_secret": "brandnewsecret0000"}
+                    )
+                    assert resp.status_code == 303
+                    rotated = await bot_repo.find_by_id(bot.id)
+                    assert rotated is not None and rotated.app_secret == "brandnewsecret0000"
+            finally:
+                await _teardown_app(app)
+
+        _run(flow())
+
 
 class TestAccountServices:
     """账号下服务管理（含共享组）。"""

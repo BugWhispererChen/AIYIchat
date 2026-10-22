@@ -307,8 +307,10 @@
                             </label>
                             <label class="ui-field">
                                 <span class="ui-label">App Secret</span>
-                                <input class="ui-input" type="text" name="app_secret" value="{{ bot.app_secret }}">
+                                <input class="ui-input" type="text" name="app_secret" value="" autocomplete="off"
+                                       placeholder="{{ bot.app_secret_masked if bot.has_secret else 'App Secret（留空保持不变）' }}">
                             </label>
+                            <p class="ui-note">凭据不回显；留空或保留脱敏值（含 *）则不更新。</p>
                             {% if bot.platform == 'qq' %}
                             <label class="ui-cluster">
                                 <input type="checkbox" name="sandbox_mode" role="switch" {{ 'checked' if bot.sandbox_mode }}>

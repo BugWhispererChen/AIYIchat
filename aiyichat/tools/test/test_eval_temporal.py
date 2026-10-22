@@ -51,6 +51,17 @@ def _anchor(hour: int, weekday: int = 0) -> datetime:
     return R._case_anchor({"name": "anchor", "at_utc_hour": hour, "weekday": weekday})
 
 
+@pytest.fixture(autouse=True)
+def _time_awareness_on(monkeypatch) -> None:
+    """把时间感知总开关钉成开启：`【当前时刻】` 那一行出不出来完全由它决定。
+
+    本文件要靠真实 assemble 产物核对抽取式，开关状态不明确时结果随同进程里更早
+    的用例残留而变（全量跑与单跑给出不同结论就是这个原因）。要验证"开关关着"的
+    用例，在自己内部再 patch 一次即可覆盖本夹具。
+    """
+    monkeypatch.setattr(settings, "message_time_enabled", True)
+
+
 class TestExpectationTable:
     """期待表逐点钉死：(UTC 钟点, 星期, 期望 activity)，0=周一。"""
 
@@ -253,9 +264,19 @@ class TestBehaviourSelfProof:
     """行为自证闸：新尺子不得改变既有评测行为。"""
 
     def test_profile_identical_with_and_without_hour(self) -> None:
-        assert R._build_profile(dict(_CASE)) == R._build_profile(
-            {**_CASE, "at_utc_hour": 9, "weekday": 3}
+        """带不带钟点标注，档案必须一致（尺子不许把钟点漏进角色档案）。
+
+        比较时排除 `created_at`/`updated_at`：这两个字段是 default_factory 取当前时间，
+        两次构造在时钟精度高的环境（Linux CI）里必然不相等，与本轮要量的东西无关。
+        """
+        stable = {"created_at", "updated_at"}
+        with_hour = R._build_profile({**_CASE, "at_utc_hour": 9, "weekday": 3})
+        without_hour = R._build_profile(dict(_CASE))
+        assert with_hour.model_dump(exclude=stable) == without_hour.model_dump(
+            exclude=stable
         )
+        assert with_hour.life_routine is not None
+        assert without_hour.life_routine is not None
 
     def test_unpinned_output_carries_no_eval_strings(self) -> None:
         """未标注钟点的用例：产物里不得出现任何评测专用串。"""

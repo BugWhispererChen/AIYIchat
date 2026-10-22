@@ -133,6 +133,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "empty_reply_fallback_enabled",
         "embedding_breaker_enabled",
         "proactive_yield_enabled",
+        "profile_routine_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }

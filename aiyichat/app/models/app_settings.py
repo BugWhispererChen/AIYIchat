@@ -210,6 +210,8 @@ class AppSettingsDocument(BaseModel):
 
     # 人设一致性自检
     consistency_check_enabled: bool = True  # 纯规则零成本，默认启用
+    # 角色作息（C1）：注入"此刻你在做什么"，默认关闭
+    profile_routine_enabled: bool = False
 
     # 回复抖动检测（拦截模型复读上一条回复：命中后追加提示重试一次）
     reply_jitter_detection_enabled: bool = True  # 复读检测总开关

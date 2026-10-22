@@ -61,6 +61,12 @@ CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根�
     "boundaries": ["3-5条角色行为边界规则"],
     "safety_guardrails": "保持友善，不涉及敏感话题，不提供专业医疗/法律建议"
   }},
+  "life_routine": {{
+    "timezone": "角色生活所在地的IANA时区名（如 Asia/Shanghai），不确定则空字符串",
+    "segments": [
+      {{"start_hour": 0到23的整数, "end_hour": 0到23的整数, "activity": "这段时间在做什么（如：上课/上班/通勤/做饭/就寝前的放松）", "phrase": "一句话补充此刻的状态（如：刚下课，脑子还嗡嗡的）", "days": []}}
+    ]
+  }},
   "meta_instructions": "补充的角色扮演指令（一句话概括扮演要点）"
 }}
 

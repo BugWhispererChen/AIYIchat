@@ -8,6 +8,8 @@ from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.profile import (
     ProfileDialogueStrategy,
+    ProfileLifeRoutine,
+    ProfileLifeSegment,
     ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
@@ -27,6 +29,45 @@ class ProfileInUseError(Exception):
         super().__init__(
             f"该角色下有 {service_count} 个对话服务，请先删除服务后再禁用"
         )
+
+
+def _parse_life_routine(form) -> ProfileLifeRoutine:
+    """解析后台「作息时段」表单行组为时段表（纯转换，非法行直接跳过）。
+
+    行字段成组提交：routine_start / routine_end / routine_activity / routine_phrase。
+    activity 为空的行视为运营留下的空行，丢弃；小时非数字或越界即跳过该行，
+    绝不因为一行填错就把整个角色的作息清掉。
+    """
+    starts = form.getlist("routine_start")
+    ends = form.getlist("routine_end")
+    activities = form.getlist("routine_activity")
+    phrases = form.getlist("routine_phrase")
+    segments: list[ProfileLifeSegment] = []
+    for raw_start, raw_end, raw_activity, raw_phrase in zip(
+        starts, ends, activities, phrases
+    ):
+        activity = str(raw_activity).strip()
+        if not activity:
+            continue
+        try:
+            start = int(str(raw_start).strip())
+            end = int(str(raw_end).strip())
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= start <= 23 and 0 <= end <= 23):
+            continue
+        segments.append(
+            ProfileLifeSegment(
+                start_hour=start,
+                end_hour=end,
+                activity=activity,
+                phrase=str(raw_phrase).strip(),
+            )
+        )
+    return ProfileLifeRoutine(
+        timezone=str(form.get("routine_timezone", "") or "").strip(),
+        segments=segments,
+    )
 
 
 class ProfileService:
@@ -236,6 +277,7 @@ class ProfileService:
                 safety_guardrails=form.get("ds_safety_guardrails", ""),
             ),
             meta_instructions=form.get("meta_instructions", ""),
+            life_routine=_parse_life_routine(form),
             voice_id=form.get("voice_id", ""),
             verbosity=verbosity,  # type: ignore[arg-type]
             # 表情包分组多选（未勾选时保存空列表：不发送表情包）

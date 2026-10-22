@@ -49,6 +49,31 @@ class ProfileDialogueStrategy(BaseModel):
     safety_guardrails: str = ""
 
 
+class ProfileLifeSegment(BaseModel):
+    """角色一天里的一段作息（按**角色本地时**）。
+
+    `start_hour` 含、`end_hour` 不含；跨午夜写成 start > end（如 22~6）。
+    `days` 为空表示每天，否则 0=周一 … 6=周日。
+    """
+
+    start_hour: int = 9
+    end_hour: int = 12
+    activity: str = ""  # 这段时间在做什么（如"上课"）
+    phrase: str = ""  # 怎么说（如"刚下课，脑子还嗡嗡的"），留空则只用 activity
+    days: list[int] = Field(default_factory=list)
+
+
+class ProfileLifeRoutine(BaseModel):
+    """角色作息（C1）。
+
+    只用于生成"此刻你在做什么"的处境注入，**不改变消息是否送达、也不延迟回复**——
+    作息是说话的色彩，不是在线状态。
+    """
+
+    timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空则回落全局默认偏移
+    segments: list[ProfileLifeSegment] = Field(default_factory=list)
+
+
 class PromptProfileCreate(BaseModel):
     """创建角色档案。"""
 
@@ -70,6 +95,8 @@ class PromptProfileCreate(BaseModel):
     language_style: ProfileLanguageStyle = Field(default_factory=ProfileLanguageStyle)
     personality: ProfilePersonality = Field(default_factory=ProfilePersonality)
     dialogue_strategy: ProfileDialogueStrategy = Field(default_factory=ProfileDialogueStrategy)
+    # 作息时段表：为空即完全不注入，行为与改动前一致
+    life_routine: ProfileLifeRoutine = Field(default_factory=ProfileLifeRoutine)
     meta_instructions: str = ""
     voice_id: str = ""
     # 回复风格：凝练/标准/健谈，联动回复长度指令与 max_tokens/截断上限缩放
@@ -124,6 +151,7 @@ class PromptProfileUpdate(BaseModel):
     language_style: Optional[ProfileLanguageStyle] = None
     personality: Optional[ProfilePersonality] = None
     dialogue_strategy: Optional[ProfileDialogueStrategy] = None
+    life_routine: Optional[ProfileLifeRoutine] = None
     meta_instructions: Optional[str] = None
     voice_id: Optional[str] = None
     verbosity: Optional[Literal["concise", "standard", "verbose"]] = None

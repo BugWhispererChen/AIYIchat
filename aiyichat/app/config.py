@@ -247,6 +247,10 @@ class _RuntimeSettings:
     # 人设一致性自检
     consistency_check_enabled: bool = True  # 纯规则零成本，默认启用（防人设穿帮+合规）
 
+    # 角色作息（C1）：把"此刻角色在做什么"注入动态尾段。
+    # 默认关闭；且只有该角色配了作息时段表才真正注入（老角色行为逐字不变）
+    profile_routine_enabled: bool = False
+
     # 事件驱动主动对话
     proactive_event_enabled: bool = False
 
@@ -440,6 +444,7 @@ class _RuntimeSettings:
             "support_strategy_enabled",
             "character_mood_enabled", "extended_emotion_enabled",
             "context_token_budget", "consistency_check_enabled",
+            "profile_routine_enabled",
             "proactive_event_enabled", "function_calling_enabled",
             "proactive_enabled", "proactive_max_retries",
             "proactive_monthly_limit", "proactive_daily_limit",
@@ -598,6 +603,7 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         extended_emotion_enabled: bool = Field(default=True)
         context_token_budget: int = Field(default=3000)
         consistency_check_enabled: bool = Field(default=True)
+        profile_routine_enabled: bool = Field(default=False)
         proactive_event_enabled: bool = Field(default=False)
         function_calling_enabled: bool = Field(default=False)
         proactive_enabled: bool = Field(default=True)

@@ -136,6 +136,15 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="free",
     ),
     FeatureToggle(
+        key="profile_routine_enabled",
+        label="角色作息（此刻你在做什么）",
+        desc="按角色自己的时区与作息时段表，在动态尾段注入一行「现在是周三 14:20，你刚下课，"
+        "正在食堂排队」。**只改变说什么怎么说，不改变消息是否送达、也不延迟回复**；"
+        "未配时段表的角色不受影响。",
+        dependency="需在角色详情「作息时段」里为该角色配置时段表；作息属角色，不按对方时区计算",
+        cost="free",
+    ),
+    FeatureToggle(
         key="embedding_enabled",
         label="语义记忆检索",
         desc=(

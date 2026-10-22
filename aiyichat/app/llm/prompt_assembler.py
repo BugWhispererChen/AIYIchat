@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from app.config import settings
+from app.conversation.life_routine import render_routine_hint
+from app.conversation.time_context import resolve_tz
 from app.models.message import MessageInDB
 from app.models.profile import PromptProfileInDB
 from app.models.service_memory import MemoryFact
@@ -421,6 +423,7 @@ class PromptAssembler:
             now_local=now_local, idle_phrase=idle_phrase,
             topic_stall_hint=topic_stall_hint,
             dynamic_memory_hint=dynamic_hint,
+            routine_hint=self._render_routine_hint(profile, now_utc),
             last_identity_local=last_identity_at.astimezone(tz) if last_identity_at else None,
             gap_mode=gap_mode,
             gap_phrase=gap_phrase,
@@ -657,6 +660,22 @@ class PromptAssembler:
         return "\n\n".join(sections)
 
     @staticmethod
+    def _render_routine_hint(profile, now_utc: datetime) -> str:
+        """角色作息处境（C1）：仅当开关开启且该角色配了时段表时才产出一行文本。
+
+        时区取**角色自己的**作息时区（空则回落全局偏移）——作息属于角色的生活，
+        不该按对方时区算"角色在睡觉"。对话主链路仍用原有全局偏移，这里不动它。
+        结果只进动态尾段（独立 system 消息），绝不进 system 前缀，避免击穿前缀缓存。
+        """
+        if not settings.profile_routine_enabled:
+            return ""
+        routine = getattr(profile, "life_routine", None)
+        if routine is None or not getattr(routine, "segments", None):
+            return ""
+        tz, _label = resolve_tz(getattr(routine, "timezone", "") or "", "")
+        return render_routine_hint(routine, now_utc.astimezone(tz))
+
+    @staticmethod
     def _render_context_hint(
         emotion_hint: str | None,
         length_instruction: str,
@@ -666,6 +685,7 @@ class PromptAssembler:
         idle_phrase: str = "",
         topic_stall_hint: str = "",
         dynamic_memory_hint: str = "",
+        routine_hint: str = "",
         last_identity_local: datetime | None = None,
         gap_mode: GapMode = "none",
         gap_phrase: str = "",
@@ -748,6 +768,8 @@ class PromptAssembler:
             )
         if emotion_hint:
             parts.append(f"【当前情境】对方当前情绪：{emotion_hint}")
+        if routine_hint:
+            parts.append(routine_hint)
         if mood_hint:
             parts.append(f"【你的心情】{mood_hint}")
         if strategy_instruction:

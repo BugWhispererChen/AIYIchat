@@ -208,6 +208,51 @@
             </div>
         </section>
 
+        <!-- 作息时段（C1） -->
+        <section class="ui-card section-card" id="sec-routine">
+            <div class="ui-card-head"><h4 class="ui-card-title">作息时段 (Life Routine)</h4></div>
+            <p class="ui-note">
+                按<b>角色自己的时区</b>填"每天几点在做什么"，给回复加一层生活质感。
+                它<b>不会</b>让角色不回消息或拖延回复，也不改变送达；时段"起"含、"止"不含，
+                跨午夜写成 22 → 6；只填活动描述可留空；全部留空即完全不注入（老角色行为不变）。
+            </p>
+            <label class="ui-field">
+                <span class="ui-label">角色时区
+                    <small class="field-hint">(IANA 名，如 Asia/Shanghai；留空则用全局默认偏移)</small>
+                </span>
+                <input class="ui-input" type="text" name="routine_timezone"
+                       value="{{ profile.life_routine.timezone }}">
+            </label>
+            {% set routine_segments = profile.life_routine.segments %}
+            <div class="ui-stack">
+                {% for row in range(6) %}
+                {% set seg = routine_segments[row] if row < routine_segments | length else None %}
+                <div class="ui-cluster">
+                    <label class="ui-field">
+                        <span class="ui-label">起（时）</span>
+                        <input class="ui-input" type="number" name="routine_start"
+                               min="0" max="23" value="{{ seg.start_hour if seg else '' }}">
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-label">止（时）</span>
+                        <input class="ui-input" type="number" name="routine_end"
+                               min="0" max="23" value="{{ seg.end_hour if seg else '' }}">
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-label">在做什么</span>
+                        <input class="ui-input" type="text" name="routine_activity"
+                               value="{{ seg.activity if seg else '' }}">
+                    </label>
+                    <label class="ui-field u-fill">
+                        <span class="ui-label">怎么说（可选）</span>
+                        <input class="ui-input" type="text" name="routine_phrase"
+                               value="{{ seg.phrase if seg else '' }}">
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
         <!-- 性格特征 -->
         <section class="ui-card section-card" id="sec-personality">
             <div class="ui-card-head"><h4 class="ui-card-title">性格特征 (Personality)</h4></div>

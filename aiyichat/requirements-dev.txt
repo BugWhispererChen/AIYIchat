@@ -1,0 +1,8 @@
+# 仅本地开发与 CI 使用的检查/测试工具；运行时依赖见 requirements.txt
+# 说明：mongomock 与 mongomock-motor 此前已在测试里实际使用（tools/test/db_test_utils.py），
+# 但从未被任何依赖清单声明，换环境跑测试会直接 ImportError。
+pytest>=8.0
+ruff>=0.6
+mypy>=1.10
+mongomock>=4.3
+mongomock-motor>=0.0.36

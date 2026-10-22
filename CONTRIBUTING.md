@@ -10,8 +10,8 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows
 # source .venv/bin/activate     # Linux/macOS
 
-# 2. 安装依赖
-pip install -r aiyichat/requirements.txt
+# 2. 安装依赖（运行 + 开发检查两套）
+pip install -r aiyichat/requirements.txt -r aiyichat/requirements-dev.txt
 
 # 3. 准备配置
 cp aiyichat/.env.example aiyichat/.env
@@ -24,6 +24,17 @@ cp aiyichat/.env.example aiyichat/.env
 - **中文注释**：注释与文档字符串使用中文，代码标识符保持英文
 - **风格一致**：修改时与周边代码保持一致的风格、命名与注释密度
 - **开源工具优先**：代码检查使用 ruff + mypy，测试使用 pytest
+- **规则口径唯一**：ruff / mypy / pytest 的参数一律写在 `aiyichat/pyproject.toml`，
+  不要在命令行里临时加参数（命令行参数与 CI 会分叉）。该文件只固化既有口径，
+  收紧规则需要单独一轮
+
+## CI
+
+`.github/workflows/ci.yml` 在 push 与 PR 到 `developing` 时跑 ruff → mypy → pytest
+（三步都不需要密钥或外部服务，测试用 mongomock 内存库）。
+
+`tools/eval/run_eval.py --gate` 是**评测门禁**而非 CI 步骤：它要调用真实模型、会产生费用，
+在测试服务器上手工执行。
 
 ## 提交前检查
 

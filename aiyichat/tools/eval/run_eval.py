@@ -4,8 +4,8 @@
 1. **评的是生产链路**：走真实的 ``PromptAssembler`` 组装 Prompt，线上注入的时间上下文、
    记忆分层、心情、策略都参与——否则机制改了分数不会动，评测就成了自欺；
    本轮的长度引导与味道允许（``emotion_tag`` 驱动）也从同一入口取，漏一个就测不到对应机制；
-2. **确定性门禁**：``ai_tells`` 的 blocking 命中数不需要 LLM，可进 CI，
-   比" judge 打个 3.8 分"更能定位问题；口径与生产一致——**先清洗再扫**，
+2. **确定性门禁**：``ai_tells`` 的 blocking 命中数不需要 LLM，比" judge 打个 3.8 分"
+   更能定位问题；口径与生产一致——**先清洗再扫**，
    屏幕上根本不会出现的问题不算缺陷；同理字数与味道一律量清洗后那份；
 3. **GSB 成对比较**：同一用例跑改动前/后两份结果，统计 Good/Same/Bad。
    绝对分在不同模型间不可比，成对比较才是"这次改动到底有没有变好"的答案。
@@ -17,7 +17,7 @@
     python tools/eval/run_eval.py --out before.json      # 落一份结果作为基线
     python tools/eval/run_eval.py --compare before.json  # 与基线做 GSB 成对比较
     python tools/eval/run_eval.py --cases my.json        # 自定义用例
-    python tools/eval/run_eval.py --gate                 # blocking 命中即非零退出（CI 门禁）
+    python tools/eval/run_eval.py --gate                 # blocking 命中即非零退出（评测门禁，需 LLM 凭据，不进 GitHub Actions CI）
 
 依赖运行时模型配置（管理后台「AI 模型配置」，或首次启动由 `.env` 的 DASHSCOPE_API_KEY 生成）；
 未配置时请使用 --dry-run 验证流水线。
@@ -705,7 +705,7 @@ def main() -> None:
     parser.add_argument(
         "--gate",
         action="store_true",
-        help="任一用例在清洗后仍有 blocking 级 AI 腔即以非零码退出（CI 门禁）",
+        help="任一用例在清洗后仍有 blocking 级 AI 腔即以非零码退出（评测门禁，需模型凭据，不属 CI 流水线）",
     )
     args = parser.parse_args()
 

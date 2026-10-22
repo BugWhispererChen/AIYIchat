@@ -1,0 +1,42 @@
+name: CI
+
+# 只做三件不需要任何密钥与外部服务的事：ruff、mypy、pytest（mongomock 内存库）。
+# 说明：`tools/eval/run_eval.py --gate` 需要真实 LLM 凭据、且会产生费用，
+# 属于服务器侧的评测门禁，不在本 workflow 里跑。
+
+on:
+  push:
+    branches: [developing]
+  pull_request:
+    branches: [developing]
+
+jobs:
+  static-and-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aiyichat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            aiyichat/requirements.txt
+            aiyichat/requirements-dev.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check app tools
+
+      - name: mypy
+        run: mypy app
+
+      - name: pytest
+        run: python -m pytest tools/test -q

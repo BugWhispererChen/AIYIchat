@@ -1,0 +1,33 @@
+# 开发期工具链配置。此前 ruff/mypy/pytest 全靠各自默认值运行，
+# 「提交前跑静态检查」没有任何可复现口径——换台机器、升个版本就可能变红或变绿。
+# 本文件只固化现状，不引入新的规则收紧（收紧另开一轮，见 README/CONTRIBUTING）。
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# 与 ruff 默认保持一致（E4/E7/E9/F）。一次性铺开更多规则会把历史代码的海量
+# 告警变成红灯，反而逼出一堆 noqa；门禁先求"可信"，再求"严格"。
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app"]
+
+# 仅对"确实没有类型存根"的第三方依赖忽略导入错误，保持真实类型错误可见。
+# 这份清单来自实测基线：mypy app 原本就报这 9 条，全部是缺 stub，不是代码问题。
+[[tool.mypy.overrides]]
+module = [
+  "psutil",
+  "pilk",
+  "dashscope",
+  "dashscope.*",
+  "kuzu",
+  "qrcode",
+  "qrcode.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tools/test"]

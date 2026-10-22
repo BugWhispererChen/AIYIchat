@@ -74,6 +74,40 @@ async def _check_llm() -> dict[str, Any]:
         }
 
 
+async def _check_embedding() -> dict[str, Any]:
+    """检查语义检索端点（向量化失败计数与熔断状态）。
+
+    embedding 的额度耗尽/限流不会打断对话主链路（自动回落规则排序），因此这里只报
+    degraded 而非 unhealthy。它用的是服务内的私有熔断实例（与 chat 隔离，见
+    `app/services/embedding_service.py`），这里只读状态值，不把它塞进
+    `get_circuit_breaker` 注册表——端点隔离的意图不能因为健康检查而回退。
+    """
+    try:
+        from app.services.embedding_service import get_embedding_service
+
+        st = get_embedding_service().status()
+        if not st["enabled"]:
+            # 未启用不是故障：按设计走规则排序
+            status = "healthy"
+        elif st["breaker_state"] == "open" or st["fail_count"] > 0:
+            status = "degraded"
+        else:
+            status = "healthy"
+        return {
+            "status": status,
+            "enabled": st["enabled"],
+            "fail_count": st["fail_count"],
+            "breaker_state": st["breaker_state"],
+            "last_error_code": st.get("last_error_code", ""),
+        }
+    except Exception as e:
+        logger.warning("Embedding health check failed: %s", e)
+        return {
+            "status": "degraded",
+            "error": str(e),
+        }
+
+
 def _check_disk() -> dict[str, Any]:
     """检查磁盘空间。"""
     try:
@@ -139,6 +173,7 @@ async def health_check():
     checks = {
         "mongodb": await _check_mongodb(),
         "llm": await _check_llm(),
+        "embedding": await _check_embedding(),
         "disk": _check_disk(),
         "background_tasks": _check_background_tasks(),
     }

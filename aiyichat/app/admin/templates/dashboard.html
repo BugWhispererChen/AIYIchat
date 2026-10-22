@@ -28,10 +28,13 @@
     </p>
     {% endif %}
     <p class="mono-block">
-        最近错误：<code>{{ embedding_status.last_error[:120] }}</code>
+        错误码：<code>{{ embedding_status.last_error_code or '未记录' }}</code>
         {% if embedding_status.last_error_at %}
         <small class="muted">（{{ embedding_status.last_error_at.strftime('%Y-%m-%d %H:%M') }} UTC）</small>
         {% endif %}
+    </p>
+    <p class="mono-block">
+        最近错误：<code>{{ embedding_status.last_error[:120] }}</code>
     </p>
     <p class="muted">请检查「AI 模型」页的 embedding 基础配置与密钥。</p>
 </section>

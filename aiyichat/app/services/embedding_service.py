@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 
 from app.config import settings
 from app.llm.circuit_breaker import (
@@ -57,14 +57,42 @@ class EmbeddingService:
         # 降级可观测：累计失败次数与最近一次错误
         self._fail_count: int = 0
         self._last_error: str = ""
+        self._last_error_code: str = ""
         self._last_error_at: datetime | None = None
         # 端点级隔离：不复用 get_circuit_breaker("chat")，避免 LLM 故障连带关闭语义检索
         self._breaker = CircuitBreaker(_new_breaker_config())
 
+    @staticmethod
+    def _error_fingerprint(error: Exception) -> str:
+        """从异常里抽结构化错误码（如 `400:AllocationQuota.FreeTierOnly`）。
+
+        `last_error` 是整串文本，仪表盘按 120 字符截断展示，长报错恰好会把关键的错误码
+        挤出可视区——而额度耗尽/限流这类问题**只靠错误码区分**。这里单独抽一份：
+        openai 系异常取 `status_code` + body 内的 code（兼容扁平与 `error.code` 两种形态），
+        其余异常回落到截断后的原文。
+        """
+        if not isinstance(error, APIStatusError):
+            return str(error)[:200]
+        status_code = getattr(error, "status_code", None)
+        prefix = f"{status_code}:" if status_code is not None else ""
+        body = getattr(error, "body", None)
+        if isinstance(body, dict):
+            code = str(body.get("code") or "")
+            if not code:
+                inner = body.get("error")
+                if isinstance(inner, dict):
+                    code = str(inner.get("code") or "")
+            if code:
+                return f"{prefix}{code}"
+        elif body is not None:
+            return f"{prefix}{type(body).__name__}"
+        return f"{prefix}{str(error)[:200]}"
+
     def _record_failure(self, error: Exception) -> None:
-        """记录一次降级（失败计数 + 最近错误），供仪表盘展示。"""
+        """记录一次降级（失败计数 + 最近错误与错误码），供仪表盘展示。"""
         self._fail_count += 1
         self._last_error = str(error)
+        self._last_error_code = self._error_fingerprint(error)
         self._last_error_at = datetime.now(timezone.utc)
 
     def status(self) -> dict:
@@ -73,6 +101,7 @@ class EmbeddingService:
             "enabled": self.enabled,
             "fail_count": self._fail_count,
             "last_error": self._last_error,
+            "last_error_code": self._last_error_code,
             "last_error_at": self._last_error_at,
             "degraded": self.enabled and self._fail_count > 0,
             # 熔断状态：OPEN 表示已进入冷却期，recovery_in_seconds 到 0 时试探一次

@@ -168,3 +168,50 @@ class TestBreakerSwitch:
             assert status["recovery_in_seconds"] == 0
 
         _run(body())
+
+
+class TestErrorCodeFingerprint:
+    """错误码单独暴露：仪表盘的 last_error 截 120 字符，额度耗尽只能靠错误码辨认。"""
+
+    def _api_error(self, body: object, status_code: int = 400):
+        import httpx
+
+        from openai import APIStatusError
+
+        # openai 的异常会读取 response.request，裸构造的 Response 没有它，需显式挂上
+        response = httpx.Response(
+            status_code,
+            request=httpx.Request("POST", "https://dashscope/compatible/v1/embeddings"),
+        )
+        return APIStatusError(
+            f"Error code: {status_code} - {body!r} " + "x" * 500,
+            response=response,
+            body=body,
+        )
+
+    def test_flat_code_is_extracted(self) -> None:
+        err = self._api_error({"code": "AllocationQuota.FreeTierOnly", "message": "m"})
+        assert EmbeddingService._error_fingerprint(err) == (
+            "400:AllocationQuota.FreeTierOnly"
+        )
+
+    def test_nested_error_code_is_extracted(self) -> None:
+        err = self._api_error(
+            {"error": {"code": "Throttling", "message": "m"}}, status_code=429
+        )
+        assert EmbeddingService._error_fingerprint(err) == "429:Throttling"
+
+    def test_non_openai_error_falls_back_to_text(self) -> None:
+        assert EmbeddingService._error_fingerprint(
+            RuntimeError("400 AllocationQuota.FreeTierOnly")
+        ) == "400 AllocationQuota.FreeTierOnly"
+
+    def test_record_failure_populates_code_without_touching_last_error(self) -> None:
+        """`last_error` 保持原样（模板已有截断展示），错误码是新增的独立字段。"""
+        svc = _make_service()
+        long_err = self._api_error({"code": "AllocationQuota.FreeTierOnly"})
+        svc._record_failure(long_err)
+        status = svc.status()
+        assert status["last_error_code"] == "400:AllocationQuota.FreeTierOnly"
+        assert status["last_error"] == str(long_err)
+        assert status["fail_count"] == 1

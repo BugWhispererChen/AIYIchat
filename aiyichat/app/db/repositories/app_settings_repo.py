@@ -126,6 +126,10 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "memory_inject_time_suffix", "time_jionlp_enabled",
         # 记忆双时间轴（软失效与注入前硬过滤）
         "memory_fact_validity_enabled", "memory_expired_filter_enabled",
+        # 记忆治理（指称归一 + 点状事实时效剔除）
+        "memory_hygiene_enabled",
+        # 反思层
+        "memory_reflection_enabled",
         # 拟人化多消息与流式放行闸门/节奏/复读护栏
         "multi_message_enabled",
         "reply_length_mirror_enabled", "pacing_split_enabled",
@@ -168,6 +172,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "reply_jitter_window", "reply_jitter_retry_max",
     }
     float_fields = {
+        "reflection_temperature", "reflection_timeout_seconds",
         "proactive_llm_temperature",
         "chat_temperature", "proactive_temperature", "focus_temperature",
         "emotion_temperature", "summary_temperature", "chat_import_temperature",

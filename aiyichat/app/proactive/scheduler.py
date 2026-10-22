@@ -17,6 +17,7 @@ from app.conversation.time_context import resolve_tz
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.proactive_repo import ProactiveRecordRepository
+from app.conversation.reflection import render_insight_lines
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.identity_repo import IdentityRepository
@@ -583,6 +584,9 @@ class ProactiveScheduler:
                 memory_facts=memory_facts[:5],
                 current_topic="",
                 gap_mode="proactive",
+                # 反思层洞见：主动消息最该体现"我记得你这段日子的处境"，
+                # 而逐条事实给不出这种跨时间的判断
+                insight_lines=render_insight_lines(service_memory),
             )
 
             # 调用 LLM（提高 temperature 增加多样性，非实时场景使用较长超时）
@@ -757,6 +761,9 @@ class ProactiveScheduler:
                 memory_facts=memory_facts[:5],
                 current_topic="",
                 gap_mode="proactive",
+                # 反思层洞见：主动消息最该体现"我记得你这段日子的处境"，
+                # 而逐条事实给不出这种跨时间的判断
+                insight_lines=render_insight_lines(service_memory),
             )
 
             provider = get_llm_provider("proactive")

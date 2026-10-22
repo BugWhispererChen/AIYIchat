@@ -84,11 +84,15 @@ async def memory_detail(
     facts = sorted(
         memory.facts, key=lambda f: f.last_referenced_at, reverse=True
     )
+    # fid → 正文映射：洞见只存来源 fid，详情页要还原成"依据哪几条记忆"给人核对
+    fid_map = {f.fid: f.content for f in memory.facts if f.fid}
 
     return _render(request, "memory_detail.html", {
         "detail": {
             "memory": memory,
             "facts": facts,
+            "insights": list(memory.insights),
+            "fid_map": fid_map,
             "service_display": await _service_display(service_id),
         },
         "saved": request.query_params.get("saved") == "1",
@@ -105,6 +109,27 @@ async def delete_fact(
     """删除指定内容的记忆事实（运营纠错 / 身份隐私删除诉求）。"""
     await _memory_repo.delete_fact(service_id, content)
     logger.info("后台删除记忆事实: service=%s, content=%s", service_id, content[:30])
+    return RedirectResponse(
+        url=f"/admin/memories/{service_id}?saved=1", status_code=303,
+    )
+
+
+@memories_router.post("/memories/{service_id}/delete-insight")
+async def delete_insight(
+    service_id: str,
+    fid: str = Form(...),
+    _s: str = Depends(require_admin),
+) -> RedirectResponse:
+    """撤销一条反思洞见。
+
+    洞见是模型归纳出来的判断，可能错。错误洞见常驻在 system 前缀里会持续影响人格，
+    所以后台必须能逐条物理删除——这是"删除洞见"而不是"标记忽略"，
+    留着一条被标记的洞见等于留着一条迟早会被重新启用的错误。
+    """
+    deleted = await _memory_repo.delete_insight(service_id, fid)
+    logger.info(
+        "后台撤销反思洞见: service=%s, fid=%s, deleted=%s", service_id, fid, deleted
+    )
     return RedirectResponse(
         url=f"/admin/memories/{service_id}?saved=1", status_code=303,
     )

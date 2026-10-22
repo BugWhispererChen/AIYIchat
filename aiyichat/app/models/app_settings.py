@@ -177,6 +177,19 @@ class AppSettingsDocument(BaseModel):
     # 记忆双时间轴（现实成立轴 valid_at/invalid_at + 系统录入轴 expired_at）
     memory_fact_validity_enabled: bool = True  # 冲突裁决 UPDATE 时软失效旧事实而不删除
     memory_expired_filter_enabled: bool = True  # 注入前硬过滤已失效事实（仅作用于新字段非空者）
+    # 记忆治理：写入指称归一 + 点状事实时效剔除（见 app/conversation/memory_hygiene.py）
+    memory_hygiene_enabled: bool = False
+    memory_punctual_grace_days: float = 2.0
+    # 反思层：跨多条事实归纳高阶判断（见 app/conversation/reflection.py）
+    memory_reflection_enabled: bool = False
+    reflection_min_facts: int = 12
+    reflection_min_interval_hours: float = 24.0
+    reflection_max_insights: int = 5
+    reflection_min_evidence: int = 2
+    reflection_temperature: float = 0.3
+    reflection_max_evidence: int = 10
+    reflection_max_tokens: int = 6000
+    reflection_timeout_seconds: float = 90.0
 
     # 人际关系网络（实体关系图谱增强）
     memory_graph_enabled: bool = False  # Kuzu 图数据库增强开关（未启用时降级 MongoDB 递归）

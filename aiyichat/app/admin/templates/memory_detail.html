@@ -40,6 +40,57 @@
 
 <section class="ui-card">
     <div class="ui-card-head">
+        <h4 class="ui-card-title">反思洞见（{{ detail.insights|length }} 条）</h4>
+        <small class="muted">模型从多条记忆归纳出的判断，可能出错；删除即从提示词中移除</small>
+    </div>
+    {% if detail.insights %}
+    <div class="ui-table-wrap">
+        <table class="ui-table">
+            <thead>
+                <tr>
+                    <th>判断</th>
+                    <th>类型</th>
+                    <th>依据的记忆</th>
+                    <th>归纳于</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ins in detail.insights %}
+                <tr>
+                    <td>{{ ins.content }}</td>
+                    <td>{{ badge(ins.kind, 'line') }}</td>
+                    <td>
+                        {% if ins.source_fids %}
+                            <ul class="u-m0 u-pl16">
+                            {% for fid in ins.source_fids %}
+                                <li><small>{{ detail.fid_map.get(fid) or '（来源记忆已被删除或改写）' }}</small></li>
+                            {% endfor %}
+                            </ul>
+                        {% else %}
+                            <small class="muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td><span title="{{ (ins.created_at|to_beijing).strftime('%Y-%m-%d %H:%M') }}">{{ ins.created_at|relative_time }}</span></td>
+                    <td>
+                        <form method="post" action="/admin/memories/{{ detail.memory.service_id }}/delete-insight"
+                              onsubmit="return confirm('确定撤销这条洞见？');" class="u-m0">
+                            <input type="hidden" name="fid" value="{{ ins.fid }}">
+                            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--danger">撤销</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {{ empty('暂无反思洞见', '开启「反思层」且记忆积累到门槛后自动生成', 'memory') }}
+    {% endif %}
+</section>
+
+<section class="ui-card">
+    <div class="ui-card-head">
         <h4 class="ui-card-title">记忆事实（{{ detail.facts|length }} 条）</h4>
     </div>
     {% if detail.facts %}

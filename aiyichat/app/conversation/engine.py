@@ -23,6 +23,8 @@ from app.conversation.emotion_detector import (
 from app.conversation.focus_tracker import FocusTracker
 from app.conversation.image_task import ImageTask
 from app.conversation.message_splitter import split_for_pacing, split_messages
+from app.conversation.memory_hygiene import is_punctually_stale
+from app.conversation.reflection import render_insight_lines
 from app.conversation.mood_manager import MoodManager
 from app.conversation.reply_jitter import (
     normalize_text,
@@ -535,6 +537,7 @@ class ConversationEngine:
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
+            insight_lines=render_insight_lines(service_memory),
             verbosity=getattr(profile, "verbosity", "standard"),
             topic_context=topic_context,
             strategy_instruction=strategy_instruction,
@@ -939,6 +942,7 @@ class ConversationEngine:
             identity=identity,
             current_topic=current_topic,
             memory_facts=memory_facts,
+            insight_lines=render_insight_lines(service_memory),
             verbosity=getattr(profile, "verbosity", "standard"),
             topic_context=topic_context,
             strategy_instruction=strategy_instruction,
@@ -1424,6 +1428,16 @@ class ConversationEngine:
                 other_facts = [
                     f for f in other_facts if not is_fact_invalidated(f, now)
                 ]
+            # 点状事实剔除：上面的硬过滤依赖 invalid_at/expired_at 非空，而这两个字段
+            # 只由 UPDATE 冲突裁决产生，"8月26日有面试"这类从未被纠正过的事实永远不为空，
+            # 于是注释里想防的那件事其实没防住。此处按现实成立轴即时判定（只判不写库）。
+            if settings.memory_hygiene_enabled:
+                core_facts = [
+                    f for f in core_facts if not is_punctually_stale(f, now)
+                ]
+                other_facts = [
+                    f for f in other_facts if not is_punctually_stale(f, now)
+                ]
             if query_embedding:
                 sorted_others = sorted(
                     other_facts,
@@ -1712,6 +1726,7 @@ class ConversationEngine:
         gap_mode: GapMode = "none",
         last_proactive_at: datetime | None = None,
         last_proactive_text: str = "",
+        insight_lines: list[str] | None = None,
     ) -> list:
         """组装 LLM 消息列表（含长度软引导、未成年人保护注入与时间上下文审计）。
 
@@ -1749,6 +1764,7 @@ class ConversationEngine:
             gap_mode=gap_mode,
             last_proactive_at=last_proactive_at,
             last_proactive_text=last_proactive_text,
+            insight_lines=insight_lines,
         )
         # 未成年人保护：注入合规约束（紧贴 user_input 前）
         if getattr(identity, "is_minor", False):

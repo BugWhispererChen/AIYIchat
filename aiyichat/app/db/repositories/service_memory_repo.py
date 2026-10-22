@@ -14,6 +14,7 @@ from app.models.service_memory import (
     CharacterMood,
     MemoryEntity,
     MemoryFact,
+    MemoryInsight,
     PendingEvent,
     ServiceMemoryInDB,
 )
@@ -181,6 +182,56 @@ class ServiceMemoryRepository:
             },
             upsert=True,
         )
+
+    async def add_insights(
+        self, service_id: str, new_insights: list[MemoryInsight]
+    ) -> int:
+        """追加反思洞见（独立数组，不参与 facts 名额与淘汰）。
+
+        上限控制：超过 reflection_max_insights 时先剔除已标记 invalidated 者，
+        再按最后引用时间淘汰最久未被使用的洞见。
+        返回实际新增条数。
+        """
+        if not new_insights:
+            return 0
+        now = datetime.now(timezone.utc)
+        doc = await self._collection().find_one({"service_id": service_id})
+        if doc is None:
+            return 0
+        existing = doc.get("insights", []) or []
+        existing_contents = {i.get("content") for i in existing}
+        unique = [i for i in new_insights if i.content not in existing_contents]
+        if not unique:
+            return 0
+        merged = existing + [i.model_dump() for i in unique]
+        max_insights = settings.reflection_max_insights
+        if len(merged) > max_insights:
+            # 已失效的洞见先让位（保留 invalidated 是为了审计与恢复，不是因为要留着占名额）
+            live = [i for i in merged if not i.get("invalidated")]
+            dead = [i for i in merged if i.get("invalidated")]
+            live.sort(key=lambda i: i.get("last_referenced_at") or now, reverse=True)
+            merged = live[:max_insights] + dead[: max(0, max_insights - len(live[:max_insights]))]
+        await self._collection().update_one(
+            {"service_id": service_id},
+            {"$set": {"insights": merged, "updated_at": now}},
+        )
+        return len(unique)
+
+    async def mark_reflected(self, service_id: str, at: datetime | None = None) -> None:
+        """记录本次反思执行时刻（触发节流的依据）。"""
+        now = at or datetime.now(timezone.utc)
+        await self._collection().update_one(
+            {"service_id": service_id},
+            {"$set": {"last_reflection_at": now}},
+        )
+
+    async def delete_insight(self, service_id: str, fid: str) -> bool:
+        """按 fid 物理删除一条洞见（后台"删除洞见"入口，撤销错误归纳的唯一手段）。"""
+        result = await self._collection().update_one(
+            {"service_id": service_id, "insights.fid": fid},
+            {"$pull": {"insights": {"fid": fid}}},
+        )
+        return result.modified_count > 0
 
     async def update_fact_reference(self, service_id: str, fact_content: str) -> None:
         """更新指定事实的最后引用时间，并强化记忆强度（艾宾浩斯正向反馈）。

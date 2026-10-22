@@ -22,6 +22,13 @@ from app.models.service_memory import (
     PendingEvent,
     cosine_similarity,
 )
+from app.conversation.memory_hygiene import (
+    is_restatement,
+    new_fact_id,
+    normalize_referent,
+    stamp_punctual,
+)
+from app.conversation.reflection import generate_insights, should_reflect
 from app.services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
@@ -34,6 +41,9 @@ _EXTRACT_SYSTEM_PROMPT = (
     "情绪模式等），每条为对象：\n"
     '   {{"content": "事实描述(不超过20字)", '
     '"valid_at": "该事实发生或开始成立的绝对日期 YYYY-MM-DD，无法确定则为 null"}}\n'
+    "称谓约定：对话记录里的「对方」是用户，「我」是正在与用户聊天的那位角色本人。"
+    "事实必须用这两个称谓书写，严禁写成\"用户…\"或\"…与AI的关系\""
+    "——这些记忆日后会注入该角色的提示词，写成第三人称或称自己为AI会让它出戏。\n"
     "注意：提取事实时，如果内容包含\"今天/今日/昨天/明天/后天/大后天\"等相对时间词，"
     "必须替换为绝对日期（如\"8月25日\"），例如：\n"
     "- 对方说\"今天上班好累\" → content 为\"对方8月25日上班感到疲惫\"，"
@@ -196,17 +206,25 @@ class FocusTracker:
                     if not self._verify_fact_date(fact_text, valid_at, source_text, now, tz):
                         valid_at = None
                 category = self._classify_fact(fact_text)
-                new_facts.append(
-                    MemoryFact(
-                        content=fact_text,
-                        category=category,
-                        created_at=now,
-                        last_referenced_at=now,
-                        tier=self._tier_for(category),
-                        valid_at=valid_at,
-                        source_message_at=source_at,
-                    )
+                fact = MemoryFact(
+                    fid=new_fact_id(),
+                    content=fact_text,
+                    category=category,
+                    created_at=now,
+                    last_referenced_at=now,
+                    tier=self._tier_for(category),
+                    valid_at=valid_at,
+                    source_message_at=source_at,
                 )
+                if settings.memory_hygiene_enabled:
+                    # 指称归一：LLM 有时会写成"用户…"/"与AI关系亲密"，
+                    # 注入后角色读到的是第三人称与自曝非人，必须在落库前改成第一人称
+                    normalized, changed = normalize_referent(fact.content)
+                    if changed:
+                        fact.content = normalized
+                    # 点状时效只能在写入时刻判定（此后无从分辨当时说的是明天还是昨天）
+                    stamp_punctual(fact, source_at)
+                new_facts.append(fact)
 
             # 语义向量化（启用时），失败时 embedding 为空列表自动降级
             emb_service = get_embedding_service()
@@ -228,6 +246,10 @@ class FocusTracker:
             await self._resolve_and_apply(
                 service_id, new_facts, existing_fact_objs
             )
+
+            # 事实落库后再反思：挂在同一条异步通道上，天然与抽取同频节流，
+            # 且此时读到的是包含本轮新增的完整档案
+            await self._maybe_reflect(service_id)
 
             # 话题变化时追加到话题历史
             if topic and topic != current_topic:
@@ -251,6 +273,31 @@ class FocusTracker:
             logger.error(
                 "Focus extraction failed for service=%s: %s",
                 service_id, e,
+            )
+
+    async def _maybe_reflect(self, service_id: str) -> None:
+        """满足触发条件时执行一次反思，并把通过 grounding 校验的洞见落库。
+
+        去重照旧走改述判定：反复反思很容易产出同一判断的不同说法，
+        若不去重，5 条上限会很快被同一件事的不同措辞占满。
+        """
+        memory = await self.memory_repo.find_by_service(service_id)
+        if memory is None:
+            return
+        if not should_reflect(len(memory.facts), memory.last_reflection_at):
+            return
+        insights = await generate_insights(list(memory.facts))
+        fresh = [
+            i for i in insights
+            if not any(is_restatement(i.content, old.content) for old in memory.insights)
+        ]
+        # 即使没产出洞见也要记时：否则材料不足的档案每轮都会重试，白烧一次调用
+        await self.memory_repo.mark_reflected(service_id)
+        if fresh:
+            added = await self.memory_repo.add_insights(service_id, fresh)
+            logger.info(
+                "反思产出: service=%s, insights=%d/%d（其余被 grounding 拦下）",
+                service_id, added, len(insights),
             )
 
     async def _save_events(self, service_id: str, raw_events) -> None:
@@ -610,6 +657,18 @@ class FocusTracker:
         """
         llm_resolve_used = 0
         for nf in new_facts:
+            # 改述前置闸：合并重述与既有记忆表达的是同一件事，相似度分散在两条上、
+            # 走不进 _SIM_DEDUP，会被当作全新信息 ADD（实测造成"批评/委屈/批评且委屈"
+            # 三条并存）。此处只做字符比对，无向量环境同样生效。
+            restated = next(
+                (ef for ef in existing_facts if is_restatement(nf.content, ef.content)),
+                None,
+            ) if settings.memory_hygiene_enabled else None
+            if restated is not None:
+                await self.memory_repo.update_fact_reference(
+                    service_id, restated.content
+                )
+                continue
             best_ef: MemoryFact | None = None
             best_sim = 0.0
             # 记录本次配对是否由向量得出：字符级降级相似度不足以支撑"失效旧事实"的决定
@@ -752,7 +811,9 @@ class FocusTracker:
         now = datetime.now(tz)
         dialog_lines: list[str] = []
         for msg in messages_for_extract:
-            role_label = "对方" if msg.role == "user" else "AI"
+            # 助手侧标成「我」而非「AI」：标签词会被 LLM 原样写进事实（"用户与AI关系亲密"），
+            # 而这条事实随后要注入角色自己的提示词
+            role_label = "对方" if msg.role == "user" else "我"
             created = getattr(msg, "created_at", None)
             if created is not None:
                 if created.tzinfo is None:

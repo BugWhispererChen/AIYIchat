@@ -224,6 +224,21 @@ class _RuntimeSettings:
     # 记忆双时间轴（现实成立轴 valid_at/invalid_at + 系统录入轴 expired_at）
     memory_fact_validity_enabled: bool = True  # 冲突裁决 UPDATE 时软失效旧事实而不删除
     memory_expired_filter_enabled: bool = True  # 注入前硬过滤已失效事实（仅作用于新字段非空者）
+    # 记忆治理：写入时指称归一 + 点状事实打标记，读取时按现实成立轴剔除过期安排。
+    # 默认关闭以便与既有线上数据对照；见 app/conversation/memory_hygiene.py
+    memory_hygiene_enabled: bool = False
+    memory_punctual_grace_days: float = 2.0  # 点状事实宽限期：事件时刻过后多久判为不再成立
+
+    # 反思层：把跨多条事实才成立的高阶判断归纳成"洞见"（见 app/conversation/reflection.py）
+    memory_reflection_enabled: bool = False
+    reflection_min_facts: int = 12  # 少于这么多条可用事实不反思：材料不足时归纳出来的只是复述
+    reflection_min_interval_hours: float = 24.0  # 两次反思的最小间隔
+    reflection_max_insights: int = 5  # 每服务常驻洞见上限（也是单次产出的上限）
+    reflection_min_evidence: int = 2  # 每条洞见至少引用几条不同事实（grounding 硬校验）
+    reflection_temperature: float = 0.3  # 不复用 focus_temperature=0.0：温度 0 下推理型模型对归纳类提示会返回空串
+    reflection_max_evidence: int = 10  # 单次反思最多阅读多少条事实（实测条数×token 预算需成对放大，否则返回空 content）
+    reflection_max_tokens: int = 6000  # 含思考消耗：推理型模型的思考也计入预算，不足时返回空 content（实测 384/1200/3000 均空）
+    reflection_timeout_seconds: float = 90.0  # 逐调用超时，不改任务默认值（实测 60s 会撞断，任务默认 20-30s 更不够）
 
     # 人际关系网络（实体关系图谱增强）
     memory_max_entities: int = 50  # 每个服务最大实体数（超限按活跃度淘汰）
@@ -438,6 +453,12 @@ class _RuntimeSettings:
             "memory_stable_in_prefix", "memory_dynamic_max_chars",
             "memory_recall_timeout_seconds", "memory_update_requires_vector",
             "memory_fact_validity_enabled", "memory_expired_filter_enabled",
+            "memory_hygiene_enabled", "memory_punctual_grace_days",
+            "memory_reflection_enabled", "reflection_min_facts",
+            "reflection_min_interval_hours", "reflection_max_insights",
+            "reflection_min_evidence", "reflection_temperature",
+            "reflection_max_evidence", "reflection_timeout_seconds",
+            "reflection_max_tokens",
             "memory_max_entities", "memory_entity_scan_turns",
             "memory_entity_merge_threshold", "memory_graph_enabled", "memory_graph_path",
             "emotion_llm_fallback_enabled", "emotion_llm_min_chars",
@@ -591,6 +612,17 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         memory_update_requires_vector: bool = Field(default=True)
         memory_fact_validity_enabled: bool = Field(default=True)
         memory_expired_filter_enabled: bool = Field(default=True)
+        memory_hygiene_enabled: bool = Field(default=False)
+        memory_punctual_grace_days: float = Field(default=2.0)
+        memory_reflection_enabled: bool = Field(default=False)
+        reflection_min_facts: int = Field(default=12)
+        reflection_min_interval_hours: float = Field(default=24.0)
+        reflection_max_insights: int = Field(default=5)
+        reflection_min_evidence: int = Field(default=2)
+        reflection_temperature: float = Field(default=0.3)
+        reflection_max_evidence: int = Field(default=10)
+        reflection_max_tokens: int = Field(default=6000)
+        reflection_timeout_seconds: float = Field(default=90.0)
         memory_max_entities: int = Field(default=50)
         memory_entity_scan_turns: int = Field(default=3)
         memory_entity_merge_threshold: float = Field(default=0.75)

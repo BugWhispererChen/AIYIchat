@@ -8,6 +8,7 @@
 from datetime import datetime, timezone
 from typing import Literal, Self
 
+import hashlib
 import math
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,9 @@ class MemoryFact(BaseModel):
     事实被纠正时只标记失效不删除，保留可回溯的时间线。
     """
 
+    # 稳定 ID：反思层洞见需按 ID 回链来源事实（content 是寻址键但不是稳定标识，
+    # 事实被改写后旧引用会失配），存量数据由 from_mongo 补齐
+    fid: str = ""
     content: str  # 记忆内容，如 "身份正在准备考研，目标是北大"
     category: str = "general"  # 分类：life_event / preference / relationship / mood_pattern / general
     created_at: datetime = Field(
@@ -47,6 +51,10 @@ class MemoryFact(BaseModel):
     invalid_at: datetime | None = None  # 现实成立轴：事实何时不再成立
     expired_at: datetime | None = None  # 系统录入轴：系统何时标记该事实失效
     source_message_at: datetime | None = None  # provenance：事实来自哪条消息（抽取时间基点）
+    # 点状事实标记：该条陈述的是"未来某一时刻的状态"（如"8月26日有面试"），
+    # 时刻一过即成历史，应在宽限期后失效。只能在写入时刻判定，见
+    # memory_hygiene.stamp_punctual —— 事后无法区分当时说的是明天还是昨天。
+    punctual: bool = False
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -141,17 +149,43 @@ class CharacterMood(BaseModel):
     )
 
 
+class MemoryInsight(BaseModel):
+    """反思层洞见：由若干条既有事实归纳出的、跨时间的高阶判断。
+
+    与 MemoryFact 的关键区别：事实是"对方说了什么"，洞见是"从不这些说法里能持续成立地
+    看出什么"。洞见不参与 facts 的 30 条名额与淘汰，否则会把原始记忆挤出去。
+
+    grounding 是硬约束而不是加分项：业界公开记录里，无来源约束的反思会把
+    "设备没电"归纳成"设备故障"并从此忽略该设备的全部数据（错误被后续反思反复加固）。
+    `source_fids` 让每条洞见可回溯、可在后台被单独撤销。
+    """
+
+    fid: str = ""
+    content: str  # 洞见正文，一句话（与事实同风格，不写小作文）
+    kind: Literal["trend", "relationship", "state"] = "trend"
+    source_fids: list[str] = Field(default_factory=list)  # 来源事实的稳定 ID
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_referenced_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    invalidated: bool = False  # 来源事实全部失效后由治理置为 True（不物理删除，保留可审计）
+
+
 class ServiceMemoryInDB(BaseModel):
     """数据库中的服务记忆文档。"""
 
     id: str = Field(alias="_id")
     service_id: str
     facts: list[MemoryFact] = Field(default_factory=list)
+    # 反思层洞见：独立数组，不占 facts 名额、不参与其淘汰（见 MemoryInsight 说明）
+    insights: list[MemoryInsight] = Field(default_factory=list)
     current_topic: str = ""  # 当前对话焦点
     topic_history: list[str] = Field(default_factory=list)  # 话题历史（最多保存10个话题）
     pending_events: list[PendingEvent] = Field(default_factory=list)  # 待跟进事件
     entities: list[MemoryEntity] = Field(default_factory=list)  # 轻量实体关系
     mood: CharacterMood | None = None  # 角色当前心情（None 表示未启用或无状态）
+    # 上次执行反思的时刻（触发节流用；None 表示从未反思过）
+    last_reflection_at: datetime | None = None
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -173,7 +207,9 @@ class ServiceMemoryInDB(BaseModel):
         doc.setdefault("facts", [])
         doc.setdefault("pending_events", [])
         doc.setdefault("entities", [])  # 兼容存量数据：无 entities 字段
+        doc.setdefault("insights", [])  # 兼容存量数据：反思层上线前的文档无此字段
         doc.setdefault("mood", None)  # 兼容存量数据：无 mood 字段
+        doc.setdefault("last_reflection_at", None)
         # 兼容存量数据：存量实体无扩展字段，补默认值
         for ent in doc.get("entities", []):
             ent.setdefault("entity_type", "person")
@@ -185,6 +221,13 @@ class ServiceMemoryInDB(BaseModel):
         # 兼容存量数据：存量事实无 strength 字段，补默认值 1.0
         for fact in doc.get("facts", []):
             fact.setdefault("strength", 1.0)
+            fact.setdefault("punctual", False)  # 兼容存量数据：无点状标记时按普通事实处理
+            # 兼容存量数据：早期数据无稳定 ID，按内容哈希补一个（同文档内内容已去重，
+            # 因此 content 哈希在单文档范围内可作稳定标识；新写入走 uuid 由抽取器负责）
+            if not fact.get("fid"):
+                fact["fid"] = hashlib.sha1(
+                    (fact.get("content") or "").encode("utf-8")
+                ).hexdigest()[:12]
             # 兼容存量数据：无 tier 字段时按类别推导层级
             if "tier" not in fact:
                 fact["tier"] = (
@@ -199,6 +242,19 @@ class ServiceMemoryInDB(BaseModel):
         # 兼容存量数据：待跟进事件无 followed_up 字段时补 False
         for event in doc.get("pending_events", []):
             event.setdefault("followed_up", False)
+        # 兼容：反思层字段（早期文档整体缺省，故只对新出现的元素补默认值）
+        for insight in doc.get("insights", []):
+            insight.setdefault("kind", "trend")
+            insight.setdefault("source_fids", [])
+            insight.setdefault("invalidated", False)
+            insight.setdefault(
+                "last_referenced_at",
+                insight.get("created_at") or datetime.now(timezone.utc),
+            )
+            if not insight.get("fid"):
+                insight["fid"] = hashlib.sha1(
+                    (insight.get("content") or "").encode("utf-8")
+                ).hexdigest()[:12]
         return cls(**doc)
 
 

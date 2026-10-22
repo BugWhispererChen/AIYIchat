@@ -257,6 +257,7 @@ class PromptAssembler:
         gap_mode: GapMode = "none",  # 本轮间隔分档（由引擎/调度器判定，默认保持原行为）
         last_proactive_at: datetime | None = None,  # 对方上次发言后角色主动发出的消息时间
         last_proactive_text: str = "",  # 该主动消息原文（主动消息不入 messages 集合）
+        insight_lines: list[str] | None = None,  # 反思层洞见（常驻稳定段，不占记忆注入名额）
     ) -> list[dict[str, str]]:
         """
         组装完整的Prompt消息数组。
@@ -337,6 +338,7 @@ class PromptAssembler:
             current_topic, memory_facts, topic_context,
             memory_fact_objs=memory_fact_objs,
             omitted_history_count=max(0, len(history) - len(filtered_history)),
+            insight_lines=insight_lines,
         )
         if memory_section:
             messages.append({"role": "system", "content": memory_section})
@@ -836,6 +838,7 @@ class PromptAssembler:
         topic_context: str = "",
         memory_fact_objs: list[MemoryFact] | None = None,
         omitted_history_count: int = 0,
+        insight_lines: list[str] | None = None,
     ) -> str:
         """
         渲染长期记忆注入段落：话题脉络 + 当前话题焦点 + 对方事实（带时间后缀）。
@@ -894,6 +897,18 @@ class PromptAssembler:
                 f"【你了解的关于对方的信息】\n"
                 f"{facts_text}\n"
                 f"{tail_note}"
+            )
+
+        # 反思层洞见（跨多条事实的高阶判断）：与事实分列，避免抢占注入名额与混淆口径。
+        # 刻意不放动态尾段——洞见变化频率以天计，留在第 2 段不击穿前缀缓存；
+        # 也因此**不得**在文本里带时间戳（动态内容进前缀等于每轮 cache miss）。
+        if insight_lines:
+            insights_text = "\n".join(f"- {line}" for line in insight_lines)
+            parts.append(
+                f"【你慢慢了解到的】\n"
+                f"{insights_text}\n"
+                "（这是你从相处中形成的判断，可能不准，也别当成结论说给对方；"
+                "它与上面逐条记录冲突时以记录为准）"
             )
 
         # 被裁剪历史的显式声明（借 Letta）：让模型知道上下文不完整，不会误以为对话刚开始

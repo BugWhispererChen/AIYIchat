@@ -4,11 +4,57 @@
 
 ## [Unreleased]
 
-### 变更
-- CI 的 mypy 步骤首期设为**非阻塞**：本地 venv 的 `dashscope`/`kuzu` 没有类型存根、被
-  `ignore_missing_imports` 遮蔽而全绿，CI 全新安装拿到带 `py.typed` 的较新版本后暴露出
-  tts/asr/imagegen/entity_graph 四个文件共 30 处真实类型错误。这正是 CI 第一次跑就抓到的东西，
-  记为待修债务：单独一轮补齐窄化或钉住依赖版本，之后删掉 `continue-on-error` 转为硬门禁。
+### 新增
+- **评测尺子补 `temporal_consistency`（作息的第一把尺子）**：角色作息 `life_routine` 上线时只有
+  单测、虚拟时钟重放和容器内取证，缺"开关对照意义上的数字"。`tools/eval/run_eval.py` 现在按用例
+  声明的钟点冻结时钟组装生产 Prompt，并逐例产出确定性可数的指标：时刻是否与锚点自洽、作支行
+  该不该注入（期待值**直接调用生产 `current_segment()`** 判定）、实际有没有注入、activity 是否
+  对得上、以及按钟点档的强反例词表数矛盾（凌晨说"早上好"）。
+  刻意**不进 `DIMENSIONS`、不改裁判 rubric**：加维度会让所有旧基线 JSON 在 GSB 里被整批跳过
+  （`_overall` 为 None 即跳过）且均分换尺；改 rubric 更会让历史分数全部作废。新指标仿
+  `_length_metrics`/`_warmth_metrics` 做成独立指标块，`--compare` 里带守卫打印对照行，
+  旧基线没有该字段时自然跳过。裁判噪声实测 ±15%，而这一维零模型调用、零噪声。
+  钟点判定要同时看两个 HH:MM：`【当前时刻】` 是服务/对方时区、`【你的作息】` 是角色自己的时区，
+  混比会造出假矛盾，故各判各的；`message_time_enabled` 关着导致没有时刻行时记"该检查不可用"
+  而不是判失败。新增 `tools/test/test_eval_temporal.py` 含行为自证闸：不带钟点的用例，组装产物
+  与改动前逐字相同（作息类文本误进 system 前缀会击穿 prompt 前缀缓存，首字延迟从几秒变几十秒）。
+
+### 安全
+- **凭据不再进应用日志**：QQ Bot 的 `Token response` 原样打印整串响应（含 `access_token` 与
+  `refresh_token`，任何能看日志的人都能直接冒用 Bot）、MongoDB 启动日志打印整条连接串
+  （可含账号密码）、微信 `getuploadurl` 的请求与失败响应整串打印，四处一律改为只记字段名与
+  有效期。新增 `app/utils/redaction.py`（`mask_secret` / `mask_uri` / `brief_json`）作为写侧
+  唯一实现，后台展示层的 `_mask_api_key` 复用它。**刻意不做全局 `logging.Filter` 兜底**：
+  事后正则遮罩会让新泄漏点静默通过、给出"已防护"的错觉；改以 AST 静态护栏
+  （`test_no_credential_logging.py`）把"不许把响应整体 dump 进日志、不许裸打凭据字段"钉成契约。
+
+### 修复
+- **管理后台删账号补齐 7 个漏删集合**：`AccountRepository.delete_cascade` 此前只清主链路
+  8 个集合，网页凭据/会话、订单、主动关怀记录、安全事件、注入快照、媒体全部留下孤儿文档——
+  而 C 端自助注销早已逐个补删并实测"残留 0"，同一件事存在两份口径。现在把补删收敛进
+  `delete_cascade`，注销路径直接调用同一实现。两条不变量写进注释并由测试钉死：
+  **预扫描必须早于任何删除**（identities 一删就取不到 identity_id、messages 一删就反解不出
+  媒体 ID，媒体文档本身不记归属），**凭据最先删**（用户名当场释放、旧令牌立即失效，
+  级联中途失败不会留下"数据半删却仍可登录"的账号）。注入快照按 `context_key`（共享组优先）
+  而非 `service.id` 归属，是最容易被写错的一处。
+- **Embedding 降级可见性**：`status()` 新增 `last_error_code`（如 `400:AllocationQuota.FreeTierOnly`），
+  仪表盘降级告警直接点名错误码、`/api/health` 增加 `embedding` 段。原先只有 `last_error`
+  整串文本且被截 120 字符展示，长报错恰好把最关键的错误码挤出可视区，而额度耗尽与限流
+  只能靠错误码区分。
+
+### 工具
+- **CI 的 mypy 转为硬门禁**：上轮记为待修债务的 30 处真实类型错误已全部补齐。根因是
+  `requirements.txt` 只钉下界——本地 venv 装的 dashscope 没有 `py.typed`（版本甚至低于自家
+  下界）、kuzu 根本没装，两包在本地全被当成 `Any` 所以 `mypy app` 假绿，CI 全新安装拿到带
+  存根的较新版本才暴露真错。现给 dashscope/kuzu 加上界把两端口径锁死（新增
+  `test_requirements_bounds.py` 防止后人顺手松开），CI 里加一步打印实际装到的版本；
+  tts/asr/imagegen/entity_graph 四个文件按**零行为改动**方式窄化（异构参数字典显式标注
+  `dict[str, Any]`、第三方响应边界标注 `Any`）。刻意不引入 `assert`：tts/asr 原本靠
+  `getattr` + `try/except` 优雅降级，插断言会把线上降级路径变成崩溃；tts 的
+  "仅非默认值才传给 SDK"条件分支也原样保留，否则会把 SDK/服务端默认覆盖掉。
+- **实体关系图服务补上首批测试**：`entity_graph_service` 此前零测试覆盖（只有一个归档手工脚本），
+  新增 `test_entity_graph_guard.py` 钉住三条降级路径（kuzu 未安装、连接初始化失败置
+  `_broken`、多跳查询回落 MongoDB 一跳展开），为上述类型改动提供回归网。
 
 ## [2026-10-22] - 2026-10-22
 

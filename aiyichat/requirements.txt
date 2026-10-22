@@ -9,7 +9,9 @@ python-multipart>=0.0.7
 tiktoken>=0.7.0
 openai>=1.0.0
 httpx>=0.25.0
-dashscope>=1.26.4
+# dashscope/kuzu 钉上界是为 CI 与本地**同口径**：两包新版本自带 py.typed 存根，
+# 只写 `>=` 会让"本地全绿、CI 报 30 处真错"反复出现。升级上界时必须同步复跑 `mypy app`。
+dashscope>=1.26.4,<1.27
 # websocket-client 1.9.x 的 close() 在连接已被服务端关闭时会抛
 # AttributeError（sock 为 None），导致 dashscope TTS 合成完成后清理崩溃；
 # 实测 qwen-audio 带 pitch/情感标签场景必现，固定在 1.8.x 规避
@@ -24,7 +26,8 @@ qrcode[pil]>=7.0
 pycryptodome>=3.19.0
 cryptography>=42.0.0
 # 人际关系网络：Kuzu 嵌入式图数据库（可选增强，未启用时自动降级）
-kuzu>=0.11.0
+# 上界口径同 dashscope（见上文注释）
+kuzu>=0.11.0,<0.12
 # IANA 时区数据库：Windows 上 zoneinfo 找不到系统时区库，必须依赖该纯数据包
 # （项目要出 Windows 安装包；Linux 容器虽自带 zoneinfo 数据，装上无害且保证行为一致）
 tzdata>=2024.1

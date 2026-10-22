@@ -193,7 +193,6 @@ class TestGenerateInsightsWiring:
         assert asyncio.run(self._call_failing_llm()) == []
 
     async def _parse_payload(self, facts: list[MemoryFact]) -> list[MemoryInsight]:
-        _, index_to_fid = build_evidence_block(facts)
         payload = (
             '```json\n{"insights": [{"content": "对方连续几周都在加班",'
             ' "kind": "trend", "evidence": [1, 2]}]}\n```'
@@ -207,9 +206,35 @@ class TestGenerateInsightsWiring:
             return await reflection.generate_insights(facts)
 
     def test_json_wrapped_in_code_fence_parsed(self, reflection_on: None) -> None:
-        # 模型常把 JSON 包在代码块里，解析必须与抽取通道同一套容错
-        facts = _facts(12)
+        # 用例故意构造**少于封顶条数**的事实：本用例考的是代码块 JSON 容错与
+        # 编号→fid 映射，不该被截断选取干扰（截断另由 test_truncation_* 单独钉）
+        facts = _facts(settings.reflection_max_evidence - 2)
         insights = asyncio.run(self._parse_payload(facts))
         assert len(insights) == 1
         assert insights[0].source_fids == [facts[0].fid, facts[1].fid]
         assert build_evidence_block(facts)[1][1] == facts[0].fid
+
+    def test_truncation_keeps_most_recent(self, reflection_on: None) -> None:
+        """超出封顶时保留"最近被引用"的那些，且编号仍按文档原序。
+
+        时间戳在这里必须显式给值且互不相同：默认 `created_at/last_referenced_at`
+        走 `datetime.now`，Linux 精度到微秒、Windows 只到毫秒，
+        同批构造的事实因此在两端有不同（或全相同）的排序依据——
+        不显式钉住时间的断言只能在其中一端成立。
+        """
+        base = _NOW
+        facts = [
+            MemoryFact(
+                fid=new_fact_id(),
+                content=f"对方事实{i}",
+                last_referenced_at=base - timedelta(days=i),
+            )
+            for i in range(settings.reflection_max_evidence + 3)
+        ]
+        text, index_to_fid = build_evidence_block(facts)
+        n = settings.reflection_max_evidence
+        assert len(index_to_fid) == n
+        # 保留的是最新的 n 条（文档下标 0..n-1），被丢的是最久未引用的尾部
+        assert [index_to_fid[i] for i in range(1, n + 1)] == [f.fid for f in facts[:n]]
+        # 编号按文档原序而非选取序：第 1 条永远是列表里最靠前的那条
+        assert text.split("\n")[0].startswith(f"1. {facts[0].content}")

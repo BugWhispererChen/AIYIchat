@@ -1,9 +1,13 @@
 """账号的数据库访问层。"""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from app.db.mongo import get_database
+from app.db.repositories.media_repo import (
+    MediaRepository,
+    media_ids_from_message_docs,
+)
 from app.models.account import AccountCreate, AccountInDB, AccountUpdate
 
 
@@ -49,31 +53,122 @@ class AccountRepository:
         result = await self._collection().delete_one({"id": account_id})
         return result.deleted_count > 0
 
-    async def delete_cascade(self, account_id: str) -> dict[str, int]:
-        """级联删除账号及其关联数据（服务→对话→消息→身份→Bot→额度→角色→账号）。"""
+    async def delete_cascade(
+        self,
+        account_id: str,
+        *,
+        credential_id: str | None = None,
+        identity_id: str | None = None,
+    ) -> dict[str, int]:
+        """级联删除账号及其关联数据（凭据→周边记录→媒体/快照→消息→对话→记忆→服务→身份→Bot→额度→角色→账号）。
+
+        与 C 端自助注销共用本方法，后台删账号不得再留下网页凭据、会话、订单、主动记录、
+        安全事件、注入快照、媒体这 7 个集合的孤儿文档——它们都装着用户可见内容。
+
+        两条不变量（改动时勿回退）：
+        - **预扫描必须早于任何删除**：identities 一删就取不到 identity_id，
+          messages 一删就反解不出媒体 ID（media 文档不记归属，只能靠引用方定位）。
+        - **凭据最先删**：用户名当场释放、旧令牌立即失效，
+          中途失败不会留下"数据删了一半却仍可登录"的半删账号。
+        """
         db = get_database()
         stats: dict[str, int] = {}
 
-        # 1. 查找账号下所有服务，逐个级联删除对话和消息
-        svc_cursor = db.services.find({"account_id": account_id}, {"id": 1})
-        svc_ids = [doc["id"] async for doc in svc_cursor]
-        msg_count = 0
-        conv_count = 0
-        for svc_id in svc_ids:
-            # 获取该服务下所有对话 ID
-            conv_cursor = db.conversations.find({"service_id": svc_id}, {"_id": 1})
-            conv_ids = [str(doc["_id"]) async for doc in conv_cursor]
-            # 批量删除消息
-            if conv_ids:
-                msg_count += (await db.messages.delete_many(
-                    {"conversation_id": {"$in": conv_ids}}
-                )).deleted_count
-            # 删除对话
-            conv_count += (await db.conversations.delete_many(
-                {"service_id": svc_id}
+        # 0. 预扫描：后续每一步都要用的 ID 集合
+        identity_ids: list[str] = [
+            doc["id"]
+            async for doc in db.identities.find({"account_id": account_id}, {"id": 1})
+        ]
+        # 注销路径已知身份 ID，容错并入（极端情况下 identities 文档缺 account_id）
+        if identity_id and identity_id not in identity_ids:
+            identity_ids.append(identity_id)
+
+        svc_docs: list[dict[str, Any]] = [
+            doc
+            async for doc in db.services.find(
+                {"account_id": account_id}, {"id": 1, "share_group_id": 1}
+            )
+        ]
+        svc_ids: list[str] = [doc["id"] for doc in svc_docs]
+        # 注入快照按 context_key 存（共享组优先于服务自身 id），不是 service.id
+        context_keys: list[str] = list(
+            {doc.get("share_group_id") or doc["id"] for doc in svc_docs}
+        )
+
+        # 会话同时按 service_id 与 identity_id 收，后者能捞出不挂在任何服务上的孤儿会话
+        conv_filters: list[dict[str, Any]] = []
+        if svc_ids:
+            conv_filters.append({"service_id": {"$in": svc_ids}})
+        if identity_ids:
+            conv_filters.append({"identity_id": {"$in": identity_ids}})
+        conv_ids: set[str] = set()
+        if conv_filters:
+            conv_ids = {
+                str(doc["_id"])
+                async for doc in db.conversations.find({"$or": conv_filters}, {"_id": 1})
+            }
+
+        media_ids: list[str] = []
+        if conv_ids:
+            msg_docs: list[dict[str, Any]] = [
+                doc
+                async for doc in db.messages.find(
+                    {"conversation_id": {"$in": list(conv_ids)}}, {"media_url": 1}
+                )
+            ]
+            media_ids = media_ids_from_message_docs(msg_docs)
+
+        cred_ids: list[str] = [
+            doc["id"]
+            async for doc in db.web_credentials.find(
+                {"identity_id": {"$in": identity_ids}}, {"id": 1}
+            )
+        ] if identity_ids else []
+        if credential_id and credential_id not in cred_ids:
+            cred_ids.append(credential_id)
+
+        # 1. 网页会话与凭据（最先删，见上面第二条不变量）
+        stats["web_sessions"] = (
+            await db.web_sessions.delete_many({"credential_id": {"$in": cred_ids}})
+        ).deleted_count if cred_ids else 0
+        stats["web_credentials"] = (
+            await db.web_credentials.delete_many({"id": {"$in": cred_ids}})
+        ).deleted_count if cred_ids else 0
+
+        # 2. 主动关怀记录 / 订单台账 / 安全事件（事件里带身份输入摘要，属个人数据）
+        stats["proactive_records"] = (
+            await db.proactive_records.delete_many(
+                {"identity_id": {"$in": identity_ids}}
+            )
+        ).deleted_count if identity_ids else 0
+        stats["orders"] = (
+            await db.orders.delete_many({"account_id": account_id})
+        ).deleted_count
+        stats["safety_events"] = (
+            await db.safety_events.delete_many({"account_id": account_id})
+        ).deleted_count
+
+        # 3. 媒体与注入快照：快照存着本轮 AI 回复与被注入的记忆正文，
+        #    不删就等于给注销过的账号留了一份完整副本
+        stats["media"] = await MediaRepository().delete_by_ids(media_ids)
+        snapshot_count = 0
+        if context_keys:
+            snapshot_count += (await db.injection_snapshots.delete_many(
+                {"service_id": {"$in": context_keys}}
             )).deleted_count
-        stats["messages"] = msg_count
-        stats["conversations"] = conv_count
+        if conv_ids:
+            snapshot_count += (await db.injection_snapshots.delete_many(
+                {"conversation_id": {"$in": list(conv_ids)}}
+            )).deleted_count
+        stats["injection_snapshots"] = snapshot_count
+
+        # 4. 消息与对话
+        stats["messages"] = (
+            await db.messages.delete_many({"conversation_id": {"$in": list(conv_ids)}})
+        ).deleted_count if conv_ids else 0
+        stats["conversations"] = (
+            await db.conversations.delete_many({"$or": conv_filters})
+        ).deleted_count if conv_filters else 0
 
         # 1b. 批量删除所有服务的长期记忆
         if svc_ids:

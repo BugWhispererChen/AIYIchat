@@ -1,10 +1,28 @@
+import re
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional, Sequence
 
 from bson import ObjectId
 
 from app.db.mongo import get_database
+
+# 消息 media_url 形如 /api/media/{ObjectId}；媒体文档不记归属（只有二进制与上传时间），
+# 删除只能由持有消息的一方反解 ID 后驱动，故反解口径收敛在本模块、各处共用一份。
+_MEDIA_URL_RE = re.compile(r"/api/media/([0-9a-fA-F]{24})")
+
+
+def media_ids_from_message_docs(messages: Sequence[Any]) -> list[str]:
+    """从消息（ORM 对象或投影后的 dict）的 media_url 反解出媒体文档 ID。
+
+    同时吃两种入参是因为账号级联删除走的是裸集合投影，而账号中心走的是
+    `MessageRepository.list_by_conversation_ids` 返回的 `MessageInDB`。
+    """
+    ids: list[str] = []
+    for item in messages:
+        url = item.get("media_url") if isinstance(item, dict) else getattr(item, "media_url", "")
+        ids.extend(_MEDIA_URL_RE.findall(url or ""))
+    return ids
 
 
 class MediaRepository:

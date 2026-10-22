@@ -118,18 +118,30 @@ class TestAccountRepository:
         run_with_db(body)
 
     def test_delete_cascade(self) -> None:
-        """级联删除应清理账号下服务、对话、消息、身份、Bot、额度与私有角色。"""
+        """级联删除要清光账号名下**全部**集合，与 C 端自助注销同口径。
+
+        这里刻意把 7 个周边集合一起灌进来：后台删账号此前只清主链路 8 个集合，
+        留下网页凭据/会话/订单/主动记录/安全事件/注入快照/媒体的孤儿文档。
+        """
 
         async def body():
+            from app.db.repositories.media_repo import MediaRepository
+
             db = mongo.get_database()
             repo = AccountRepository()
             acc = await repo.create(AccountCreate(name="级联账号"))
-            await db.services.insert_one({"id": "svc-1", "account_id": acc.id})
+            # 共享组：service 自身 id 是 svc-1，但上下文与快照挂在组 key 上
+            await db.services.insert_one({
+                "id": "svc-1", "account_id": acc.id, "share_group_id": "grp-1",
+            })
             await db.conversations.insert_one({"service_id": "svc-1"})
             conv = await db.conversations.find_one({"service_id": "svc-1"})
-            await db.messages.insert_one(
-                {"conversation_id": str(conv["_id"]), "content": "hi"}
-            )
+            media_id = await MediaRepository().create(b"png-bytes", "image/png")
+            await db.messages.insert_one({
+                "conversation_id": str(conv["_id"]),
+                "content": "hi",
+                "media_url": f"/api/media/{media_id}",
+            })
             await db.service_memories.insert_one({"service_id": "svc-1"})
             await db.identities.insert_one({"id": "u-1", "account_id": acc.id})
             await db.bot_configs.insert_one({"id": "b-1", "account_id": acc.id})
@@ -138,9 +150,28 @@ class TestAccountRepository:
                 {"slug": "p-1", "visibility": "private", "account_id": acc.id}
             )
 
+            # 周边集合：凭据 + 会话 + 订单 + 主动记录 + 安全事件
+            await db.web_credentials.insert_one({"id": "cred-1", "identity_id": "u-1"})
+            await db.web_sessions.insert_one({"id": "s-1", "credential_id": "cred-1"})
+            await db.orders.insert_one({"id": "o-1", "account_id": acc.id})
+            await db.proactive_records.insert_one({"id": "pr-1", "identity_id": "u-1"})
+            await db.safety_events.insert_one({"id": "se-1", "account_id": acc.id})
+            # 快照分别按 context_key（共享组）与 conversation_id 归属，两种都要删掉
+            await db.injection_snapshots.insert_one(
+                {"id": "sn-1", "service_id": "grp-1"}
+            )
+            await db.injection_snapshots.insert_one(
+                {"id": "sn-2", "conversation_id": str(conv["_id"])}
+            )
+            # 孤儿会话：只挂 identity_id、不挂在任何服务上，此前完全不在删除范围内
+            orphan = await db.conversations.insert_one({"identity_id": "u-1"})
+            await db.messages.insert_one({
+                "conversation_id": str(orphan.inserted_id), "content": "孤儿会话消息",
+            })
+
             stats = await repo.delete_cascade(acc.id)
-            assert stats["messages"] == 1
-            assert stats["conversations"] == 1
+            assert stats["messages"] == 2
+            assert stats["conversations"] == 2
             assert stats["service_memories"] == 1
             assert stats["services"] == 1
             assert stats["identities"] == 1
@@ -148,6 +179,67 @@ class TestAccountRepository:
             assert stats["quotas"] == 1
             assert stats["private_profiles"] == 1
             assert stats["account"] == 1
+            assert stats["web_sessions"] == 1
+            assert stats["web_credentials"] == 1
+            assert stats["orders"] == 1
+            assert stats["proactive_records"] == 1
+            assert stats["safety_events"] == 1
+            assert stats["injection_snapshots"] == 2
+            assert stats["media"] == 1
+
+            # 库里不许留任何一条属于该账号的文档
+            for coll in (
+                "services", "conversations", "messages", "service_memories",
+                "identities", "bot_configs", "account_quotas", "profiles",
+                "web_credentials", "web_sessions", "orders", "proactive_records",
+                "safety_events", "injection_snapshots",
+            ):
+                assert await db[coll].count_documents({}) == 0, coll
+            assert await MediaRepository().find_by_id(media_id) is None
+
+        run_with_db(body)
+
+    def test_delete_cascade_releases_username_before_failing(self, monkeypatch) -> None:
+        """级联中途失败时，凭据必须已经删掉——不能留下"数据半删却仍可登录"的账号。
+
+        这是注销顺序的核心安全约束（先锁账号再删数据）。失败点选在媒体删除上：
+        它排在凭据/会话/主动记录/订单/安全事件之后、消息与账号删除之前，
+        正好能把"已释放用户名"和"仍在库里等补删的数据"两侧都断言到。
+        """
+
+        async def body():
+            from app.db.repositories.media_repo import MediaRepository
+
+            db = mongo.get_database()
+            repo = AccountRepository()
+            acc = await repo.create(AccountCreate(name="半删账号"))
+            await db.identities.insert_one({"id": "u-9", "account_id": acc.id})
+            await db.web_credentials.insert_one({"id": "cred-9", "identity_id": "u-9"})
+            await db.web_sessions.insert_one({"credential_id": "cred-9"})
+            await db.services.insert_one({"id": "svc-9", "account_id": acc.id})
+            await db.conversations.insert_one({"service_id": "svc-9"})
+            conv = await db.conversations.find_one({"service_id": "svc-9"})
+            await db.messages.insert_one(
+                {"conversation_id": str(conv["_id"]), "content": "还在"}
+            )
+            await db.proactive_records.insert_one({"id": "pr-9", "identity_id": "u-9"})
+            await db.orders.insert_one({"id": "o-9", "account_id": acc.id})
+
+            async def _boom(self, media_ids):
+                raise RuntimeError("模拟级联中途失败")
+
+            monkeypatch.setattr(MediaRepository, "delete_by_ids", _boom)
+
+            with pytest.raises(RuntimeError):
+                await repo.delete_cascade(acc.id)
+
+            assert await db.web_credentials.count_documents({}) == 0
+            assert await db.web_sessions.count_documents({}) == 0
+            assert await db.proactive_records.count_documents({}) == 0
+            assert await db.orders.count_documents({}) == 0
+            # 失败点之后的数据保持原样，账号也仍在库里等管理员补删
+            assert await db.messages.count_documents({}) == 1
+            assert await repo.find_by_id(acc.id) is not None
 
         run_with_db(body)
 

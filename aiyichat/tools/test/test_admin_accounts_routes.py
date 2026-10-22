@@ -115,10 +115,29 @@ class TestAccountsCrud:
                     quota = await QuotaRepository().find_by_account(acc_id)
                     assert quota is not None and quota.text_quota.limit == 100
 
-                    # 级联删除
+                    # 级联删除：先灌入 7 个周边集合，后台删账号要与 C 端注销同口径
+                    db = mongo.get_database()
+                    await db.identities.insert_one({"id": "adm-u-1", "account_id": acc_id})
+                    await db.services.insert_one({"id": "adm-svc", "account_id": acc_id})
+                    await db.web_credentials.insert_one(
+                        {"id": "adm-cred", "identity_id": "adm-u-1"}
+                    )
+                    await db.web_sessions.insert_one({"credential_id": "adm-cred"})
+                    await db.orders.insert_one({"id": "adm-order", "account_id": acc_id})
+                    await db.proactive_records.insert_one({"identity_id": "adm-u-1"})
+                    await db.safety_events.insert_one({"account_id": acc_id})
+                    # 快照按 context_key 归属（无共享组时即服务自身 id）
+                    await db.injection_snapshots.insert_one({"service_id": "adm-svc"})
+
                     resp = await client.post(f"/admin/accounts/{acc_id}/delete")
                     assert resp.status_code == 303
                     assert await AccountRepository().find_by_id(acc_id) is None
+                    for coll in (
+                        "web_credentials", "web_sessions", "orders",
+                        "proactive_records", "safety_events", "injection_snapshots",
+                        "services", "identities",
+                    ):
+                        assert await db[coll].count_documents({}) == 0, coll
             finally:
                 await _teardown_app(app)
 

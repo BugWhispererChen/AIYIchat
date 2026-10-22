@@ -254,6 +254,12 @@ class _RuntimeSettings:
     proactive_enabled: bool = True  # 主动关怀总开关，异常时可一键停用
     proactive_max_retries: int = 2  # 单阶段失败重试上限，达到后不再触发（防额度耗尽）
     proactive_monthly_limit: int = 4  # 每身份每月主动消息上限（QQ 官方约束为4条）
+    proactive_daily_limit: int = 1  # 每身份每日上限（月限是平台硬约束，日限防"今天刚被无视又敲门"）
+
+    # 主动性退让：连续若干条主动消息无人回应就降档（沉默是显式决策，须在库里留 skipped 痕迹）
+    proactive_yield_enabled: bool = True  # 关闭即回退到"只看多久没活跃"的旧行为
+    proactive_unyield_threshold: int = 2  # 连续无回应达到此数 → 放弃当前阶段
+    proactive_yield_hard_limit: int = 4  # 连续无回应达到此数 → 本轮连事件跟进也停
 
     # 主动关怀免打扰时段（身份本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22
@@ -436,7 +442,9 @@ class _RuntimeSettings:
             "context_token_budget", "consistency_check_enabled",
             "proactive_event_enabled", "function_calling_enabled",
             "proactive_enabled", "proactive_max_retries",
-            "proactive_monthly_limit",
+            "proactive_monthly_limit", "proactive_daily_limit",
+            "proactive_yield_enabled", "proactive_unyield_threshold",
+            "proactive_yield_hard_limit",
             "proactive_quiet_hour_start", "proactive_quiet_hour_end",
             "proactive_share_enabled", "proactive_share_ratio",
             "proactive_share_news_ratio",
@@ -595,6 +603,10 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         proactive_enabled: bool = Field(default=True)
         proactive_max_retries: int = Field(default=2)
         proactive_monthly_limit: int = Field(default=4)
+        proactive_daily_limit: int = Field(default=1)
+        proactive_yield_enabled: bool = Field(default=True)
+        proactive_unyield_threshold: int = Field(default=2)
+        proactive_yield_hard_limit: int = Field(default=4)
         proactive_quiet_hour_start: int = Field(default=22)
         proactive_quiet_hour_end: int = Field(default=8)
         proactive_share_enabled: bool = Field(default=True)

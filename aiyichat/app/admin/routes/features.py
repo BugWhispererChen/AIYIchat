@@ -127,6 +127,15 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="llm",
     ),
     FeatureToggle(
+        key="proactive_yield_enabled",
+        label="主动关怀退让（被忽略就收着）",
+        desc="最近连续若干条主动消息都没得到对方回应时，主动放弃当前阶段的召回、"
+        "并在记录里留一条 skipped 痕迹（后台能看到「想发但忍住」）；对方一旦开口即自动恢复。"
+        "陪伴的诚意在于不打扰，不在于敲门次数。",
+        dependency="阈值与每日上限在「主动关怀」页配置；关闭即回退为只看「多久没活跃」",
+        cost="free",
+    ),
+    FeatureToggle(
         key="embedding_enabled",
         label="语义记忆检索",
         desc=(

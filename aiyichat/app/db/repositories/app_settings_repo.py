@@ -132,6 +132,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "reply_warmth_enabled",
         "empty_reply_fallback_enabled",
         "embedding_breaker_enabled",
+        "proactive_yield_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
     }
@@ -145,6 +146,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "summary_max_tokens", "summary_timeout_seconds",
         "chat_import_max_tokens", "chat_import_timeout_seconds",
         "proactive_max_retries", "proactive_monthly_limit",
+        "proactive_daily_limit", "proactive_unyield_threshold",
+        "proactive_yield_hard_limit",
         "proactive_quiet_hour_start", "proactive_quiet_hour_end",
         "chat_import_chunk_size",
         # 对话时间感知（单一时区源 + 标签阈值）

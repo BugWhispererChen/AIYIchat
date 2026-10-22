@@ -90,6 +90,40 @@ class TestFlatDictCoversDocument:
             assert getattr(doc, key) == value, f"{key} 扁平化后值不一致"
 
 
+class TestProactivePageKeysReachDb:
+    """「主动关怀」页直接 upsert 的数值参数也必须具备三处登记。
+
+    这些键不在 FEATURE_TOGGLES 也不在 _pacing_context 里，上面那组参数化用例覆盖不到；
+    而它们正是历史上"看着能调其实调不动"的那一类（漏登记 → 后台写入被静默丢弃）。
+    """
+
+    KEYS = (
+        "proactive_daily_limit",
+        "proactive_monthly_limit",
+        "proactive_max_retries",
+        "proactive_unyield_threshold",
+        "proactive_yield_hard_limit",
+    )
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_key_in_all_layers(self, key: str) -> None:
+        assert hasattr(settings, key), f"{key} 在 Settings 上不存在"
+        assert key in _document_fields(), f"{key} 未登记进 AppSettingsDocument"
+        assert key in set(_Settings._fields()), f"{key} 不在重载白名单"
+        assert key in AppSettingsDocument().to_flat_dict, f"{key} 不会被读回运行时"
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_default_matches(self, key: str) -> None:
+        doc_default = AppSettingsDocument.model_fields[key].default
+        code_default = getattr(_Settings, key)
+        assert type(doc_default) is type(code_default), (
+            f"{key} 默认值类型不一致：{type(doc_default)} vs {type(code_default)}"
+        )
+        assert doc_default == code_default, (
+            f"{key} 默认值漂移：DB 文档 {doc_default!r} vs 代码 {code_default!r}"
+        )
+
+
 class _FakeSettings:
     """后台表单读写用的最小配置替身：只带节奏相关键。"""
 

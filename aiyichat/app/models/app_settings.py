@@ -263,6 +263,12 @@ class AppSettingsDocument(BaseModel):
     proactive_enabled: bool = True  # 主动关怀总开关，异常时可一键停用
     proactive_max_retries: int = 2  # 单阶段失败重试上限，达到后不再触发（防额度耗尽）
     proactive_monthly_limit: int = 4  # 每身份每月主动消息上限（QQ 官方约束为4条）
+    proactive_daily_limit: int = 1  # 每身份每日上限（与月限并存，按对方本地日界）
+
+    # 主动性退让（C10）：主动消息连续无人回应即降档，并在库里留 skipped 痕迹（B22）
+    proactive_yield_enabled: bool = True
+    proactive_unyield_threshold: int = 2
+    proactive_yield_hard_limit: int = 4
 
     # 主动关怀免打扰时段（身份本地时区，跨午夜：start~24 与 0~end）
     proactive_quiet_hour_start: int = 22

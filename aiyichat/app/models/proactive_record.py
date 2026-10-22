@@ -22,12 +22,15 @@ class ProactiveRecord(BaseModel):
     platform_openid: str  # 平台身份标识（openid / wechat identity_id）
     platform: Literal["qq", "wechat"] = "qq"
     bot_id: str  # 发送所用的Bot ID
-    stage: int  # 发送阶段（1-4）
+    stage: int  # 发送阶段（1-4；0 表示事件驱动跟进）
     content: str = ""  # 发送的消息内容
     # 内容类型：关怀型（默认，旧记录兼容）/ 联网时事分享 / 创作趣事分享
     content_type: Literal["care", "news", "trivia"] = "care"
-    status: Literal["pending", "sent", "failed"] = "pending"
+    # skipped = "本想发但主动退让"：沉默是一次显式决策，必须在库里留痕，
+    # 否则后台只能看到"没发"，分不清是被规则挡住还是根本没想到要发
+    status: Literal["pending", "sent", "failed", "skipped"] = "pending"
     error_msg: str = ""  # 失败时的错误信息
+    skip_reason: str = ""  # 退让原因（如 yield:streak=2），仅 skipped 状态使用
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

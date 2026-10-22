@@ -108,6 +108,12 @@ async def proactive_page(
         "share_enabled": settings.proactive_share_enabled,
         "share_ratio": settings.proactive_share_ratio,
         "share_news_ratio": settings.proactive_share_news_ratio,
+        # 配额与主动性退让
+        "yield_enabled": settings.proactive_yield_enabled,
+        "daily_limit": settings.proactive_daily_limit,
+        "monthly_limit": settings.proactive_monthly_limit,
+        "unyield_threshold": settings.proactive_unyield_threshold,
+        "yield_hard_limit": settings.proactive_yield_hard_limit,
         "saved": request.query_params.get("saved") == "1",
         "deleted": deleted,
         "retain_days": _DEFAULT_RETAIN_DAYS,
@@ -143,6 +149,39 @@ async def save_quiet_hours(
     return RedirectResponse(url="/admin/proactive?saved=1", status_code=303)
 
 
+@proactive_router.post("/proactive/yield-settings")
+async def save_yield_settings(
+    yield_enabled: str = Form(""),
+    daily_limit: int = Form(1),
+    monthly_limit: int = Form(4),
+    unyield_threshold: int = Form(2),
+    yield_hard_limit: int = Form(4),
+    _s: str = Depends(require_admin),
+) -> RedirectResponse:
+    """保存配额与主动性退让阈值：落库 -> 热重载（调度器运行时读取，无需重启）。
+
+    日额填 0 表示不限；退让阈值下限为 1（填 0 会让"一条都没发"也被判成欠账，
+    于是永远发不出去）；停发阈值不得低于降档阈值，填反了就重排而不是丢掉一个。
+    """
+    from app.config import settings
+    from app.db.repositories.app_settings_repo import AppSettingsRepository
+
+    threshold = max(1, min(10, unyield_threshold))
+    hard = max(1, min(20, yield_hard_limit))
+    if hard < threshold:
+        threshold, hard = hard, threshold
+    await AppSettingsRepository().upsert({
+        "proactive_yield_enabled": yield_enabled == "on",
+        "proactive_daily_limit": max(0, min(31, daily_limit)),
+        "proactive_monthly_limit": max(1, min(31, monthly_limit)),
+        "proactive_unyield_threshold": threshold,
+        "proactive_yield_hard_limit": hard,
+    })
+    await settings.reload()
+
+    return RedirectResponse(url="/admin/proactive?saved=1", status_code=303)
+
+
 @proactive_router.post("/proactive/share-settings")
 async def save_share_settings(
     share_enabled: str = Form(""),
@@ -166,7 +205,7 @@ async def save_share_settings(
 
 def _redirect_with_deleted(count: int, status: str) -> RedirectResponse:
     """跳回列表页并携带删除条数与原状态筛选。"""
-    suffix = f"&status={status}" if status in ("sent", "failed", "pending") else ""
+    suffix = f"&status={status}" if status in ("sent", "failed", "pending", "skipped") else ""
     return RedirectResponse(
         url=f"/admin/proactive?deleted={count}{suffix}", status_code=303
     )

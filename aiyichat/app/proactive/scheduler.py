@@ -14,6 +14,7 @@ from typing import Literal, Optional
 
 from app.config import settings
 from app.conversation.time_context import resolve_tz
+from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.proactive_repo import ProactiveRecordRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
@@ -58,6 +59,7 @@ class ProactiveScheduler:
         self._service_repo = ServiceRepository()
         self._identity_repo = IdentityRepository()
         self._msg_repo = MessageRepository()
+        self._conversation_repo = ConversationRepository()
         self._memory_repo = ServiceMemoryRepository()
         # 平台管理器引用（启动时注入）
         self._qq_manager = None
@@ -160,6 +162,69 @@ class ProactiveScheduler:
                     service.id, e,
                 )
 
+    def _counterparty_tz(self, service, identity):
+        """对方本地时区（与免打扰共用同一条解析链，避免两处口径分叉）。"""
+        tz, _label = resolve_tz(
+            getattr(service, "timezone", "") or "",
+            getattr(identity, "timezone", "") or "",
+        )
+        return tz
+
+    async def _unanswered_streak(self, service, identity) -> int:
+        """最近连续多少条**已发出**的主动消息没得到对方回应（0 表示没有欠账）。
+
+        判据与对话引擎 `_recent_proactive_context` 同源：主动消息不写入 messages，
+        所以 sent_at 之后出现的 user 消息只可能是对方真的开口。
+        每轮从记录重算而不存状态字段——幂等、不漂移，对方一开口 last_active_at 前移，
+        欠账自然归零，无需任何"恢复"操作。
+        """
+        if not settings.proactive_yield_enabled:
+            return 0
+        cap = max(
+            settings.proactive_unyield_threshold,
+            settings.proactive_yield_hard_limit,
+        )
+        records = await self._proactive_repo.list_recent_sent(
+            identity_id=identity.id, bot_id=service.bot_id, limit=cap
+        )
+        if not records:
+            return 0
+        conversations = await self._conversation_repo.list_by_service(
+            service.context_key
+        )
+        conversation_ids = [c.id for c in conversations]
+        if not conversation_ids:
+            return 0
+        streak = 0
+        for record in records:  # 已按 sent_at 倒序，遇到第一条"被回应过"的就停
+            if record.sent_at is None:
+                break
+            replied = await self._msg_repo.exists_role_after(
+                conversation_ids, role="user",
+                since=self._ensure_aware(record.sent_at),
+            )
+            if replied:
+                break
+            streak += 1
+        return streak
+
+    async def _record_skipped(self, service, identity, stage: int, reason: str) -> None:
+        """把"想发但主动忍住"落成一条 skipped 记录（B22：沉默须是显式决策、可观测）。
+
+        直接以 skipped 建记录而不走 pending：pending 语义仍是"发送中"，
+        混用会让重试熔断和后台筛选读到脏状态。
+        """
+        record = ProactiveRecord(
+            identity_id=identity.id,
+            platform_openid=self._resolve_platform_id(identity, service.bot_id),
+            platform=identity.platform,
+            bot_id=service.bot_id,
+            stage=stage,
+            status="skipped",
+            skip_reason=reason,
+        )
+        await self._proactive_repo.create(record)
+
     async def _process_service(self, service, cutoff: datetime) -> None:
         """处理单个服务的主动消息逻辑。"""
         # 获取对方信息
@@ -204,6 +269,30 @@ class ProactiveScheduler:
                     identity.id, service.bot_id, since_sent,
                 )
                 return
+
+        # 当日配额：与月限并存（月限是平台硬约束，日限防"今天刚被无视、转天又敲门"）。
+        # 只 return 不写 skipped：日限是时间约束，不该把这一阶段永久记成"已尝试"。
+        counterparty_tz = self._counterparty_tz(service, identity)
+        daily_limit = settings.proactive_daily_limit
+        daily_sent = await self._proactive_repo.count_sent_today(
+            identity.id, service.bot_id, identity.platform, counterparty_tz
+        )
+        if daily_limit > 0 and daily_sent >= daily_limit:
+            logger.info(
+                "跳过：已达当日主动消息上限 identity_id=%s, sent=%d, limit=%d",
+                identity.id, daily_sent, daily_limit,
+            )
+            return
+
+        # 主动性退让（C10）：先弄清"上次敲门对方理没理"，再决定这一轮要不要继续敲。
+        # 放在事件驱动之前，让两条发送路径都受同一个欠账判定约束。
+        streak = await self._unanswered_streak(service, identity)
+        if streak >= settings.proactive_yield_hard_limit:
+            logger.info(
+                "退让停发：连续 %d 条主动消息无回应，本轮不再主动触达 identity_id=%s",
+                streak, identity.id,
+            )
+            return
 
         # 事件驱动跟进（优先于阶段策略），由开关控制
         if settings.proactive_event_enabled:
@@ -266,6 +355,18 @@ class ProactiveScheduler:
             logger.debug(
                 "跳过：无待发送阶段 identity_id=%s, attempted_stages=%s",
                 identity.id, attempted_stages,
+            )
+            return
+
+        # 降档：欠账达到阈值就放弃本阶段并留痕。skipped 会计入 get_attempted_stages，
+        # 因此这一阶段本轮不再重试；对方一旦开口，attempted 查询的 since 前移，
+        # 旧记录出窗、阶段序列重新开始——恢复不需要任何手工操作。
+        if streak >= settings.proactive_unyield_threshold:
+            reason = f"yield:streak={streak}"
+            await self._record_skipped(service, identity, stage.stage, reason)
+            logger.info(
+                "主动性退让：放弃阶段%d并记录 skipped identity_id=%s, reason=%s",
+                stage.stage, identity.id, reason,
             )
             return
 

@@ -1,6 +1,6 @@
 """主动消息发送记录的数据库访问层。"""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Optional
 
 from app.db.mongo import get_database
@@ -85,10 +85,12 @@ class ProactiveRecordRepository:
         max_retries: int = 2,
     ) -> list[int]:
         """
-        获取指定时间之后「已成功发送」或「失败次数达上限」的阶段列表。
+        获取指定时间之后「已成功发送 / 已主动退让 / 失败次数达上限」的阶段列表。
 
-        用于抑制无限重试：某阶段发送成功、或累计失败次数达到 max_retries 后，
-        不再重新触发（避免每轮扫描都重新调用 LLM 生成内容而耗尽额度）。
+        用于抑制重复触发：阶段一旦发出、被主动退让，或累计失败次数达到 max_retries，
+        本轮活跃周期内就不再重新触发（否则每轮扫描都要重新调用 LLM 生成内容而耗尽额度）。
+        skipped 必须计入，否则退让后每 15 分钟就重新判一次、重新"想发一次"，
+        后台会被同一条退让记录刷满。
 
         Args:
             max_retries: 单阶段允许的最大失败重试次数，达到后不再尝试。
@@ -98,7 +100,7 @@ class ProactiveRecordRepository:
                 "$match": {
                     "identity_id": identity_id,
                     "bot_id": bot_id,
-                    "status": {"$in": ["sent", "failed"]},
+                    "status": {"$in": ["sent", "failed", "skipped"]},
                     "created_at": {"$gte": since},
                 }
             },
@@ -108,6 +110,11 @@ class ProactiveRecordRepository:
                     "sent": {
                         "$sum": {
                             "$cond": [{"$eq": ["$status", "sent"]}, 1, 0]
+                        }
+                    },
+                    "skipped": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", "skipped"]}, 1, 0]
                         }
                     },
                     "failed": {
@@ -120,8 +127,12 @@ class ProactiveRecordRepository:
         ]
         stages: list[int] = []
         async for row in self._collection().aggregate(pipeline):
-            # 已成功、或失败次数达上限 → 视为已尝试，抑制后续重试
-            if row["sent"] > 0 or row["failed"] >= max_retries:
+            # 已成功、已退让、或失败次数达上限 → 视为已尝试，抑制后续重试
+            if (
+                row["sent"] > 0
+                or row.get("skipped", 0) > 0
+                or row["failed"] >= max_retries
+            ):
                 stages.append(int(row["_id"]))
         return stages
 
@@ -143,6 +154,51 @@ class ProactiveRecordRepository:
             }
         )
         return count
+
+    async def count_sent_today(
+        self,
+        identity_id: str,
+        bot_id: str,
+        platform: str,
+        tz: tzinfo | None = None,
+    ) -> int:
+        """统计对方**本地今天**已收到几条主动消息（日限用，不含退让记录）。
+
+        日界按对方时区而不是服务器时区：用 UTC 算"今天"，
+        给海外对方判成"昨天没发过"，日限就形同虚设。
+        """
+        now_local = datetime.now(tz or timezone.utc)
+        day_start = now_local.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).astimezone(timezone.utc)
+        return await self._collection().count_documents(
+            {
+                "identity_id": identity_id,
+                "bot_id": bot_id,
+                "platform": platform,
+                "status": "sent",
+                "sent_at": {"$gte": day_start},
+            }
+        )
+
+    async def list_recent_sent(
+        self, identity_id: str, bot_id: str, limit: int = 4
+    ) -> list[ProactiveRecordInDB]:
+        """按发送时间倒序取最近几条**已发出**的主动消息（退让判定要逐条看有没有被回应）。"""
+        cursor = (
+            self._collection()
+            .find(
+                {
+                    "identity_id": identity_id,
+                    "bot_id": bot_id,
+                    "status": "sent",
+                    "sent_at": {"$ne": None},
+                }
+            )
+            .sort("sent_at", -1)
+            .limit(limit)
+        )
+        return [ProactiveRecordInDB.from_mongo(doc) async for doc in cursor]
 
     async def get_latest_sent(
         self, identity_id: str, bot_id: str
@@ -240,7 +296,11 @@ class ProactiveRecordRepository:
         return await self._collection().count_documents(query)
 
     async def stats_summary(self, days: int = 7) -> dict:
-        """近 N 天主动消息统计：总数/成功/失败/成功率 + 按阶段分布。"""
+        """近 N 天主动消息统计：总数/成功/失败/退让/成功率 + 按阶段分布。
+
+        成功率分母只算"真的尝试发过"的（sent+failed）：退让是主动忍住，
+        把它计入失败会把"学会不打扰"错误地显示成系统在坏。
+        """
         since = datetime.now(timezone.utc) - timedelta(days=days)
         base = {"created_at": {"$gte": since}}
         total = await self._collection().count_documents(base)
@@ -250,7 +310,11 @@ class ProactiveRecordRepository:
         failed = await self._collection().count_documents(
             {**base, "status": "failed"}
         )
-        success_rate = round(sent / total * 100, 1) if total else 0.0
+        skipped = await self._collection().count_documents(
+            {**base, "status": "skipped"}
+        )
+        attempts = sent + failed
+        success_rate = round(sent / attempts * 100, 1) if attempts else 0.0
 
         # 按阶段分布（0=事件驱动，1-4=阶段策略）
         stage_pipeline = [
@@ -266,6 +330,7 @@ class ProactiveRecordRepository:
             "total": total,
             "sent": sent,
             "failed": failed,
+            "skipped": skipped,
             "success_rate": success_rate,
             "by_stage": by_stage,
         }

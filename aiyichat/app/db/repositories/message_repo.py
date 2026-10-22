@@ -72,6 +72,27 @@ class MessageRepository:
         messages.reverse()  # 按时间正序
         return messages
 
+    async def exists_role_after(
+        self, conversation_ids: list[str], role: str, since: datetime
+    ) -> bool:
+        """判断这些会话在 since 之后是否出现过指定角色的消息。
+
+        主动关怀不写入 messages，因此晚于主动消息 sent_at 的 user 消息
+        只可能是对方真的开口——这就是"这条主动消息有没有被回应"的判据
+        （与对话引擎 _recent_proactive_context 用的比较式同源）。
+        """
+        if not conversation_ids:
+            return False
+        found = await self._collection().find_one(
+            {
+                "conversation_id": {"$in": conversation_ids},
+                "role": role,
+                "created_at": {"$gt": since},
+            },
+            {"_id": 1},
+        )
+        return found is not None
+
     async def list_paginated(
         self, conversation_id: str, skip: int = 0, limit: int = 50
     ) -> list[MessageInDB]:

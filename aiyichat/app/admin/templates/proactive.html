@@ -13,6 +13,7 @@
     {{ kpi('近7天 · 发送总数', summary.total) }}
     {{ kpi('成功送达', summary.sent, '', '', 'ok') }}
     {{ kpi('发送失败', summary.failed, '', '', 'err') }}
+    {{ kpi('主动退让', summary.skipped) }}
     {{ kpi('成功率', summary.success_rate, '%') }}
 </div>
 
@@ -35,6 +36,44 @@
             <label class="ui-field">
                 <span class="ui-label">身份时区（UTC 偏移小时）</span>
                 <input class="ui-input" type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
+            </label>
+        </div>
+        <div class="ui-cluster">
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存设置</button>
+        </div>
+    </form>
+{% endcall %}
+
+<!-- 配额与主动性退让 -->
+{% call card('配额与主动性退让') %}
+    <p class="ui-note">
+        月上限是平台硬约束，每日上限按对方本地日界生效。退让阈值指"连续几条主动消息对方都没回应"：
+        达到阈值即放弃当前阶段并留一条 skipped 记录，达到停发阈值则连事件跟进也压住；
+        对方一旦重新开口，两者都自动恢复。保存即热生效。
+    </p>
+    <form method="post" action="/admin/proactive/yield-settings" class="ui-stack">
+        <div class="ui-grid ui-grid--3">
+            <label class="ui-field ui-field--end">
+                <span class="ui-cluster">
+                    <input type="checkbox" name="yield_enabled" {% if yield_enabled %}checked{% endif %}>
+                    <span>启用主动性退让</span>
+                </span>
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">每日上限（条）</span>
+                <input class="ui-input" type="number" name="daily_limit" min="0" max="31" value="{{ daily_limit }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">每月上限（条，QQ 官方约束为 4）</span>
+                <input class="ui-input" type="number" name="monthly_limit" min="1" max="31" value="{{ monthly_limit }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">连续无回应几条即降档</span>
+                <input class="ui-input" type="number" name="unyield_threshold" min="1" max="10" value="{{ unyield_threshold }}">
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">连续无回应几条即停发</span>
+                <input class="ui-input" type="number" name="yield_hard_limit" min="1" max="20" value="{{ yield_hard_limit }}">
             </label>
         </div>
         <div class="ui-cluster">
@@ -88,6 +127,7 @@
         <a href="/admin/proactive" class="ui-btn ui-btn--sm{% if not status %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">全部</a>
         <a href="/admin/proactive?status=sent" class="ui-btn ui-btn--sm{% if status == 'sent' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">已发送</a>
         <a href="/admin/proactive?status=failed" class="ui-btn ui-btn--sm{% if status == 'failed' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">失败</a>
+        <a href="/admin/proactive?status=skipped" class="ui-btn ui-btn--sm{% if status == 'skipped' %} ui-btn--primary{% else %} ui-btn--ghost{% endif %}">主动退让</a>
         <span class="ui-note u-fill">共 {{ total }} 条记录</span>
     </div>
 
@@ -149,6 +189,7 @@
                     <td>
                         {% if rec.status == 'sent' %}{{ badge('已发送', 'ok') }}
                         {% elif rec.status == 'failed' %}<span class="ui-badge ui-badge--line" title="{{ rec.error_msg }}">失败</span>
+                        {% elif rec.status == 'skipped' %}<span class="ui-badge ui-badge--line" title="{{ rec.skip_reason }}">主动退让</span>
                         {% else %}{{ badge('待发送', 'warn') }}{% endif %}
                     </td>
                     <td>

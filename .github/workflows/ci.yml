@@ -32,16 +32,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: 依赖版本取证
+        # mypy 结果会随 dashscope/kuzu 的存根变化，把实际装到的版本打出来，
+        # 日后有人松开上界能立刻在 CI 日志里看出口径变了
+        run: pip show dashscope kuzu | grep -E "^(Name|Version):"
+
       - name: ruff check
         run: ruff check app tools
 
       - name: mypy
-        # 首期非阻塞：本地 venv 里 dashscope/kuzu 无类型存根、被 ignore_missing_imports 遮蔽，
-        # CI 全新安装拿到的是带 py.typed 的较新版本，于是暴露 30 处真实类型错误
-        # （tts/asr/imagegen 调 dashscope、entity_graph 调 kuzu 的 dict 展开与 union 属性）。
-        # 修法是单独一轮：要么给这四个文件补窄化与显式 kwargs，要么钉住依赖版本让两端口径一致。
-        # ruff 与 pytest 是硬门禁；mypy 转绿后请删掉本行让它也变成阻塞。
-        continue-on-error: true
+        # 硬门禁。历史上这一步曾设 continue-on-error：本地 venv 的 dashscope/kuzu 没有类型
+        # 存根、被 ignore_missing_imports 遮蔽而全绿，CI 全新安装拿到带 py.typed 的版本后
+        # 暴露 30 处真错。现两端口径已由 requirements 上界锁死、真错全部补齐。
         run: mypy app
 
       - name: pytest

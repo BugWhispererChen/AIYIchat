@@ -281,3 +281,41 @@ class TestDashboardEmbeddingStatus:
                 await _teardown_app(app)
 
         asyncio.run(_flow())
+
+    def test_degraded_card_shows_error_code(self) -> None:
+        """降级告警条要单独显示错误码。
+
+        `last_error` 是整串文本且按 120 字符截断展示，长报错恰好会把最关键的错误码挤出
+        可视区，而"免费额度耗尽"与"限流"这类问题只能靠错误码区分。
+        """
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from app.services.embedding_service import EmbeddingService
+
+        status = {
+            "enabled": True,
+            "fail_count": 7,
+            "last_error": "Error code: 400 - " + "x" * 400,
+            "last_error_code": "400:AllocationQuota.FreeTierOnly",
+            "last_error_at": datetime(2026, 10, 22, tzinfo=timezone.utc),
+            "degraded": True,
+            "breaker_state": "open",
+            "recovery_in_seconds": 42,
+        }
+
+        async def _flow() -> None:
+            app = await _setup_app()
+            try:
+                with patch.object(EmbeddingService, "status", return_value=status):
+                    async with _client(app) as client:
+                        resp = await client.get("/admin/")
+                        assert resp.status_code == 200
+                        assert "400:AllocationQuota.FreeTierOnly" in resp.text
+                        assert "42" in resp.text  # 冷却剩余秒数
+                        # 降级分支与"未启用"分支互斥，不能同时出现
+                        assert "语义检索未启用" not in resp.text
+            finally:
+                await _teardown_app(app)
+
+        asyncio.run(_flow())

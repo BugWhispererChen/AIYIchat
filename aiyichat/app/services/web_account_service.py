@@ -7,6 +7,7 @@
   多个身份共用一份上下文，任何"清空"动作都必须先确认组内没有别人的服务；
 - 注销按"先锁账号、再删数据"的顺序执行：凭据一旦删除，用户名立即释放且旧令牌全部失效，
   后续级联即便失败也不会让用户继续以半删状态对话，失败详情进日志供管理员补删。
+  该顺序现在由 `AccountRepository.delete_cascade` 内部保证，注销与后台删账号共用同一份实现。
 """
 
 import logging
@@ -21,19 +22,19 @@ from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.injection_snapshot_repo import InjectionSnapshotRepository
-from app.db.repositories.media_repo import MediaRepository
+from app.db.repositories.media_repo import (
+    MediaRepository,
+    media_ids_from_message_docs,
+)
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.order_repo import OrderRepository
 from app.db.repositories.profile_repo import ProfileRepository
-from app.db.repositories.proactive_repo import ProactiveRecordRepository
 from app.db.repositories.quota_repo import QuotaRepository
-from app.db.repositories.safety_event_repo import SafetyEventRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.identity import IdentityInDB, IdentityUpdate
-from app.models.message import MessageInDB
 from app.models.order import OrderInDB
 from app.models.profile import PromptProfileInDB
 from app.models.quota import AccountQuotaInDB, QuotaEntry
@@ -53,8 +54,6 @@ _MAX_EXPORT_MESSAGES = 20000
 # 记忆事实展示上限：账号中心只做"看得见 + 可清空"，不做记忆编辑器
 _MAX_VISIBLE_FACTS = 200
 
-# 消息 media_url 形如 /api/media/{ObjectId}；媒体文档不记归属，只能反解 ID 后随对话删除
-_MEDIA_URL_RE = re.compile(r"/api/media/([0-9a-fA-F]{24})")
 # 控制字符（不含常规换行/制表）会破坏列表渲染与 prompt 结构
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -281,14 +280,6 @@ async def _group_is_exclusive(service: ServiceInDB, identity_id: str) -> bool:
     return all(peer.identity_id == identity_id for peer in peers)
 
 
-def _media_ids_of(messages: list[MessageInDB]) -> list[str]:
-    """从消息的 media_url 反解媒体文档 ID（媒体集合不记归属，只能靠引用方定位）。"""
-    ids: list[str] = []
-    for msg in messages:
-        ids.extend(_MEDIA_URL_RE.findall(msg.media_url or ""))
-    return ids
-
-
 async def _owned_services(identity: IdentityInDB) -> list[ServiceInDB]:
     """取当前身份名下的伙伴（对话服务），按创建时间正序。"""
     services = await ServiceRepository().list_by_identity(identity.id)
@@ -390,7 +381,7 @@ async def clear_conversations(identity: IdentityInDB) -> dict[str, int]:
     if not conv_ids:
         return {"conversations": 0, "messages": 0, "snapshots": 0, "media": 0}
     messages = await MessageRepository().list_by_conversation_ids(conv_ids)
-    media_ids = _media_ids_of(messages)
+    media_ids = media_ids_from_message_docs(messages)
     msg_deleted = await MessageRepository().delete_by_conversation_ids(conv_ids)
     snap_deleted = await InjectionSnapshotRepository().delete_by_conversation_ids(conv_ids)
     conv_deleted = await conv_repo.delete_by_ids(conv_ids)
@@ -583,29 +574,16 @@ async def delete_account(
             409,
         )
 
-    conv_ids = await ConversationRepository().list_ids_by_identity(identity.id)
-    media_ids = _media_ids_of(
-        await MessageRepository().list_by_conversation_ids(conv_ids)
-    )
-    context_keys = list({svc.context_key for svc in services})
-
-    stats: dict[str, Any] = {}
+    stats: dict[str, int] = {}
     try:
-        # 先删会话与凭据：用户名当场释放，旧令牌立即失效，不给半删状态留可登录窗口
-        stats["sessions"] = await WebSessionRepository().delete_by_credential(credential.id)
-        stats["credential"] = int(
-            await WebCredentialRepository().delete_by_id(credential.id)
+        # 单一口径：预扫描、凭据先删（用户名当场释放、旧令牌立即失效）、7 个周边集合
+        # 与主链路一并由 delete_cascade 内部保证。注销路径不再自己重写一遍删除序列——
+        # 正是"两份实现各删各的"让后台删账号漏掉了那些集合。
+        stats.update(
+            await AccountRepository().delete_cascade(
+                account_id, credential_id=credential.id, identity_id=identity.id
+            )
         )
-        stats["proactive_records"] = await ProactiveRecordRepository().delete_by_identity(
-            identity.id
-        )
-        stats["safety_events"] = await SafetyEventRepository().delete_by_account(account_id)
-        stats["orders"] = await OrderRepository().delete_by_account(account_id)
-        stats["media"] = await MediaRepository().delete_by_ids(media_ids)
-        stats["snapshots"] = await InjectionSnapshotRepository().delete_by_service_ids(
-            context_keys
-        ) + await InjectionSnapshotRepository().delete_by_conversation_ids(conv_ids)
-        stats["cascade"] = await AccountRepository().delete_cascade(account_id)
     except Exception as exc:  # noqa: BLE001 - 注销失败必须回 500 并留完整现场
         logger.exception(
             "账号注销中途失败，需管理员按 account_id 补删: username=%s account_id=%s stats=%s",

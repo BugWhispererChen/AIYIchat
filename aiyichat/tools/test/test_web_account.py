@@ -820,8 +820,46 @@ class TestDeleteAccount:
 
         _run(flow())
 
+    def test_credential_released_even_when_cascade_fails(self, monkeypatch) -> None:
+        """级联中途失败：接口回 500，但凭据已删、用户名当场释放。
 
-class TestRateLimits:
+        钉的是注销顺序的安全不变量——先锁账号再删数据。若反过来（先级联再删凭据），
+        级联失败会留下一个"数据删了一半却仍能登录"的账号，用户看不到也修不了。
+        """
+        async def flow() -> None:
+            from app.db.repositories.media_repo import MediaRepository
+
+            async def _boom(self, media_ids):
+                raise RuntimeError("模拟级联中途失败")
+
+            monkeypatch.setattr(MediaRepository, "delete_by_ids", _boom)
+
+            app = await _setup_app("acct_del_fail")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "rusty")
+                    await _seed_full_data("rusty")
+
+                    resp = await c.post(
+                        "/api/web/account/delete", headers=_h(token),
+                        json={"current_password": PASSWORD, "username_confirm": "RUSTY"},
+                    )
+                    assert resp.status_code == 500, resp.text
+                    assert resp.json()["code"] == "delete_failed"
+                    # 凭据已删：旧令牌失效、用户名可复用
+                    assert await WebCredentialRepository().find_by_username("rusty") is None
+                    again = await c.post(
+                        "/api/auth/register",
+                        json={"username": "rusty", "password": PASSWORD,
+                              "terms_accepted": True, "privacy_accepted": True,
+                              "age_confirmed": True},
+                    )
+                    assert again.status_code == 201, again.text
+            finally:
+                await _teardown()
+
+        _run(flow())
+
     """写操作限流。"""
 
     def test_password_and_delete_are_throttled(self) -> None:

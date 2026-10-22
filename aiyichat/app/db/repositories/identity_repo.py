@@ -161,7 +161,11 @@ class IdentityRepository:
             {"id": identity_id},
             {"$set": {"last_active_at": datetime.now(timezone.utc)}},
         )
-        return result.modified_count > 0
+        # 用 matched 而非 modified：BSON datetime 只到毫秒，同一毫秒内的重复刷新
+        # 会让 modified_count 为 0，于是"刷新成功与否"取决于代码跑在多快的时钟上
+        # （CI 与本地就曾因此一端绿一端红）。本方法的语义是"这个身份存在且已被打上
+        # 新的活跃时间"，与值有没有真的变化无关；三处调用方也都只看是否抛异常。
+        return result.matched_count > 0
 
     async def bind_platform_id(
         self,

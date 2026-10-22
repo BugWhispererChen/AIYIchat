@@ -12,6 +12,7 @@ import asyncio
 import base64
 import logging
 from http import HTTPStatus
+from typing import Any
 
 import httpx
 
@@ -114,7 +115,9 @@ class ImageGenService:
 
             # 千问图像模型使用 MultiModalConversation 接口
             if cfg.model.startswith("qwen-image"):
-                rsp = MultiModalConversation.call(
+                # DashScope 响应对象是第三方类型（status_code/output/message 的联合形态），
+                # 标注 Any 只覆盖这一条 SDK 边界；同函数后半段的 ImageSynthesis 复用该变量
+                rsp: Any = MultiModalConversation.call(
                     api_key=cfg.api_key,
                     model=cfg.model,
                     messages=[{
@@ -244,7 +247,7 @@ class ImageGenService:
 
             dashscope.api_key = cfg.api_key
 
-            rsp = MultiModalConversation.call(
+            rsp: Any = MultiModalConversation.call(
                 api_key=cfg.api_key,
                 model=cfg.model,
                 messages=[{

@@ -10,7 +10,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.config import settings
 
@@ -25,7 +25,10 @@ try:
 
     _KUZU_AVAILABLE = True
 except ImportError:
-    kuzu = None  # type: ignore[assignment]
+    # 装不上时把模块名降为 None。标注 Any 是因为 kuzu 新版本自带类型存根后，
+    # "模块名 = None" 会被判成类型不兼容；下面 `_ensure_kuzu_conn` 里的 `kuzu is None`
+    # 判断与降级逻辑一字未动。
+    kuzu: Any = None  # type: ignore[no-redef]
     _KUZU_AVAILABLE = False
     logger.info("kuzu 未安装，实体关系图服务将使用 MongoDB 降级模式")
 
@@ -108,6 +111,15 @@ class EntityGraphService:
         if conn is None:
             return
         # MERGE 实体节点（存在则更新属性）
+        # 参数字典显式标注：值类型异构（str/list/float/int），Cypher 参数按 Any 收
+        params: dict[str, Any] = {
+            "service_id": service_id,
+            "name": entity.name,
+            "entity_type": entity.entity_type,
+            "aliases": entity.aliases,
+            "sentiment": entity.sentiment,
+            "mention_count": entity.mention_count,
+        }
         conn.execute(
             """
             MERGE (e:Entity {service_id: $service_id, name: $name})
@@ -116,14 +128,7 @@ class EntityGraphService:
                 e.sentiment = $sentiment,
                 e.mention_count = $mention_count
             """,
-            {
-                "service_id": service_id,
-                "name": entity.name,
-                "entity_type": entity.entity_type,
-                "aliases": entity.aliases,
-                "sentiment": entity.sentiment,
-                "mention_count": entity.mention_count,
-            },
+            params,
         )
         # 同步关系边
         for rel in entity.relations:
@@ -139,13 +144,21 @@ class EntityGraphService:
         if conn is None:
             return
         # 确保目标实体存在（可能尚未同步）
+        ensure_params: dict[str, Any] = {"service_id": service_id, "name": dst_name}
         conn.execute(
             """
             MERGE (e:Entity {service_id: $service_id, name: $name})
             """,
-            {"service_id": service_id, "name": dst_name},
+            ensure_params,
         )
         # MERGE 关系边
+        edge_params: dict[str, Any] = {
+            "service_id": service_id,
+            "src_name": src_name,
+            "dst_name": dst_name,
+            "relation": relation,
+            "updated_at": datetime.now(timezone.utc),
+        }
         conn.execute(
             """
             MATCH (a:Entity {service_id: $service_id, name: $src_name}),
@@ -153,13 +166,7 @@ class EntityGraphService:
             MERGE (a)-[r:Relation {relation: $relation}]->(b)
             SET r.valid = true, r.updated_at = $updated_at
             """,
-            {
-                "service_id": service_id,
-                "src_name": src_name,
-                "dst_name": dst_name,
-                "relation": relation,
-                "updated_at": datetime.now(timezone.utc),
-            },
+            edge_params,
         )
 
     async def query_related(
@@ -188,7 +195,12 @@ class EntityGraphService:
         if conn is None:
             return []
         # 可变长度路径查询：1 到 max_depth 跳
-        result = conn.execute(
+        query_params: dict[str, Any] = {"service_id": service_id, "name": entity_name}
+        # kuzu 存根把 execute 返回值声明成 `QueryResult | list[QueryResult]`（批量语句才返回列表），
+        # 本文件只发单条查询、按 QueryResult 用 has_next/get_next。标注 Any 是为零行为改动地
+        # 跨过这个 union：不许在此处加 isinstance 分支，否则会把"异常→上层降级 MongoDB"
+        # 的既有兜底路径改成"静默返回空结果"。
+        result: Any = conn.execute(
             f"""
             MATCH path = (a:Entity {{service_id: $service_id, name: $name}})
                          -[r:Relation*1..{max_depth}]->(b:Entity)
@@ -198,7 +210,7 @@ class EntityGraphService:
                    length(path) AS depth
             ORDER BY depth
             """,
-            {"service_id": service_id, "name": entity_name},
+            query_params,
         )
         paths: list[dict] = []
         while result.has_next():

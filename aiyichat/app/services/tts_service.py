@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 import httpx
 
@@ -125,7 +126,9 @@ class TTSService:
         dashscope.api_key = cfg.api_key
 
         # 表现力参数仅在非默认值时传入，避免覆盖 SDK/服务端默认行为
-        kwargs: dict[str, float | str | None] = {}
+        # 标注为 dict[str, Any]：SDK 的形参是具体标量类型，窄成 float|str|None 反而让
+        # `**kwargs` 展开处报类型不匹配；这里刻意不做取值域收窄，保持原有条件分支
+        kwargs: dict[str, Any] = {}
         if instruction:
             kwargs["instruction"] = instruction
         if pitch_rate != 1.0:
@@ -136,7 +139,9 @@ class TTSService:
             **kwargs,
         )
         try:
-            audio_data = synthesizer.call(text)
+            # SDK 返回类型按其自身定义（str/bytes/None 的联合），此处按已验证的字节消费；
+            # 标注 Any 只覆盖这一条 SDK 边界，不外溢到业务签名
+            audio_data: Any = synthesizer.call(text)
         except AttributeError:
             # 防御 websocket-client 1.9.x 兼容 bug：连接已被服务端关闭时
             # SDK 清理阶段报 'NoneType' 无 close_frame，但音频实际已收全，
@@ -172,7 +177,7 @@ class TTSService:
         """
         import dashscope
 
-        call_kwargs: dict[str, str] = {
+        call_kwargs: dict[str, Any] = {
             "model": cfg.model,
             "api_key": cfg.api_key,
             "text": text,
@@ -180,7 +185,7 @@ class TTSService:
         }
         if instruction:
             call_kwargs["instructions"] = instruction
-        resp = dashscope.MultiModalConversation.call(**call_kwargs)
+        resp: Any = dashscope.MultiModalConversation.call(**call_kwargs)
         status = getattr(resp, "status_code", 0)
         if status != 200:
             code = getattr(resp, "code", "")

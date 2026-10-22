@@ -5,6 +5,7 @@ import logging
 import tempfile
 from http import HTTPStatus
 from pathlib import Path
+from typing import Any
 
 from app.llm.model_registry import resolve_model_config
 
@@ -55,14 +56,20 @@ class ASRService:
             # 避免声明采样率与真实音频不一致导致识别失真
             sr = _wav_sample_rate(audio_data) if fmt == "wav" else 16000
             try:
-                recognition = Recognition(
+                # SDK 存根把 callback 声明成必填的 RecognitionCallback，而本项目走同步
+                # `call()` 不订阅流式回调，传 None 是既有行为。用 Any 变量承载这个
+                # "无回调"，既不改调用方式也不改运行行为。
+                no_callback: Any = None
+                # SDK 对象的属性与回调按其自身存根定义（本项目只读 status_code/句子列表），
+                # 标注 Any 限于这条第三方边界，下面的 getattr/try 降级链一字未动
+                recognition: Any = Recognition(
                     model=cfg.model,
                     format=fmt,
                     sample_rate=sr,
                     language_hints=["zh", "en"],
-                    callback=None,
+                    callback=no_callback,
                 )
-                result = recognition.call(tmp_path)
+                result: Any = recognition.call(tmp_path)
                 if result.status_code == HTTPStatus.OK:
                     sentences = result.get_sentence()
                     if sentences:

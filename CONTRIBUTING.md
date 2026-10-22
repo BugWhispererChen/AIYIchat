@@ -33,6 +33,11 @@ cp aiyichat/.env.example aiyichat/.env
 `.github/workflows/ci.yml` 在 push 与 PR 到 `developing` 时跑 ruff → mypy → pytest
 （三步都不需要密钥或外部服务，测试用 mongomock 内存库）。
 
+其中 **mypy 首期是非阻塞的**：本地 venv 的 `dashscope` / `kuzu` 没有类型存根、被
+`ignore_missing_imports` 遮蔽，而 CI 全新安装拿到带 `py.typed` 的较新版本，
+会暴露出 tts/asr/imagegen/entity_graph 四处调用第三方 SDK 的真实类型错误（约 30 条）。
+单独一轮把它们修掉或把依赖版本钉死后，应删掉 `continue-on-error` 让 mypy 变成硬门禁。
+
 `tools/eval/run_eval.py --gate` 是**评测门禁**而非 CI 步骤：它要调用真实模型、会产生费用，
 在测试服务器上手工执行。
 

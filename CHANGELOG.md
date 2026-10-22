@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### 变更
+- CI 的 mypy 步骤首期设为**非阻塞**：本地 venv 的 `dashscope`/`kuzu` 没有类型存根、被
+  `ignore_missing_imports` 遮蔽而全绿，CI 全新安装拿到带 `py.typed` 的较新版本后暴露出
+  tts/asr/imagegen/entity_graph 四个文件共 30 处真实类型错误。这正是 CI 第一次跑就抓到的东西，
+  记为待修债务：单独一轮补齐窄化或钉住依赖版本，之后删掉 `continue-on-error` 转为硬门禁。
+
 ## [2026-10-22] - 2026-10-22
 
 > 本版归档了自 2026-09-04 以来的全部变更（转为完全开源、拟人真实感主线、

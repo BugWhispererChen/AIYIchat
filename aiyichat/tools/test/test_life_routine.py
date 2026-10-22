@@ -110,7 +110,10 @@ class TestInjectionPlacement:
         profile = _profile(
             _routine(ProfileLifeSegment(start_hour=8, end_hour=18, activity="上班"))
         )
-        with patch.object(settings, "profile_routine_enabled", True):
+        # 必须冻钟：_render_routine_hint 读的是真实墙钟，不冻则该用例只在
+        # UTC 08:00-18:00 之间通过（CI 跑在 18:07 即整批红，本地白天永远绿）
+        with patch.object(settings, "profile_routine_enabled", True), \
+             frozen_clock(MONDAY_1420, modules=("app.llm.prompt_assembler",)):
             messages = self._assemble(profile)
         assert messages[0]["role"] == "system"
         assert "【你的作息】" not in messages[0]["content"]

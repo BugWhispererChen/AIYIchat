@@ -94,14 +94,20 @@ def build_evidence_block(facts: list[MemoryFact]) -> tuple[str, dict[int, str]]:
 
     now = datetime.now(timezone.utc)
     usable = [
-        f for f in facts
+        (pos, f)
+        for pos, f in enumerate(facts)
         if not is_fact_invalidated(f, now) and not is_punctually_stale(f, now)
     ]
-    usable.sort(key=lambda f: f.last_referenced_at, reverse=True)
+    # 选取按"最近被引用"，但编号按文档原序输出：
+    # 若直接用选取顺序编号，同一批事实在不同环境下会排出不同的 1..n
+    # （Linux 时钟精度高，同批 created_at 互不相等；Windows 粗，全相等）——
+    # 编号漂移会让模型的 evidence 引用与 fid 映射在跨环境测试里对不上。
+    usable.sort(key=lambda pf: pf[1].last_referenced_at, reverse=True)
     usable = usable[: settings.reflection_max_evidence]
+    usable.sort(key=lambda pf: pf[0])
     lines: list[str] = []
     index_to_fid: dict[int, str] = {}
-    for i, fact in enumerate(usable, start=1):
+    for i, (_, fact) in enumerate(usable, start=1):
         lines.append(f"{i}. {fact.content}")
         index_to_fid[i] = fact.fid
     return "\n".join(lines), index_to_fid

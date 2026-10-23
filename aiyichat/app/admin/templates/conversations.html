@@ -46,7 +46,7 @@
                 <tr>
                     <td><code class="u-fs-80 text-ellipsis" title="{{ info.conv.id }}">{{ info.conv.id[:8] }}...</code></td>
                     <td>{{ info.account.name if info.account else '-' }}</td>
-                    <td>{{ info.identity.nickname or info.identity.name or info.conv.identity_id[:8] if info.user else info.conv.identity_id[:8] }}</td>
+                    <td>{{ info.identity.nickname or info.identity.name or info.conv.identity_id[:8] if info.identity else info.conv.identity_id[:8] }}</td>
                     <td>{{ info.profile.name if info.profile else '-' }}</td>
                     <td class="num">{{ info.conv.message_count }}</td>
                     <td>

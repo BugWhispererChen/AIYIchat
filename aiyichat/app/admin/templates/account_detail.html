@@ -452,7 +452,7 @@
                                 {% endif %}
                             </div>
                             <div class="ui-cluster">
-                                <span class="ui-badge ui-badge--line">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.user else '-' }}</span>
+                                <span class="ui-badge ui-badge--line">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.identity else '-' }}</span>
                                 <span class="ui-badge ui-badge--line">Bot：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
                                 <span class="ui-badge ui-badge--line">角色：{{ sinfo.profile.name if sinfo.profile else '-' }}</span>
                                 {% if sinfo.service.share_group_id %}

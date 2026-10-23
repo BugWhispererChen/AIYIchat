@@ -345,13 +345,17 @@ class TestAdminConversations:
             try:
                 conv_repo = ConversationRepository()
                 msg_repo = MessageRepository()
-                identity = await IdentityRepository().create(IdentityCreate(account_id="acc-1"))
+                identity = await IdentityRepository().create(
+                    IdentityCreate(account_id="acc-1", nickname="小明")
+                )
                 conv = await conv_repo.create(identity.id, "prof-x", "svc-1", title="谈心")
                 msg = await msg_repo.create(conv.id, "user", "你好")
 
                 async with _client(app) as client:
                     resp = await client.get("/admin/conversations")
                     assert resp.status_code == 200
+                    # 身份列渲染昵称（回归：模板误用改名前的 info.user 会退化成 ID 前缀）
+                    assert "小明" in resp.text
                     resp = await client.get(
                         "/admin/conversations", params={"q": "谈心"}
                     )

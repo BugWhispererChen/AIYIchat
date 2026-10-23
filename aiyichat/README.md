@@ -87,14 +87,18 @@ chmod +x deploy.sh
 | **人际关系网络** |||
 | `MEMORY_GRAPH_ENABLED` | Kuzu 图数据库增强（未启用时降级 MongoDB 一跳查询） | `false` |
 | `MEMORY_GRAPH_PATH` | Kuzu 数据文件路径（需挂卷持久化） | `./data/entity_graph` |
+| **记忆治理与反思层**（默认关闭，可在后台「功能实验室」热调） |||
+| `MEMORY_HYGIENE_ENABLED` | 写入时指称归一、点状时效事实标记与过期剔除 | `false` |
+| `MEMORY_REFLECTION_ENABLED` | 从多条记忆事实归纳可溯源的高阶洞见 | `false` |
 | **C 端网页身份**（默认全部关闭，QQ / 微信链路不受影响） |||
 | `WEB_AUTH_ENABLED` | 网页登录总开关；关闭时 `/api/auth/*` 与 `/web/*` 一律 403 | `false` |
 | `WEB_REGISTER_ENABLED` | 开放自助注册（需先打开总开关） | `false` |
 | `WEB_REGISTER_REQUIRE_REVIEW` | 注册需管理员审核后才可登录 | `true` |
 | `WEB_CAPTCHA_ENABLED` | 注册/登录算式图形验证码 | `true` |
-| `WEB_BOT_ID` | 载体 Bot id（须为 `platform=web` 的系统 Bot；留空则注册被拒并回滚） | 空 |
+| `WEB_BOT_ID` | 系统载体渠道 id（须为 `platform=web`）；留空时新账号自动创建账号级网页渠道 | 空 |
 | `WEB_DEFAULT_PROFILE_SLUG` | 新会话默认角色 slug（留空自动取任一在用公共角色） | 空 |
 | `WEB_FREE_QUOTA_TEMPLATE_ID` | 注册赠送额度模板 id（留空/不存在回落内置体验额度） | 空 |
+| `WEB_MAX_SERVICES` | 账号的对话服务数量上限（渠道与服务共用） | `3` |
 | `WEB_SESSION_HOURS` | 会话有效期（小时，滑动过期） | `24` |
 | `WEB_SESSION_MAX_CONCURRENT` | 同一身份并发有效会话上限（超出踢最旧） | `3` |
 | `WEB_LOGIN_MAX_FAIL` / `WEB_LOGIN_LOCKOUT_MINUTES` | 连续登录失败上限 / 锁定时长（分钟） | `5` / `15` |
@@ -108,13 +112,13 @@ chmod +x deploy.sh
 > 模型名称、接口地址、API Key 分组等 AI 模型配置**不在 `.env` 里维护**：首次启动时按
 > `DASHSCOPE_API_KEY` 自动生成 5 组默认配置（文本/文生图/语音生成/向量/图片修改），
 > 之后在管理后台「AI 模型配置」页增删改，保存即热生效。
-> QQ / 微信 Bot 凭据同样存于数据库，在后台 Bot 管理页录入。
+> QQ / 微信渠道凭据同样存于数据库，在后台「账号详情 → 渠道管理」中扫码绑定。
 
 ## 管理后台访问指南
 
 1. 访问 `https://localhost/admin/login`（自定义了 `HTTPS_PORT` 时带上对应端口）
 2. 使用 `.env` 中配置的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录
-3. 登录后即可使用全部功能（角色、账号、Bot、对话服务、多媒体配置等）
+3. 登录后即可使用全部功能（角色、账号与渠道、对话服务、多媒体配置等）
 
 ## 目录结构
 

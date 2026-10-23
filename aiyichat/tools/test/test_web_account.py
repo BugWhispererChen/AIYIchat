@@ -228,10 +228,12 @@ class _RecordingEngine:
         nickname: str = "",
         content_type: str = "text",
         service_id: str = "",
+        identity_id: str = "",
     ) -> AsyncIterator[str]:
         _RecordingEngine.calls.append(
             {"platform": platform, "platform_id": platform_id,
-             "nickname": nickname, "service_id": service_id}
+             "nickname": nickname, "service_id": service_id,
+             "identity_id": identity_id}
         )
         yield "ok"
 

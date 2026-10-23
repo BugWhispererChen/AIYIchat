@@ -27,6 +27,7 @@ from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
+from app.models.bot_config import BotConfigCreate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.service import ServiceCreate
 from app.models.identity import IdentityCreate
@@ -201,22 +202,40 @@ async def resolve_default_profile_id() -> str:
     return candidates[0].slug
 
 
-async def ensure_web_bot_configured() -> None:
-    """校验载体 Bot（platform="web" 的系统 Bot）存在且未停用。
+async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
+    """取该账号的网页载体 Bot，没有则按需创建。
 
-    该 Bot 的 `account_id` 挂在系统账号上，是预置公共角色可见性与额度归属的前提；
-    未配置或不存在时注册一律拒绝，避免建出一堆无法对话的僵尸账号。
+    优先复用账号名下未停用的 `platform="web"` Bot（管理员可在账号详情页建多个）；
+    其次回落到系统载体 Bot（存量部署）；两者都没有时自动创建一个账号级 Bot，
+    使注册与新建伙伴不再依赖全局配置。
     """
-    bot_id = settings.web_bot_id.strip()
-    if not bot_id:
-        raise AuthError("web_bot_not_configured", "网页服务未配置（缺少系统 Bot），请联系管理员", 503)
-    bot = await BotConfigRepository().find_by_id(bot_id)
-    if bot is None:
-        raise AuthError("web_bot_not_found", "网页服务配置异常（系统 Bot 不存在），请联系管理员", 503)
-    if bot.is_blocked:
+    repo = BotConfigRepository()
+    own = [b for b in await repo.list_by_account(account_id) if b.platform == "web"]
+    usable = [b for b in own if not b.is_blocked]
+    if usable:
+        return usable[0].id
+    if own:
+        # 全部被管理员停用：不自动复活，避免绕过停用
         raise AuthError("web_bot_blocked", "网页服务已停用，请联系管理员", 503)
-    if bot.platform != "web":
-        raise AuthError("web_bot_platform", "系统 Bot 平台不是 web，请联系管理员", 503)
+
+    system_bot_id = settings.web_bot_id.strip()
+    if system_bot_id:
+        bot = await repo.find_by_id(system_bot_id)
+        if bot is None:
+            raise AuthError(
+                "web_bot_not_found", "网页服务配置异常（系统 Bot 不存在），请联系管理员", 503
+            )
+        if bot.is_blocked:
+            raise AuthError("web_bot_blocked", "网页服务已停用，请联系管理员", 503)
+        if bot.platform != "web":
+            raise AuthError("web_bot_platform", "系统 Bot 平台不是 web，请联系管理员", 503)
+        return bot.id
+
+    created = await repo.create(
+        BotConfigCreate(account_id=account_id, name=name or "网页对话", platform="web")
+    )
+    logger.info("为账号 %s 自动创建网页载体 Bot %s", account_id, created.id)
+    return created.id
 
 
 async def build_free_quota(account_id: str) -> tuple[AccountQuotaUpdate, str]:
@@ -337,13 +356,13 @@ async def register(
 
     draft = _Draft(credential_id=credential.id)
     try:
-        await ensure_web_bot_configured()
         profile_slug = await resolve_default_profile_id()
 
         account = await AccountRepository().create(
             AccountCreate(name=f"web:{name}", remark="C 端网页身份自助注册")
         )
         draft.account_id = account.id
+        bot_id = await ensure_account_web_bot(account.id, name=f"web:{name}")
 
         quota_update, quota_source = await build_free_quota(account.id)
         await QuotaRepository().create_or_update(account.id, quota_update)
@@ -364,7 +383,7 @@ async def register(
                 name=f"web:{name}",
                 account_id=account.id,
                 identity_id=identity.id,
-                bot_id=settings.web_bot_id.strip(),
+                bot_id=bot_id,
                 profile_id=profile_slug,
             )
         )

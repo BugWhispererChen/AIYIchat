@@ -588,12 +588,15 @@ async def account_service_create(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    # 1:1 约束：一个 Bot 只允许创建一个服务
-    existing_bot_svc = await _service_repo.count_by_bot(bot_id)
-    if existing_bot_svc > 0:
-        return await _account_detail_with_error(
-            request, account_id, "该 Bot 已有服务，一个 Bot 只允许创建一个服务",
-        )
+    # 1:1 约束：一个 Bot 只允许创建一个服务。
+    # 网页 Bot 是载体通道，允许一个 Bot 承载多个伙伴（与 C 端自助建服务一致）。
+    bot = await _bot_config_repo.find_by_id(bot_id)
+    if bot is None or bot.platform != "web":
+        existing_bot_svc = await _service_repo.count_by_bot(bot_id)
+        if existing_bot_svc > 0:
+            return await _account_detail_with_error(
+                request, account_id, "该 Bot 已有服务，一个 Bot 只允许创建一个服务",
+            )
 
     # 检查引用的实体是否被禁用
     identity = await _identity_repo.find_by_id(identity_id)
@@ -610,7 +613,6 @@ async def account_service_create(
         return await _account_detail_with_error(
             request, account_id, "该身份已被禁用，无法创建服务",
         )
-    bot = await _bot_config_repo.find_by_id(bot_id)
     if bot and bot.is_blocked:
         return await _account_detail_with_error(
             request, account_id, "该 Bot 已被禁用，无法创建服务",

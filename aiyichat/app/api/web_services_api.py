@@ -3,9 +3,9 @@
 服务是"身份 × Bot × 角色"的对话装配单元，决定聊天时扮演谁、记忆与额度归属。
 
 安全边界：
-- 归属字段（account_id / identity_id / bot_id）一律由会话令牌与服务端配置写入，
-  客户端只能选择角色与名称：网页身份统一使用系统 web Bot（`settings.web_bot_id`），
-  自选 Bot 会把平台凭据托管问题暴露给 C 端，故不开放；
+- 归属字段（account_id / identity_id）一律由会话令牌与服务端写入，客户端只能
+  选择角色与名称：网页服务统一挂账号自己的 web Bot（无则自动创建，回落到系统
+  载体 Bot），自选 Bot 会把平台凭据托管问题暴露给 C 端，故不开放；
 - 角色必须对该账号可见（公共角色或本人私有角色）且处于启用状态；
 - 数量受 `settings.web_max_services` 约束；
 - 始终保留至少一个启用中的服务，否则账号会失去聊天能力。
@@ -22,16 +22,19 @@ from pydantic import BaseModel
 
 from app.api.auth_api import AuthError, WebPrincipal, _error, require_current_identity
 from app.config import settings
+from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceCreate, ServiceInDB, ServiceUpdate
+from app.services.auth_service import ensure_account_web_bot
 
 logger = logging.getLogger(__name__)
 
 web_services_router = APIRouter()
 _service_repo = ServiceRepository()
 _profile_repo = ProfileRepository()
+_bot_config_repo = BotConfigRepository()
 
 _MAX_NAME_LEN = 60
 
@@ -101,9 +104,14 @@ async def _visible_profile_or_error(
 
 
 def _service_item(
-    svc: ServiceInDB, profile_name: str, current_id: str, profile_ref: str = ""
+    svc: ServiceInDB,
+    profile_name: str,
+    current_id: str,
+    profile_ref: str = "",
+    bot_platform: str = "",
+    bot_name: str = "",
 ) -> dict:
-    """服务列表项：附带角色名称与"是否当前服务"标记。
+    """服务列表项：附带角色名称、渠道与"是否当前服务"标记。
 
     `profile_ref` 回填解析后的角色 ID：历史数据里 profile_id 存的是 slug，
     直接回给前端会让角色下拉框匹配不上、保存时误改角色。
@@ -114,6 +122,8 @@ def _service_item(
         "profile_id": profile_ref or svc.profile_id,
         "profile_name": profile_name,
         "bot_id": svc.bot_id,
+        "bot_platform": bot_platform,
+        "bot_name": bot_name,
         "is_active": svc.is_active,
         "timezone": svc.timezone,
         "current": svc.id == current_id,
@@ -122,10 +132,18 @@ def _service_item(
 
 
 async def _items_for(principal: WebPrincipal) -> list[dict]:
-    """把账号下所有服务渲染为前端条目（角色名按需解析，失败给占位）。"""
+    """把账号下所有服务渲染为前端条目（角色名与渠道名按需解析，失败给占位）。"""
     services = await _service_repo.list_by_account(principal.account_id)
+    bots: dict[str, tuple[str, str]] = {}
     out: list[dict] = []
     for svc in services:
+        if svc.bot_id not in bots:
+            bot = await _bot_config_repo.find_by_id(svc.bot_id)
+            bots[svc.bot_id] = (
+                bot.platform if bot else "",
+                bot.name if bot else "",
+            )
+        platform, bot_name = bots[svc.bot_id]
         profile = await _resolve_profile(svc.profile_id)
         out.append(
             _service_item(
@@ -133,34 +151,36 @@ async def _items_for(principal: WebPrincipal) -> list[dict]:
                 profile.name if profile else "（角色已失效）",
                 principal.service_id,
                 profile.id if profile else "",
+                platform,
+                bot_name,
             )
         )
     return out
 
 
-def _web_bot_or_error() -> tuple[str, Optional[JSONResponse]]:
-    """取系统 web Bot；未配置时提示联系管理员（服务必须绑定 Bot）。"""
-    bot_id = settings.web_bot_id.strip()
-    if not bot_id:
-        return "", _bad(
-            "web_bot_missing", "系统未配置网页对话 Bot，请联系管理员", 503
-        )
-    return bot_id, None
-
-
 async def _require_owned_service(
     principal: WebPrincipal, service_id: str
 ) -> tuple[Optional[ServiceInDB], Optional[JSONResponse]]:
-    """取回归本人的服务；不存在或属于他人时返回错误响应。"""
+    """取回本账号名下的服务；不存在或属于他人时返回错误响应。
+
+    编辑/删除按账号归属放开：账号下的渠道服务（QQ/微信）也可在网页管理。
+    """
     svc = await _service_repo.find_by_id(service_id)
-    if svc is None or svc.account_id != principal.account_id or svc.identity_id != principal.identity_id:
+    if svc is None or svc.account_id != principal.account_id:
         if svc is not None:
             logger.warning(
-                "越权尝试：登录身份 %s 试图操作他人服务 service=%s",
+                "越权尝试：登录身份 %s 试图操作非本账号服务 service=%s",
                 principal.username,
                 service_id,
             )
         return None, _bad("not_found", "服务不存在", 404)
+    if svc.identity_id != principal.identity_id:
+        logger.warning(
+            "跨身份编辑：登录身份 %s 操作同账号服务 %s（归属身份 %s）",
+            principal.username,
+            svc.id,
+            svc.identity_id,
+        )
     return svc, None
 
 
@@ -173,13 +193,15 @@ async def list_web_services(request: Request) -> JSONResponse:
         return _error(exc)
 
     items = await _items_for(principal)
+    # 额度只统计本人自建的服务：管理员配的渠道服务不占用网页伙伴名额
+    mine = await _service_repo.list_by_identity(principal.identity_id)
     return JSONResponse(
         status_code=200,
         content={
             "items": items,
             "current_service_id": principal.service_id,
             "can_create": settings.web_max_services > 0,
-            "quota": {"limit": settings.web_max_services, "used": len(items)},
+            "quota": {"limit": settings.web_max_services, "used": len(mine)},
         },
     )
 
@@ -197,21 +219,24 @@ async def create_web_service(
     if settings.web_max_services <= 0:
         return _bad("web_service_disabled", "自建服务功能未开放", 403)
 
-    bot_id, err = _web_bot_or_error()
-    if err is not None:
-        return err
-
     profile, err = await _visible_profile_or_error(principal, payload.profile_id)
     if err is not None or profile is None:
         return err or _bad("profile_not_found", "所选角色不存在", 404)
 
-    existing = await _service_repo.list_by_account(principal.account_id)
-    if len(existing) >= settings.web_max_services:
+    mine = await _service_repo.list_by_identity(principal.identity_id)
+    if len(mine) >= settings.web_max_services:
         return _bad(
             "service_quota_exceeded",
             f"最多可创建 {settings.web_max_services} 个服务，请先删除不用的",
             409,
         )
+
+    try:
+        bot_id = await ensure_account_web_bot(
+            principal.account_id, name=f"web:{principal.username}"
+        )
+    except AuthError as exc:
+        return _bad(exc.code, exc.message, exc.status_code)
 
     name = payload.name.strip()[:_MAX_NAME_LEN] or f"web:{principal.username}-{profile.name}"
     tz_err = _timezone_error(payload.timezone.strip())
@@ -235,11 +260,20 @@ async def create_web_service(
         principal.username,
         svc.name,
         profile.name,
-        len(existing) + 1,
+        len(mine) + 1,
         settings.web_max_services,
     )
+    bot = await _bot_config_repo.find_by_id(bot_id)
     return JSONResponse(
-        status_code=201, content=_service_item(svc, profile.name, principal.service_id)
+        status_code=201,
+        content=_service_item(
+            svc,
+            profile.name,
+            principal.service_id,
+            "",
+            bot.platform if bot else "web",
+            bot.name if bot else "",
+        ),
     )
 
 
@@ -296,8 +330,17 @@ async def update_web_service(
     saved = await _service_repo.update(svc.id, update)
     if saved is None:
         return _bad("not_found", "服务不存在", 404)
+    bot = await _bot_config_repo.find_by_id(saved.bot_id)
     return JSONResponse(
-        status_code=200, content=_service_item(saved, profile_name, principal.service_id)
+        status_code=200,
+        content=_service_item(
+            saved,
+            profile_name,
+            principal.service_id,
+            "",
+            bot.platform if bot else "",
+            bot.name if bot else "",
+        ),
     )
 
 

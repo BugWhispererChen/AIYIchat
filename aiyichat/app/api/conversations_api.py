@@ -6,11 +6,18 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.auth_api import AuthError, WebPrincipal, require_current_identity
+from app.api.auth_api import (
+    AuthError,
+    WebPrincipal,
+    require_account_service,
+    require_current_identity,
+)
 from app.config import settings
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.service_repo import ServiceRepository
+from app.models.conversation import ConversationInDB
+from app.models.service import ServiceInDB
 from app.models.web_credential import normalize_username
 
 logger = logging.getLogger(__name__)
@@ -45,6 +52,34 @@ async def _require_current_identity_or_401(request: Request) -> WebPrincipal:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+async def _require_account_service_http(
+    principal: WebPrincipal, service_id: str
+) -> ServiceInDB:
+    """按账号归属校验服务，失败转 HTTPException。"""
+    try:
+        return await require_account_service(principal, service_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+async def _conversation_readable(
+    conv: ConversationInDB, principal: WebPrincipal
+) -> bool:
+    """会话是否对当前网页身份可读：本人会话，或同账号任一服务的会话。
+
+    共享组会话的 `service_id` 存的是组 key，按组内服务反查归属账号。
+    """
+    if conv.identity_id == principal.identity_id:
+        return True
+    if not conv.service_id:
+        return False
+    svc = await _service_repo.find_by_id(conv.service_id)
+    if svc is not None:
+        return svc.account_id == principal.account_id
+    peers = await _service_repo.list_by_share_group(conv.service_id)
+    return any(peer.account_id == principal.account_id for peer in peers)
+
+
 @conversations_router.get("")
 async def list_conversations(
     request: Request,
@@ -53,17 +88,15 @@ async def list_conversations(
 ):
     """获取对话列表，可按身份ID或服务ID过滤。
 
-    开启网页鉴权后只允许访问自己的数据：入参 identity_id 与令牌身份不符即 403，
-    service_id 必须归属当前身份（历史越权读取面的封堵点）。
+    开启网页鉴权后只允许访问本账号的数据：入参 identity_id 与令牌身份不符即 403；
+    service_id 按账号归属校验，同账号的渠道服务（QQ/微信）也可回看。
     """
     if settings.web_auth_enabled:
         principal = await _require_current_identity_or_401(request)
         if identity_id is not None and identity_id != principal.identity_id:
             raise HTTPException(status_code=403, detail="无权访问其他身份的数据")
         if service_id is not None:
-            svc = await _service_repo.find_by_id(service_id)
-            if svc is None or svc.identity_id != principal.identity_id:
-                raise HTTPException(status_code=403, detail="无权访问该服务的数据")
+            await _require_account_service_http(principal, service_id)
         identity_id = principal.identity_id
     if service_id:
         # 服务设置共享组时，补充组 key 下的共享会话（含加入前的自身历史）
@@ -95,14 +128,14 @@ async def list_conversations(
 async def get_messages(request: Request, conversation_id: str, limit: int = 50):
     """获取对话的消息历史。
 
-    开启网页鉴权后仅允许读取本人对话（消息历史泄露即本次要封堵的越权面之一）。
+    开启网页鉴权后仅允许读取本人或同账号服务名下的对话。
     """
     conv = await _conv_repo.find_by_id(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if settings.web_auth_enabled:
         principal = await _require_current_identity_or_401(request)
-        if conv.identity_id != principal.identity_id:
+        if not await _conversation_readable(conv, principal):
             raise HTTPException(status_code=403, detail="无权读取该对话的消息")
 
     messages = await _msg_repo.get_recent(conversation_id, limit)
@@ -165,34 +198,33 @@ async def chat_stream(req: StreamChatRequest, request: Request):
                 req.platform_id,
             )
             raise HTTPException(status_code=403, detail="platform_id 与登录身份不匹配")
-        if req.bot_id and req.bot_id != principal.bot_id:
+
+        # 显式选择伙伴时按账号归属校验：可跨身份，但必须同账号
+        svc: Optional[ServiceInDB] = None
+        if req.service_id.strip():
+            svc = await _require_account_service_http(principal, req.service_id.strip())
+        allowed_bot_ids = {principal.bot_id}
+        if svc is not None:
+            allowed_bot_ids.add(svc.bot_id)
+        if req.bot_id and req.bot_id not in allowed_bot_ids:
             logger.warning(
                 "越权尝试：登录身份 %s 试图指定未授权的 bot_id=%s", principal.username, req.bot_id
             )
             raise HTTPException(status_code=403, detail="无权使用该 Bot")
-        bot_id = principal.bot_id
+
+        # 服务绑定的 Bot/身份决定用哪个角色与哪条既有会话（跨渠道续聊的关键）
+        bot_id = svc.bot_id if svc is not None else principal.bot_id
+        engine_identity_id = svc.identity_id if svc is not None else ""
         platform, platform_id = "web", principal.username
         # 昵称一律取会话身份（账号中心可改），不接受客户端入参：
         # 否则任何人只要在请求体里换一个 nickname 就能冒充他人的称呼写进 prompt
         nickname = principal.nickname or principal.username
-        # 指定服务时校验归属：只能对话自己名下的服务（多角色切换的越权面）
-        service_id = req.service_id.strip()
-        if service_id:
-            svc = await _service_repo.find_by_id(service_id)
-            if svc is None or svc.identity_id != principal.identity_id:
-                logger.warning(
-                    "越权尝试：登录身份 %s 试图使用他人服务 service_id=%s",
-                    principal.username,
-                    service_id,
-                )
-                raise HTTPException(status_code=403, detail="无权使用该服务")
-            service_id = svc.id
-        else:
-            service_id = ""
+        service_id = svc.id if svc is not None else ""
     else:
         bot_id = req.bot_id
         platform, platform_id, nickname = req.platform, req.platform_id, req.nickname
         service_id = ""
+        engine_identity_id = ""
     if not bot_id or not platform_id:
         raise HTTPException(status_code=400, detail="缺少 bot_id 或 platform_id")
 
@@ -206,6 +238,7 @@ async def chat_stream(req: StreamChatRequest, request: Request):
                 text=req.text,
                 nickname=nickname,
                 service_id=service_id,
+                identity_id=engine_identity_id,
             ):
                 for frame in stream_frames(item):
                     yield frame

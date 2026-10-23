@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 class BotConfig(BaseModel):
-    """单个 Bot 的运行时配置（支持 QQ 和微信）"""
+    """单个 Bot 的运行时配置（QQ / 微信 / 网页）"""
 
     id: str  # Bot UUID 唯一标识
     name: str = ""  # Bot 显示名称
-    platform: str = "qq"  # "qq" | "wechat"
+    platform: str = "qq"  # "qq" | "wechat" | "web"
     app_id: str = ""
     app_secret: str = ""
     sandbox_mode: bool = True

@@ -9,6 +9,7 @@
     'use strict';
 
     var SERVICE_KEY = 'aiyichat_web_service';
+    var CHANNEL_NAMES = { qq: 'QQ', wechat: '微信', web: '网页' };
 
     var transcript = document.getElementById('transcript');
     var streamBox = document.getElementById('transcript-inner');
@@ -18,6 +19,7 @@
     var quotaInfo = document.getElementById('quota-info');
     var loadingNote = document.getElementById('loading-note');
     var serviceSelect = document.getElementById('service-select');
+    var channelNote = document.getElementById('partner-channel');
     var sessionList = document.getElementById('session-list');
     var sessionRail = document.getElementById('session-rail');
     var banner = document.getElementById('browse-banner');
@@ -143,7 +145,35 @@
     function partnerLabel() {
         if (!serviceSelect.options.length) return '';
         var index = serviceSelect.selectedIndex;
-        return index >= 0 ? serviceSelect.options[index].textContent : '';
+        if (index < 0) return '';
+        var opt = serviceSelect.options[index];
+        return opt.dataset.label || opt.textContent;
+    }
+
+    function selectedPlatform() {
+        var opt = serviceSelect.options[serviceSelect.selectedIndex];
+        return (opt && opt.dataset.platform) || '';
+    }
+
+    function channelName(platform) {
+        return CHANNEL_NAMES[platform] || '';
+    }
+
+    /* 网页渠道不标注，减少纯网页用户的视觉噪音 */
+    function channelSuffix(platform) {
+        return platform && platform !== 'web' ? ' · ' + channelName(platform) : '';
+    }
+
+    function updateChannelNote() {
+        if (!channelNote) return;
+        var platform = selectedPlatform();
+        if (platform && platform !== 'web') {
+            channelNote.textContent = '也由' + channelName(platform) + '渠道使用，对话记录共享';
+            channelNote.hidden = false;
+        } else {
+            channelNote.textContent = '';
+            channelNote.hidden = true;
+        }
     }
 
     function relTime(iso) {
@@ -184,10 +214,15 @@
             var one = items[0];
             var only = document.createElement('option');
             only.value = one ? one.id : '';
-            only.textContent = one ? one.profile_name : '未配置伙伴';
+            only.textContent = one ? one.profile_name + channelSuffix(one.bot_platform) : '未配置伙伴';
+            if (one) {
+                only.dataset.label = one.profile_name;
+                only.dataset.platform = one.bot_platform || '';
+            }
             serviceSelect.appendChild(only);
             serviceSelect.disabled = true;
             if (one) { try { localStorage.setItem(SERVICE_KEY, one.id); } catch (e) {} }
+            updateChannelNote();
             return;
         }
         var saved = '';
@@ -196,17 +231,21 @@
         items.forEach(function (s) {
             var opt = document.createElement('option');
             opt.value = s.id;
-            opt.textContent = s.name + ' · ' + s.profile_name;
+            opt.textContent = s.name + ' · ' + s.profile_name + channelSuffix(s.bot_platform);
+            opt.dataset.label = s.name + ' · ' + s.profile_name;
+            opt.dataset.platform = s.bot_platform || '';
             if (s.id === preferred) opt.selected = true;
             serviceSelect.appendChild(opt);
         });
         // saved 指向已删除的服务时回落首项，避免带着无效 ID 发请求
         if (serviceSelect.selectedIndex === -1) serviceSelect.selectedIndex = 0;
         serviceSelect.disabled = false;
+        updateChannelNote();
     }
 
+    /* 单伙伴时下拉被禁用，仍必须带上 service_id：否则历史与发送会退化成"按身份"口径 */
     function currentServiceId() {
-        return serviceSelect.disabled ? '' : serviceSelect.value;
+        return serviceSelect.value || '';
     }
 
     /* 历史会话侧栏：后端按伙伴归组返回会话，点击即只读回看该会话消息 */
@@ -411,7 +450,14 @@
     });
     serviceSelect.addEventListener('change', function () {
         try { localStorage.setItem(SERVICE_KEY, serviceSelect.value); } catch (e) {}
-        addNote('已切换为「' + partnerLabel() + '」，各伙伴的对话与记忆相互独立。');
+        var platform = selectedPlatform();
+        var shared = platform && platform !== 'web';
+        addNote(
+            '已切换为「' + partnerLabel() + '」' +
+            (shared ? '，该伙伴的对话与记忆和' + channelName(platform) + '渠道共享。'
+                    : '，各伙伴的对话与记忆相互独立。')
+        );
+        updateChannelNote();
         loadSessions();
     });
     var toggle = document.getElementById('session-toggle');

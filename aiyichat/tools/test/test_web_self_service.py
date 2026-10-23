@@ -20,12 +20,17 @@ from app.config import settings
 from app.db import mongo
 from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
+from app.db.repositories.conversation_repo import ConversationRepository
+from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
+from app.models.identity import IdentityCreate
 from app.models.profile import PromptProfileCreate
+from app.models.service import ServiceCreate
 from app.services import auth_service
 from app.utils.rate_limit import login_limiter, register_limiter
 
@@ -447,7 +452,7 @@ class TestWebServiceSelfService:
 
 
 class _RecordingEngine:
-    """替身引擎：记录聊天请求实际选中的服务。"""
+    """替身引擎：记录聊天请求实际选中的服务与身份。"""
 
     calls: list[dict[str, Any]] = []
 
@@ -462,8 +467,16 @@ class _RecordingEngine:
         nickname: str = "",
         content_type: str = "text",
         service_id: str = "",
+        identity_id: str = "",
     ) -> AsyncIterator[str]:
-        _RecordingEngine.calls.append({"platform_id": platform_id, "service_id": service_id})
+        _RecordingEngine.calls.append(
+            {
+                "platform_id": platform_id,
+                "service_id": service_id,
+                "identity_id": identity_id,
+                "bot_id": self.bot_id,
+            }
+        )
         yield "ok"
 
 
@@ -510,10 +523,201 @@ class TestChatHonoursServiceSelection:
                         json={"text": "在吗", "service_id": other_id},
                         headers=_h(a),
                     )
-                    # 他人服务：拒绝且不落到引擎
-                    assert resp.status_code == 403
+                    # 他人账号的服务：按"不存在"处理（404），且不落到引擎
+                    assert resp.status_code == 404
                     assert len(_RecordingEngine.calls) == calls_before
             finally:
                 mongo._db = None
 
         _with_engine(flow)
+
+
+class TestCrossChannelAccess:
+    """同账号渠道服务：可见、可读史、可续聊、可编辑；跨账号一律拒绝。"""
+
+    async def _seed_channel_service(
+        self, client: AsyncClient, token: str
+    ) -> tuple[str, str, str]:
+        """在当前账号下建 QQ Bot + QQ 身份 + 服务，返回 (service_id, bot_id, identity_id)。"""
+        me = (await client.get("/api/auth/me", headers=_h(token))).json()
+        web_identity = await IdentityRepository().find_by_id(me["identity_id"])
+        assert web_identity is not None
+        qq_bot = await BotConfigRepository().create(
+            BotConfigCreate(account_id=web_identity.account_id, name="QQ助手", platform="qq")
+        )
+        qq_identity = await IdentityRepository().create(
+            IdentityCreate(
+                account_id=web_identity.account_id,
+                name="qq用户",
+                platform_id="openid-cross-1",
+                platform="qq",
+            )
+        )
+        svc = await ServiceRepository().create(
+            ServiceCreate(
+                name="qq渠道服务",
+                account_id=web_identity.account_id,
+                identity_id=qq_identity.id,
+                bot_id=qq_bot.id,
+                profile_id=PUBLIC_SLUG,
+            )
+        )
+        return svc.id, qq_bot.id, qq_identity.id
+
+    def test_chat_uses_service_bot_and_identity(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app("cross_chat")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "alice")
+                    sid, bot_id, identity_id = await self._seed_channel_service(c, token)
+                    items = (await c.get("/api/web/services", headers=_h(token))).json()["items"]
+                    row = next(i for i in items if i["id"] == sid)
+                    assert row["bot_platform"] == "qq"
+                    assert row["bot_name"] == "QQ助手"
+
+                    resp = await c.post(
+                        "/api/conversations/chat/stream",
+                        json={"text": "从网页续聊", "service_id": sid},
+                        headers=_h(token),
+                    )
+                    assert resp.status_code == 200
+                    call = _RecordingEngine.calls[-1]
+                    assert call["service_id"] == sid
+                    assert call["identity_id"] == identity_id
+                    assert call["bot_id"] == bot_id
+            finally:
+                mongo._db = None
+
+        _with_engine(flow)
+
+    def test_history_readable_in_account_only(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app("cross_history")
+            try:
+                async with _client(app) as c:
+                    alice = await _signup(c, "alice")
+                    bob = await _signup(c, "bob")
+                    sid, _, identity_id = await self._seed_channel_service(c, alice)
+                    conv = await ConversationRepository().create(identity_id, PUBLIC_SLUG, sid)
+                    await MessageRepository().create(
+                        conversation_id=conv.id, role="user", content="QQ侧的旧消息"
+                    )
+
+                    listing = await c.get(
+                        f"/api/conversations?service_id={sid}", headers=_h(alice)
+                    )
+                    assert listing.status_code == 200
+                    assert [x["id"] for x in listing.json()] == [conv.id]
+
+                    msgs = await c.get(
+                        f"/api/conversations/{conv.id}/messages", headers=_h(alice)
+                    )
+                    assert msgs.status_code == 200
+                    assert msgs.json()[0]["content"] == "QQ侧的旧消息"
+
+                    # 跨账号：服务不可见给 404，会话读取给 403
+                    assert (
+                        await c.get(f"/api/conversations?service_id={sid}", headers=_h(bob))
+                    ).status_code == 404
+                    assert (
+                        await c.get(
+                            f"/api/conversations/{conv.id}/messages", headers=_h(bob)
+                        )
+                    ).status_code == 403
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_channel_service_editable_in_account(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app("cross_edit")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "alice")
+                    sid, _, _ = await self._seed_channel_service(c, token)
+
+                    resp = await c.put(
+                        f"/api/web/services/{sid}",
+                        json={"name": "改名后的伙伴"},
+                        headers=_h(token),
+                    )
+                    assert resp.status_code == 200, resp.text
+                    saved = await ServiceRepository().find_by_id(sid)
+                    assert saved is not None and saved.name == "改名后的伙伴"
+
+                    resp = await c.put(
+                        f"/api/web/services/{sid}", json={"is_active": False}, headers=_h(token)
+                    )
+                    assert resp.status_code == 200
+
+                    resp = await c.delete(f"/api/web/services/{sid}", headers=_h(token))
+                    assert resp.status_code == 200
+                    assert await ServiceRepository().find_by_id(sid) is None
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_quota_counts_own_services_only(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app("cross_quota")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "alice")
+                    await self._seed_channel_service(c, token)
+                    # 注册自带 1 个，再加 2 个到本人上限 3；渠道服务不占名额
+                    for name in ("甲", "乙"):
+                        resp = await c.post(
+                            "/api/web/services",
+                            json={"profile_id": PUBLIC_SLUG, "name": name},
+                            headers=_h(token),
+                        )
+                        assert resp.status_code == 201, resp.text
+                    over = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": PUBLIC_SLUG},
+                        headers=_h(token),
+                    )
+                    assert over.status_code == 409
+                    quota = (await c.get("/api/web/services", headers=_h(token))).json()["quota"]
+                    assert quota == {"limit": 3, "used": 3}
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_new_partner_prefers_account_web_bot(self) -> None:
+        """账号已有自己的 web Bot 时，新建伙伴挂到它上面，而不是全局系统 Bot。"""
+
+        async def flow() -> None:
+            app = await _setup_app("cross_ownbot")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "alice")
+                    me = (await c.get("/api/auth/me", headers=_h(token))).json()
+                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    assert identity is not None
+                    own_bot = await BotConfigRepository().create(
+                        BotConfigCreate(
+                            account_id=identity.account_id, name="账号网页Bot", platform="web"
+                        )
+                    )
+
+                    resp = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": PUBLIC_SLUG, "name": "新伙伴"},
+                        headers=_h(token),
+                    )
+                    assert resp.status_code == 201, resp.text
+                    saved = await ServiceRepository().find_by_id(resp.json()["id"])
+                    assert saved is not None and saved.bot_id == own_bot.id
+
+                    # 默认服务随之切到账号自有 Bot
+                    me_after = (await c.get("/api/auth/me", headers=_h(token))).json()
+                    assert me_after["bot_id"] == own_bot.id
+            finally:
+                mongo._db = None
+
+        _run(flow())

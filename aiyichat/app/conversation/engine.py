@@ -781,6 +781,7 @@ class ConversationEngine:
         nickname: str = "",
         content_type: str = "text",
         service_id: str = "",
+        identity_id: str = "",
     ):
         """流式处理对方消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
 
@@ -790,6 +791,8 @@ class ConversationEngine:
 
         `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页身份可对多个角色
         各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (对方, Bot) 查找。
+        `identity_id` 用于跨渠道续聊：网页选中 QQ/微信服务时，调用方已完成账号级
+        归属校验，这里改用服务自己的身份，从而命中该身份既有的会话与记忆。
         """
         # 对方消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
@@ -799,23 +802,42 @@ class ConversationEngine:
         if bot is None or getattr(bot, "is_blocked", False):
             yield self._no_service_message()
             return
-        identity = await self.identity_repo.find_by_platform(platform, platform_id)
+        if identity_id:
+            identity = await self.identity_repo.find_by_id(identity_id)
+        else:
+            identity = await self.identity_repo.find_by_platform(platform, platform_id)
         if identity is None or identity.is_blocked:
             yield self._no_service_message()
             return
         service = None
         if service_id:
             candidate = await self.service_repo.find_by_id(service_id)
-            # 只接受归属本人的服务：越权指定他人服务时静默回落，不泄露存在性
+            # 显式选择时不做回落：越权、停用或不存在的服务一律按"无可用服务"处理，
+            # 避免静默改用同一 Bot 下的其他伙伴
             if (
                 candidate is not None
+                and candidate.is_active
                 and candidate.identity_id == identity.id
                 and candidate.bot_id == self.bot_id
             ):
                 service = candidate
-        if service is None:
+            if service is None:
+                yield self._no_service_message()
+                return
+        else:
             service = await self.service_repo.find_by_identity_and_bot(identity.id, self.bot_id)
         if service is None:
+            yield self._no_service_message()
+            return
+        if identity_id and service.account_id != identity.account_id:
+            # 纵深防御：跨渠道覆盖身份时，身份与服务的归属账号必须一致
+            logger.warning(
+                "拒绝跨账号会话：identity=%s(account=%s) service=%s(account=%s)",
+                identity.id,
+                identity.account_id,
+                service.id,
+                service.account_id,
+            )
             yield self._no_service_message()
             return
         profile = await self._resolve_profile(

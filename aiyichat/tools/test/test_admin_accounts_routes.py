@@ -354,6 +354,30 @@ class TestAccountServices:
         )
         return identity.id, bot.id, profile.slug
 
+    def test_web_bot_allows_multiple_services(self) -> None:
+        """网页 Bot 是载体通道，允许承载多个伙伴服务；QQ/微信仍保持 1:1。"""
+
+        async def flow() -> None:
+            app = await _setup_app()
+            try:
+                acc_id = await _seed_account()
+                uid, _, slug = await self._seed_entities(acc_id)
+                web_bot = await BotConfigRepository().create(
+                    BotConfigCreate(account_id=acc_id, name="网页助手", platform="web")
+                )
+                async with _client(app) as client:
+                    for _ in range(2):
+                        resp = await client.post(
+                            f"/admin/accounts/{acc_id}/services",
+                            data={"identity_id": uid, "bot_id": web_bot.id, "profile_id": slug},
+                        )
+                        assert resp.status_code == 303
+                    assert await ServiceRepository().count_by_bot(web_bot.id) == 2
+            finally:
+                await _teardown_app(app)
+
+        _run(flow())
+
     def test_service_create_validations(self) -> None:
         async def flow() -> None:
             app = await _setup_app()

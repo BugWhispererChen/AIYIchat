@@ -691,6 +691,25 @@ class TestRegistration:
 
         run_with_db(body)
 
+    def test_register_auto_creates_account_web_bot(self) -> None:
+        """未配置系统载体 Bot 时，注册为该账号自动建一个 platform=web 的 Bot。"""
+
+        async def body():
+            await _seed_web_env()
+            settings.web_bot_id = ""
+            ident = await _register("autobot")
+            identity = await IdentityRepository().find_by_id(ident.identity_id)
+            assert identity is not None
+            services = await ServiceRepository().list_by_identity(identity.id)
+            assert len(services) == 1
+            bot = await BotConfigRepository().find_by_id(services[0].bot_id)
+            assert bot is not None
+            assert bot.platform == "web"
+            assert bot.account_id == identity.account_id
+            assert bot.is_blocked is False
+
+        run_with_db(body)
+
     def test_quota_template_and_fallback(self) -> None:
         """模板存在按模板发放；模板 ID 非法或不存在则回落内置体验额度。"""
 

@@ -179,7 +179,8 @@ docker compose logs --tail=50 app
   登录后可管理角色、Bot、多媒体配置等）
 - **健康检查**：`/api/health`
 - **C 端网页身份**（可选）：`https://<host>/web/login`，需先在管理后台「网页身份」页
-  打开开关并指定 `platform=web` 的载体 Bot；开关关闭时 `/web/*` 与 `/api/auth/*` 一律 403
+  打开开关；载体 Bot 可指定（作为未自建网页 Bot 的账号的默认载体），留空时每个账号
+  按需自动创建一个 `platform=web` 的 Bot。开关关闭时 `/web/*` 与 `/api/auth/*` 一律 403
 
 QQ / 微信 Bot 在启动后通过管理后台的 Bot 管理页面添加，配置保存于数据库并支持热加载，
 无需本地配置文件。

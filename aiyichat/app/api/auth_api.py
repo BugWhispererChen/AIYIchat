@@ -7,6 +7,7 @@
   绝不信任客户端入参。
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import settings
+from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.identity_repo import IdentityRepository
@@ -28,6 +30,7 @@ from app.services.captcha_service import captcha_service
 from app.utils.rate_limit import RateLimited, check_rate_limit
 
 auth_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 反向代理（nginx）必须以 $remote_addr 覆写 X-Forwarded-For，否则客户端可自造头绕过限流
 _XFF_HEADER = "x-forwarded-for"
@@ -124,17 +127,59 @@ async def require_web_account(request: Request) -> WebAccountPrincipal:
 
 
 async def _resolve_service(identity: IdentityInDB) -> ServiceInDB:
-    """反查该网页身份的对话服务：优先配置的系统 Bot，回落其名下任一活跃服务。"""
+    """反查该网页身份的对话服务。
+
+    优先级：账号自己的 web Bot → 系统载体 Bot（存量部署）→ 名下任一活跃服务。
+    """
     repo = ServiceRepository()
-    bot_id = settings.web_bot_id.strip()
-    if bot_id:
-        service = await repo.find_by_identity_and_bot(identity.id, bot_id)
-        if service is not None:
-            return service
-    for svc in await repo.list_by_identity(identity.id):
-        if svc.is_active:
+    active = [s for s in await repo.list_by_identity(identity.id) if s.is_active]
+
+    own_bot_ids = {
+        bot.id
+        for bot in await BotConfigRepository().list_by_account(identity.account_id)
+        if bot.platform == "web" and not bot.is_blocked
+    }
+    for svc in active:
+        if svc.bot_id in own_bot_ids:
             return svc
+
+    system_bot_id = settings.web_bot_id.strip()
+    if system_bot_id:
+        for svc in active:
+            if svc.bot_id == system_bot_id:
+                return svc
+
+    if active:
+        return active[0]
     raise AuthError("no_service", "账号尚未绑定对话服务，请联系管理员", 403)
+
+
+async def require_account_service(
+    principal: WebPrincipal, service_id: str
+) -> ServiceInDB:
+    """按账号归属取回服务，供 C 端跨身份读聊使用。
+
+    归属口径是 account_id：同账号的网页身份可以使用任一服务（含 QQ/微信渠道）。
+    跨身份访问记审计日志，便于追溯网页侧读取渠道身份数据的操作。
+    """
+    svc = await ServiceRepository().find_by_id(service_id)
+    if svc is None or svc.account_id != principal.account_id:
+        if svc is not None:
+            logger.warning(
+                "越权尝试：登录身份 %s 试图使用非本账号服务 service=%s（归属账号 %s）",
+                principal.username,
+                service_id,
+                svc.account_id,
+            )
+        raise AuthError("not_found", "服务不存在", 404)
+    if svc.identity_id != principal.identity_id:
+        logger.warning(
+            "跨身份访问：登录身份 %s 使用同账号服务 %s（归属身份 %s）",
+            principal.username,
+            svc.id,
+            svc.identity_id,
+        )
+    return svc
 
 
 class CaptchaRequest(BaseModel):

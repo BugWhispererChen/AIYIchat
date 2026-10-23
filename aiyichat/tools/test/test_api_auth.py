@@ -139,6 +139,7 @@ class _FakeEngine:
         nickname: str = "",
         content_type: str = "text",
         service_id: str = "",
+        identity_id: str = "",
     ) -> AsyncIterator[str]:
         _FakeEngine.calls.append(
             {
@@ -149,6 +150,7 @@ class _FakeEngine:
                 "nickname": nickname,
                 "content_type": content_type,
                 "service_id": service_id,
+                "identity_id": identity_id,
             }
         )
         yield f"echo|{platform}|{platform_id}|{self.bot_id}"
@@ -532,7 +534,11 @@ class TestChatStreamAuthorization:
             async def find_by_id(self, conversation_id: str) -> Any:
                 if conversation_id == "missing":
                     return None
-                return type("Conv", (), {"id": conversation_id, "identity_id": self.owner_id})()
+                return type(
+                    "Conv",
+                    (),
+                    {"id": conversation_id, "identity_id": self.owner_id, "service_id": ""},
+                )()
 
         async def flow() -> None:
             app = await _setup_app("t_stream_hist")
@@ -553,10 +559,10 @@ class TestChatStreamAuthorization:
                     # 自己的 identity_id → 200（无数据时为空列表）
                     resp = await client.get(f"/api/conversations?identity_id={owner.id}", headers=headers)
                     assert resp.status_code == 200 and resp.json() == []
-                    # 他人 service_id → 403
+                    # 他人 service_id → 404（按"服务不存在"处理，不泄露存在性）
                     svc_b = (await _services_of(other.id))[0].id
                     resp = await client.get(f"/api/conversations?service_id={svc_b}", headers=headers)
-                    assert resp.status_code == 403
+                    assert resp.status_code == 404
 
                     original = conversations_api._conv_repo
                     conversations_api._conv_repo = _FakeConvRepo(other.id)  # type: ignore[assignment]

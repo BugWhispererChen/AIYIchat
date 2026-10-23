@@ -52,6 +52,7 @@
         {% call card('使用说明') %}
             <p class="ui-note">
                 新建或修改后，回到「对话」页顶部的角色下拉框选择要聊的伙伴即可；每个伙伴各自保留自己的对话与记忆。<br>
+                账号下由 QQ / 微信渠道使用的服务也会出现在这里，选中它可回看并继续该渠道的对话；改动会同时影响对应渠道。<br>
                 至少需要保留一个启用中的伙伴，否则无法继续聊天。
             </p>
         {% endcall %}
@@ -70,6 +71,7 @@
         const nameEl = document.getElementById('f-name');
         const profileEl = document.getElementById('f-profile');
         const tzEl = document.getElementById('f-tz');
+        const CHANNEL_NAMES = { qq: 'QQ', wechat: '微信', web: '网页' };
 
         let services = [];
         let profiles = [];
@@ -127,6 +129,9 @@
                 const row = document.createElement('div');
                 row.className = 'ui-list-row ui-cluster';
 
+                const platform = sv.bot_platform || '';
+                const channel = CHANNEL_NAMES[platform] || '';
+
                 const grow = document.createElement('div');
                 grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
                 const t = document.createElement('div');
@@ -134,7 +139,9 @@
                 t.textContent = sv.name;
                 const m = document.createElement('div');
                 m.className = 'u-muted u-fs-82';
-                m.textContent = '扮演：' + sv.profile_name + (sv.timezone ? ' · ' + sv.timezone : '');
+                m.textContent = '扮演：' + sv.profile_name
+                    + (channel && platform !== 'web' ? ' · ' + channel + '渠道' : '')
+                    + (sv.timezone ? ' · ' + sv.timezone : '');
                 grow.appendChild(t);
                 grow.appendChild(m);
                 row.appendChild(grow);
@@ -144,6 +151,12 @@
                     cur.className = 'ui-badge ui-badge--ink';
                     cur.textContent = '当前对话';
                     row.appendChild(cur);
+                }
+                if (channel && platform !== 'web') {
+                    const ch = document.createElement('span');
+                    ch.className = 'ui-badge ui-badge--line';
+                    ch.textContent = channel + '渠道';
+                    row.appendChild(ch);
                 }
                 const tag = document.createElement('span');
                 tag.className = 'ui-badge ' + (sv.is_active ? 'ui-badge--ok' : 'ui-badge--err');
@@ -189,7 +202,11 @@
             titleEl.textContent = sv ? '编辑伙伴：' + sv.name : '新建伙伴';
             editorEl.hidden = false;
             editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            if (!profiles.length) show('info', '还没有可用角色，请先到「我的角色」创建或启用一个。');
+            if (!profiles.length) { show('info', '还没有可用角色，请先到「我的角色」创建或启用一个。'); return; }
+            const channel = sv && CHANNEL_NAMES[sv.bot_platform || ''];
+            if (channel && sv.bot_platform !== 'web') {
+                show('info', '这是 ' + channel + ' 渠道的服务：改角色、停用或删除会同时影响该渠道的对话。');
+            }
         }
 
         async function save() {

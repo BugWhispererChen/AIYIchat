@@ -26,6 +26,7 @@ from app.models.bot_config import BotConfigCreate, BotConfigInDB, BotConfigUpdat
 from app.models.identity import IdentityCreate, IdentityInDB
 from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceCreate, ServiceInDB
+from app.services.service_cleanup import purge_service_memory
 
 logger = logging.getLogger(__name__)
 
@@ -390,8 +391,14 @@ async def get_managed_bot(account_id: str, bot_id: str) -> BotConfigInDB:
     return bot
 
 
-async def delete_managed_bot(account_id: str, bot_id: str) -> int:
-    """删除 C 端渠道：级联删服务，保护最后一个活跃服务。"""
+async def delete_managed_bot(
+    account_id: str, bot_id: str, login_identity_id: str = ""
+) -> int:
+    """删除 C 端渠道：级联删服务，保护最后一个活跃服务。
+
+    `login_identity_id` 是当前网页登录身份：账号下的渠道服务可能挂在别的身份上，
+    仅按账号统计会让登录身份失去最后一个活跃服务后被 no_service 锁死。
+    """
     bot = await get_managed_bot(account_id, bot_id)
     repo = ServiceRepository()
     services = await repo.list_by_bot(bot.id)
@@ -405,11 +412,33 @@ async def delete_managed_bot(account_id: str, bot_id: str) -> int:
             "至少需要保留一个启用中的服务才能继续聊天",
             409,
         )
+    if login_identity_id:
+        deleting_login_active = any(
+            svc.identity_id == login_identity_id and svc.is_active
+            for svc in services
+        )
+        own = await repo.list_by_identity(login_identity_id)
+        own_active_after = [
+            svc for svc in own if svc.bot_id != bot.id and svc.is_active
+        ]
+        if deleting_login_active and not own_active_after:
+            raise ChannelError(
+                "last_active_service",
+                "当前登录身份至少需要保留一个启用中的服务才能继续聊天",
+                409,
+            )
 
     # 网页渠道使用登录身份，不能重置；只有 QQ / 微信渠道的专用身份才清理绑定
     identity_ids = (
         {svc.identity_id for svc in services} if bot.platform != "web" else set()
     )
+    try:
+        await purge_service_memory(services)
+    except Exception as exc:  # noqa: BLE001 - 清理失败时保留服务行，便于重试
+        logger.exception("删除渠道前清理记忆失败: bot=%s", bot.id)
+        raise ChannelError(
+            "cleanup_failed", "清理服务记忆失败，请稍后重试", 500
+        ) from exc
     for svc in services:
         await repo.delete(svc.id)
 

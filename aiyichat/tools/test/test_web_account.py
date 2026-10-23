@@ -63,6 +63,7 @@ _WEB_KEYS = (
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login", "web_max_profiles", "web_max_services",
+    "trust_proxy_headers",
 )
 
 
@@ -79,6 +80,7 @@ def web_flags():
     settings.web_bot_id = WEB_BOT_ID
     settings.web_default_profile_slug = PUBLIC_SLUG
     settings.web_free_quota_template_id = ""
+    settings.trust_proxy_headers = True
     register_limiter.reset()
     login_limiter.reset()
     account_limiter.reset()
@@ -784,6 +786,19 @@ class TestDeleteAccount:
                     token = await _signup(c, "petra")
                     seeded = await _seed_full_data("petra")
                     account_id = seeded["identity"].account_id
+                    # 共享组记忆按组 key 存储：注销时必须按 context_key 一起删除
+                    group = "grp-petra"
+                    await ServiceRepository().create(ServiceCreate(
+                        name="共享服务",
+                        account_id=account_id,
+                        identity_id=seeded["identity"].id,
+                        bot_id=seeded["service"].bot_id,
+                        profile_id=seeded["service"].profile_id,
+                        share_group_id=group,
+                    ))
+                    await ServiceMemoryRepository().add_facts(
+                        group, [MemoryFact(content="共享组记忆")]
+                    )
 
                     resp = await c.post("/api/web/account/delete", headers=_h(token),
                                         json={"current_password": PASSWORD,
@@ -807,6 +822,9 @@ class TestDeleteAccount:
                         {"account_id": account_id}) == 0
                     assert await db.injection_snapshots.count_documents(
                         {"service_id": seeded["service"].context_key}) == 0
+                    assert await db.service_memories.count_documents(
+                        {"service_id": {"$in": [seeded["service"].context_key, group]}}
+                    ) == 0
                     assert await MediaRepository().find_by_id(seeded["media_id"]) is None
 
                     # 用户名已释放，可重新注册

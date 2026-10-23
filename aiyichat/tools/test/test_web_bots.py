@@ -24,9 +24,11 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
+from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.bot_config import BotConfigCreate
 from app.models.profile import PromptProfileCreate
+from app.models.service_memory import MemoryFact
 from app.services import auth_service
 from app.services.bot_qr_service import qq_sessions
 from app.utils.rate_limit import account_limiter, login_limiter, register_limiter
@@ -39,6 +41,7 @@ _WEB_KEYS = (
     "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
     "web_free_quota_template_id", "web_max_profiles", "web_max_services",
     "web_rate_limit_register", "web_rate_limit_login",
+    "trust_proxy_headers",
 )
 
 
@@ -57,6 +60,7 @@ def web_flags():
     settings.web_max_services = 5
     settings.web_rate_limit_register = 100
     settings.web_rate_limit_login = 100
+    settings.trust_proxy_headers = True
     register_limiter.reset()
     login_limiter.reset()
     account_limiter.reset()
@@ -332,6 +336,9 @@ class TestWebBotCreate:
                     await identity_repo.bind_bot_openid(
                         service.identity_id, bot["id"], "openid-qq-1"
                     )
+                    await ServiceMemoryRepository().add_facts(
+                        service.context_key, [MemoryFact(content="渠道记忆")]
+                    )
 
                     deleted = await client.delete(
                         f"/api/web/bots/{bot['id']}", headers=_h(token)
@@ -339,6 +346,9 @@ class TestWebBotCreate:
                     assert deleted.status_code == 200, deleted.text
                     assert deleted.json()["deleted_services"] == 1
                     assert await ServiceRepository().find_by_id(service_id) is None
+                    assert await ServiceMemoryRepository().find_by_service(
+                        service.context_key
+                    ) is None
                     identity = await identity_repo.find_by_id(service.identity_id)
                     assert identity is not None
                     uuid.UUID(identity.platform_id)  # 已重置为新的占位 UUID
@@ -475,6 +485,51 @@ class TestWebBotQrFlows:
                     saved = await BotConfigRepository().find_by_id(bot["id"])
                     assert saved is not None and saved.app_secret == "secret-1"
                     assert bot["id"] not in qq_sessions.sessions
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_qr_poll_has_own_rate_budget(self) -> None:
+        """轮询与取码分属不同限流作用域：30 次轮询不能被取码的 10 次阈值误伤。"""
+
+        async def flow() -> None:
+            app = await _setup_app("web_bots_qr_poll_budget")
+            try:
+                async with _client(app) as client:
+                    alice = await _signup(client, "carol")
+                    pid = await _public_profile_id()
+                    created = await client.post(
+                        "/api/web/bots",
+                        json={"platform": "qq", "name": "待绑定", "profile_id": pid},
+                        headers=_h(alice),
+                    )
+                    assert created.status_code == 201, created.text
+                    bot = created.json()["bot"]
+
+                    async def fake_create():
+                        return QQBindSession(
+                            task_id="task-2",
+                            bind_key=base64.b64encode(b"k" * 32).decode(),
+                            qr_url="https://q.qq.com/connect?task_id=task-2",
+                        )
+
+                    async def fake_poll(_session):
+                        return {"status": "waiting"}
+
+                    with patch("app.services.bot_qr_service.create_bind_task", fake_create), \
+                            patch("app.services.bot_qr_service.poll_bind_result", fake_poll):
+                        qr = await client.post(
+                            f"/api/web/bots/{bot['id']}/qq/qrcode", headers=_h(alice)
+                        )
+                        assert qr.status_code == 200, qr.text
+                        for _ in range(30):
+                            polled = await client.get(
+                                f"/api/web/bots/{bot['id']}/qq/poll-qr",
+                                headers=_h(alice),
+                            )
+                            assert polled.status_code == 200, polled.text
+                            assert polled.json()["status"] == "waiting"
             finally:
                 mongo._db = None
 

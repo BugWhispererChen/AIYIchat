@@ -25,12 +25,14 @@ from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
+from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
 from app.models.identity import IdentityCreate
 from app.models.profile import PromptProfileCreate
 from app.models.service import ServiceCreate
+from app.models.service_memory import MemoryFact
 from app.services import auth_service
 from app.utils.rate_limit import login_limiter, register_limiter
 
@@ -56,6 +58,7 @@ _WEB_KEYS = (
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login",
     "web_max_profiles", "web_max_services",
+    "trust_proxy_headers",
 )
 
 
@@ -69,6 +72,7 @@ def web_flags():
     settings.web_captcha_enabled = False
     settings.web_rate_limit_register = 100
     settings.web_rate_limit_login = 100
+    settings.trust_proxy_headers = True
     settings.web_bot_id = WEB_BOT_ID
     settings.web_default_profile_slug = PUBLIC_SLUG
     settings.web_free_quota_template_id = ""
@@ -453,6 +457,141 @@ class TestWebServiceSelfService:
                     only = items[0]["id"]
                     assert (await c.put(f"/api/web/services/{only}", json={"is_active": False}, headers=_h(a))).status_code == 409
                     assert (await c.delete(f"/api/web/services/{only}", headers=_h(a))).status_code == 409
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_login_identity_keeps_last_active_service(self) -> None:
+        """账号内另有渠道服务时，也不能让当前登录身份失去最后一个活跃服务。"""
+
+        async def flow() -> None:
+            app = await _setup_app("svc_login_last")
+            try:
+                async with _client(app) as c:
+                    a = await _signup(c, "alice")
+                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
+                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    assert identity is not None
+                    own = await ServiceRepository().list_by_identity(identity.id)
+                    assert own
+                    target = own[0]
+                    qq_identity = await IdentityRepository().create(
+                        IdentityCreate(
+                            account_id=identity.account_id,
+                            platform="qq",
+                            platform_id="openid-qq",
+                        )
+                    )
+                    await ServiceRepository().create(
+                        ServiceCreate(
+                            account_id=identity.account_id,
+                            identity_id=qq_identity.id,
+                            bot_id="qq-bot",
+                            profile_id=target.profile_id,
+                        )
+                    )
+                    # 账号还有活跃 QQ 服务，但登录身份只剩这一个网页服务 → 两种操作都必须拒绝
+                    resp = await c.put(
+                        f"/api/web/services/{target.id}",
+                        json={"is_active": False},
+                        headers=_h(a),
+                    )
+                    assert resp.status_code == 409, resp.text
+                    assert resp.json()["code"] == "last_active_service"
+                    resp = await c.delete(
+                        f"/api/web/services/{target.id}", headers=_h(a)
+                    )
+                    assert resp.status_code == 409, resp.text
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_delete_service_purges_memory_and_snapshots(self) -> None:
+        """删除服务清记忆/快照，但不删除对话历史。"""
+
+        async def flow() -> None:
+            app = await _setup_app("svc_cleanup")
+            try:
+                async with _client(app) as c:
+                    a = await _signup(c, "alice")
+                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
+                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    assert identity is not None
+                    services = await ServiceRepository().list_by_identity(identity.id)
+                    target = services[0]
+                    # 再建一个活跃服务，保证删除 target 不触发最后服务保护
+                    await ServiceRepository().create(
+                        ServiceCreate(
+                            account_id=identity.account_id,
+                            identity_id=identity.id,
+                            bot_id=target.bot_id,
+                            profile_id=target.profile_id,
+                        )
+                    )
+                    await ServiceMemoryRepository().add_facts(
+                        target.id, [MemoryFact(content="对方喜欢喝咖啡")]
+                    )
+                    await mongo.get_database().injection_snapshots.insert_one({
+                        "service_id": target.id,
+                        "conversation_id": "conv-1",
+                        "injected_facts": [],
+                    })
+
+                    resp = await c.delete(
+                        f"/api/web/services/{target.id}", headers=_h(a)
+                    )
+                    assert resp.status_code == 200, resp.text
+                    assert await ServiceMemoryRepository().find_by_service(
+                        target.id
+                    ) is None
+                    assert await mongo.get_database().injection_snapshots.count_documents(
+                        {"service_id": target.id}
+                    ) == 0
+            finally:
+                mongo._db = None
+
+        _run(flow())
+
+    def test_delete_shared_group_keeps_peer_memory_until_last(self) -> None:
+        """共享组还有其他成员时保留记忆，全部删除后才清理。"""
+
+        async def flow() -> None:
+            app = await _setup_app("svc_cleanup_group")
+            try:
+                async with _client(app) as c:
+                    a = await _signup(c, "alice")
+                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
+                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    assert identity is not None
+                    services = await ServiceRepository().list_by_identity(identity.id)
+                    keeper = services[0]
+                    group = "grp-cleanup"
+                    members = []
+                    for name in ("甲", "乙"):
+                        members.append(await ServiceRepository().create(
+                            ServiceCreate(
+                                name=name,
+                                account_id=identity.account_id,
+                                identity_id=identity.id,
+                                bot_id=keeper.bot_id,
+                                profile_id=keeper.profile_id,
+                                share_group_id=group,
+                            )
+                        ))
+                    await ServiceMemoryRepository().add_facts(
+                        group, [MemoryFact(content="共享记忆")]
+                    )
+
+                    assert (await c.delete(
+                        f"/api/web/services/{members[0].id}", headers=_h(a)
+                    )).status_code == 200
+                    assert await ServiceMemoryRepository().find_by_service(group) is not None
+                    assert (await c.delete(
+                        f"/api/web/services/{members[1].id}", headers=_h(a)
+                    )).status_code == 200
+                    assert await ServiceMemoryRepository().find_by_service(group) is None
             finally:
                 mongo._db = None
 

@@ -43,9 +43,12 @@ logger = logging.getLogger(__name__)
 web_bots_router = APIRouter()
 _service_repo = ServiceRepository()
 
-# 10 分钟滑动窗口：写操作 20 次、取码 10 次
+# 10 分钟滑动窗口：写操作 20 次、取码 10 次、扫码轮询 120 次
+# 轮询与取码必须分开计数：前端每 2~3 秒轮询一次，共用 10 次阈值会让正常扫码
+# 在二维码有效期内必然被 429 打断（见 P1-1）
 _RATE_WRITE = 20
 _RATE_QR = 10
+_RATE_QR_POLL = 120
 
 
 class WebBotCreatePayload(BaseModel):
@@ -249,7 +252,7 @@ async def update_web_bot(
 
 @web_bots_router.delete("/{bot_id}")
 async def delete_web_bot(request: Request, bot_id: str) -> JSONResponse:
-    """删除渠道：级联删除其下服务，保留对话与记忆。"""
+    """删除渠道：级联删除其下服务，保留对话历史、清理服务记忆与注入快照。"""
     principal, err = await _principal(request)
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
@@ -259,7 +262,7 @@ async def delete_web_bot(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         deleted = await web_channel_service.delete_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.identity.account_id, bot_id, principal.identity.id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -310,7 +313,7 @@ async def poll_qq_qrcode(request: Request, bot_id: str) -> JSONResponse:
     principal, err = await _principal(request)
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
-    limited = _limit("web_bot_qr", principal, request, _RATE_QR)
+    limited = _limit("web_bot_poll", principal, request, _RATE_QR_POLL)
     if limited is not None:
         return limited
 
@@ -378,7 +381,7 @@ async def poll_wechat_qrcode(
     principal, err = await _principal(request)
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
-    limited = _limit("web_bot_qr", principal, request, _RATE_QR)
+    limited = _limit("web_bot_poll", principal, request, _RATE_QR_POLL)
     if limited is not None:
         return limited
 

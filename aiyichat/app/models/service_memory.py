@@ -186,6 +186,9 @@ class ServiceMemoryInDB(BaseModel):
     mood: CharacterMood | None = None  # 角色当前心情（None 表示未启用或无状态）
     # 上次执行反思的时刻（触发节流用；None 表示从未反思过）
     last_reflection_at: datetime | None = None
+    # 上次执行焦点/事实抽取的时刻（触发节流用；与 updated_at 分离，
+    # 避免心情、引用刷新等写入把抽取永久挡在 5 分钟窗口外）
+    last_focus_extract_at: datetime | None = None
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -210,6 +213,7 @@ class ServiceMemoryInDB(BaseModel):
         doc.setdefault("insights", [])  # 兼容存量数据：反思层上线前的文档无此字段
         doc.setdefault("mood", None)  # 兼容存量数据：无 mood 字段
         doc.setdefault("last_reflection_at", None)
+        doc.setdefault("last_focus_extract_at", None)
         # 兼容存量数据：存量实体无扩展字段，补默认值
         for ent in doc.get("entities", []):
             ent.setdefault("entity_type", "person")

@@ -170,10 +170,12 @@ class AccountRepository:
             await db.conversations.delete_many({"$or": conv_filters})
         ).deleted_count if conv_filters else 0
 
-        # 1b. 批量删除所有服务的长期记忆
-        if svc_ids:
+        # 1b. 批量删除所有服务的长期记忆：记忆按 context_key（共享组优先）存储，
+        # 同时保留 service.id 一并清理，兼容共享组功能上线前按服务 ID 落库的存量文档。
+        memory_keys = list(set(svc_ids) | set(context_keys))
+        if memory_keys:
             stats["service_memories"] = (await db.service_memories.delete_many(
-                {"service_id": {"$in": svc_ids}}
+                {"service_id": {"$in": memory_keys}}
             )).deleted_count
         else:
             stats["service_memories"] = 0

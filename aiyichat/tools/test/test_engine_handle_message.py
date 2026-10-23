@@ -322,6 +322,25 @@ class TestReceivedAt:
         assert extracted[2].created_at > received_at
         assert history == [old] and extracted is not history
 
+    def test_focus_throttle_uses_explicit_extract_time(self) -> None:
+        """节流必须读 last_focus_extract_at，而不是被每轮刷新的 updated_at。"""
+        engine = _build_engine()
+        recent_updated = datetime(2026, 10, 15, 8, tzinfo=timezone.utc)
+        old_extract = recent_updated - timedelta(hours=2)
+        memory = ServiceMemoryInDB(
+            _id="memory-1",
+            service_id="svc-1",
+            updated_at=recent_updated,
+            last_focus_extract_at=old_extract,
+        )
+        engine.memory_repo.find_by_service = AsyncMock(return_value=memory)
+
+        _run(engine, "普通消息")
+
+        kwargs = engine.focus_tracker.should_extract.call_args.kwargs
+        assert kwargs["last_extract_time"] == old_extract
+        assert kwargs["last_extract_time"] != recent_updated
+
 
 class TestGapMode:
     """间隔分类使用运行时阈值，含临界秒及时间总开关。"""
@@ -967,6 +986,51 @@ class TestStreamGateAndPacing:
         result, _ = _run(engine, "今天想出门走走", stream=True)
         assert all(isinstance(i, str) for i in result)
         assert "".join(result) == "你好呀，今天过得怎么样？"
+
+    def test_stream_disconnect_settles_exactly_once(self) -> None:
+        """客户端在结算途中断开：后台结算继续完成，且不能补第二次。"""
+        async def body() -> None:
+            engine = _build_engine()
+            started = asyncio.Event()
+            finished = asyncio.Event()
+
+            async def slow_settle(*_args: Any, **_kwargs: Any) -> None:
+                started.set()
+                await asyncio.sleep(0.05)
+                finished.set()
+
+            engine._settle_usage = AsyncMock(side_effect=slow_settle)
+            engine._finalize_turn = AsyncMock()
+
+            provider = MagicMock()
+            provider.model_name = "test-model"
+
+            async def stream_reply(**kwargs: Any) -> AsyncIterator[str]:
+                kwargs["usage_sink"].update(prompt_tokens=1, completion_tokens=2)
+                yield "你"
+                yield "好"
+
+            provider.stream_complete = MagicMock(side_effect=stream_reply)
+            with patch(
+                "app.conversation.engine.get_llm_provider", return_value=provider
+            ):
+                agen = engine.handle_message_stream(
+                    platform="qq", platform_id="openid-1", text="hi"
+                )
+                assert await agen.__anext__() == "你"
+                assert await agen.__anext__() == "好"
+                pending = asyncio.create_task(agen.__anext__())
+                await asyncio.wait_for(started.wait(), timeout=1)
+                pending.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await pending
+                await agen.aclose()
+                await asyncio.wait_for(finished.wait(), timeout=1)
+
+            assert engine._settle_usage.await_count == 1
+            assert engine._finalize_turn.await_count == 1
+
+        asyncio.run(body())
 
     def test_markers_never_reach_the_screen(self) -> None:
         """（微笑）/[表情:]/[IMG:] 必须在放行之前就被删掉。"""

@@ -6,11 +6,17 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.admin.auth import (
+    admin_lock_remaining,
     create_session,
     destroy_session,
+    register_admin_failure,
     require_admin,
+    reset_admin_failures,
     verify_credentials,
 )
+from app.api.auth_api import client_ip
+from app.config import settings
+from app.utils.rate_limit import RateLimited, check_rate_limit
 from app.admin.routes.accounts import accounts_router
 from app.template_filters import configure_templates
 from app.template_filters import to_beijing as _to_beijing  # noqa: F401 - 既有测试与调用方仍从此模块引用该别名
@@ -64,12 +70,42 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...),
 ):
+    # IP 限流先于凭据校验：挡住单源爆破，也避免为每个请求做 60 万次 PBKDF2
+    try:
+        check_rate_limit(
+            "admin_login", client_ip(request), settings.admin_login_rate_limit
+        )
+    except RateLimited as exc:
+        return _render(
+            request, "login.html", {"error": exc.message}, status_code=429
+        )
+
+    locked = admin_lock_remaining(username)
+    if locked:
+        minutes = max(1, (locked + 59) // 60)
+        return _render(
+            request,
+            "login.html",
+            {"error": f"登录失败次数过多，请 {minutes} 分钟后再试"},
+            status_code=429,
+        )
+
     if not await verify_credentials(username, password):
+        locked = register_admin_failure(username)
+        if locked:
+            minutes = max(1, (locked + 59) // 60)
+            return _render(
+                request,
+                "login.html",
+                {"error": f"登录失败次数过多，请 {minutes} 分钟后再试"},
+                status_code=429,
+            )
         return _render(
             request,
             "login.html",
             {"error": "用户名或密码错误"},
         )
+    reset_admin_failures(username)
     response = RedirectResponse(url="/admin/", status_code=status.HTTP_303_SEE_OTHER)
     create_session(response)
     return response

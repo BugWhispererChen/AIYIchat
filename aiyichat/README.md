@@ -106,7 +106,9 @@ chmod +x deploy.sh
 
 > **限流与验证码为单实例内存实现**：容器重启即清空，多实例水平扩展时各实例独立计数会失效，
 > 需改为 Redis（`INCR` + `EXPIRE`，key 形如 `rate_limit:register:{ip}`）。
-> 反向代理必须以 `$remote_addr` **覆写** `X-Forwarded-For`（而非追加），否则客户端可自造头绕过限流。
+> 默认直连部署按 TCP 对端地址限流。只有反向代理已用 `$remote_addr` **覆写**
+> `X-Forwarded-For`（而非追加）时，才可设置 `TRUST_PROXY_HEADERS=true`；
+> 否则客户端可自造头绕过限流。
 > 这些项同样支持在管理后台「网页身份」页热调；**一旦在后台保存过，数据库值会覆盖 `.env`**。
 
 > 模型名称、接口地址、API Key 分组等 AI 模型配置**不在 `.env` 里维护**：首次启动时按

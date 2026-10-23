@@ -65,10 +65,15 @@ class WebAccountPrincipal:
 
 
 def client_ip(request: Request) -> str:
-    """取客户端 IP：优先反向代理写入的 X-Forwarded-For 首值，回落直连地址。"""
-    xff = request.headers.get(_XFF_HEADER, "")
-    if xff:
-        return xff.split(",")[0].strip()
+    """取客户端 IP。
+
+    只有显式开启 `trust_proxy_headers`（反向代理已用 `$remote_addr` 覆写该头）时
+    才读取 `X-Forwarded-For`；默认直连部署下信任它等于让客户端自选限流 key。
+    """
+    if settings.trust_proxy_headers:
+        xff = request.headers.get(_XFF_HEADER, "")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 

@@ -129,6 +129,9 @@ class AppSettingsDocument(BaseModel):
     admin_username: str = "admin"
     admin_password: str = ""
     admin_session_hours: int = 24
+    admin_login_rate_limit: int = 10  # 单 IP 登录请求上限（10 分钟滑动窗口）
+    admin_login_max_fail: int = 5  # 同一用户名连续登录失败上限
+    admin_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
 
     # 阿里云百炼
     dashscope_api_key: str = ""
@@ -333,6 +336,8 @@ class AppSettingsDocument(BaseModel):
     web_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
     web_rate_limit_register: int = 5  # 单 IP 注册请求频率上限（10 分钟滑动窗口）
     web_rate_limit_login: int = 20  # 单 IP 登录请求频率上限（10 分钟滑动窗口）
+    # 仅当反向代理已用 $remote_addr 覆写 X-Forwarded-For 时开启
+    trust_proxy_headers: bool = False
 
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

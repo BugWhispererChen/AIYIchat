@@ -36,6 +36,7 @@ from app.conversation.sticker_task import (
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.models.bot_config import BotConfigInDB
 from app.services.voice_window import voice_window
+from app.utils.redaction import brief_json
 from app.utils.tasks import spawn
 
 if TYPE_CHECKING:
@@ -105,6 +106,9 @@ class WeChatClient(ChannelAdapter):
         # HTTP session
         self._session: Optional[aiohttp.ClientSession] = None
 
+        # 最近一次发送失败的平台原因（供主动消息记录/诊断使用）
+        self._last_send_error: str = ""
+
         # 回调
         self.on_token_update = on_token_update
 
@@ -146,13 +150,8 @@ class WeChatClient(ChannelAdapter):
         )
 
     async def send_message(self, user_id: str, content: str, **kwargs) -> bool:
-        """发送文本消息到微信身份。"""
-        try:
-            await self.send_text(user_id, content)
-            return True
-        except Exception as e:
-            logger.error("%s send_message 失败: %s", self._label, e)
-            return False
+        """发送文本消息到微信身份，返回平台是否确认成功。"""
+        return await self.send_text(user_id, content)
 
     # ── 请求头 ────────────────────────────────────────
 
@@ -893,14 +892,12 @@ class WeChatClient(ChannelAdapter):
             )
             return False
         logger.info("%s 主动消息 -> %s", self._label, user_id)
-        try:
-            await self.send_text(user_id, content)
-            return True
-        except Exception as e:
-            logger.error(
-                "%s 主动消息发送异常: %s", self._label, e
-            )
-            return False
+        return await self.send_text(user_id, content)
+
+    @property
+    def last_send_error(self) -> str:
+        """最近一次发送失败的平台错误详情（发送成功后清空）。"""
+        return self._last_send_error
 
     def _get_context_token(self, user_id: str) -> str:
         """获取指定身份的 context_token。"""
@@ -919,12 +916,17 @@ class WeChatClient(ChannelAdapter):
         """
         return bool(self._context_tokens.get(user_id, ""))
 
-    async def send_text(self, to_user_id: str, text: str) -> None:
-        """发送文本消息。"""
+    async def send_text(self, to_user_id: str, text: str) -> bool:
+        """发送文本消息，返回平台是否确认成功。
+
+        平台返回 `ret != 0`、响应不可解析或网络异常都必须返回 False：
+        主动消息调度器据此写 failed，避免"记录成功但用户没收到"。
+        """
         if not text.strip():
             # 空文本发出去只会拿到平台失败响应，且占用一次 context_token
             logger.info("%s 跳过空文本发送: to=%s", self._label, to_user_id)
-            return
+            self._last_send_error = "空文本"
+            return False
         session = await self._ensure_session()
         payload: dict = {
             "msg": {
@@ -961,18 +963,30 @@ class WeChatClient(ChannelAdapter):
                         "%s sendmessage 响应解析失败: %s",
                         self._label, resp_text[:100],
                     )
-                    return
+                    self._last_send_error = "响应解析失败"
+                    return False
                 ret = data.get("ret", data.get("errcode"))
                 if ret is not None and ret != 0:
+                    self._last_send_error = str(
+                        data.get("msg")
+                        or data.get("errmsg")
+                        or f"ret={ret}"
+                    )
                     logger.error(
-                        "%s 发送文本失败: %s", self._label, data
+                        "%s 发送文本失败: %s",
+                        self._label,
+                        brief_json(data, ("ret", "errcode", "errmsg")),
                     )
-                else:
-                    logger.info(
-                        "%s 文本已发送给 %s", self._label, to_user_id
-                    )
+                    return False
+                self._last_send_error = ""
+                logger.info(
+                    "%s 文本已发送给 %s", self._label, to_user_id
+                )
+                return True
         except Exception as e:
+            self._last_send_error = str(e)
             logger.error("%s 发送文本异常: %s", self._label, e)
+            return False
 
     async def send_image(self, to_user_id: str, image_data: bytes) -> None:
         """发送图片（官方 CDN 上传）。"""

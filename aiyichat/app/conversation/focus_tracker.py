@@ -179,6 +179,12 @@ class FocusTracker:
             existing_entities = (
                 list(service_memory.entities) if service_memory else []
             )
+            # 先落抽取时间再调用 LLM：即使本次抽取失败，也在 5 分钟窗口内不再重试，
+            # 避免 provider 故障时每条消息都烧一次调用；该时间与 updated_at 解耦
+            try:
+                await self.memory_repo.mark_focus_extract(service_id)
+            except Exception as e:  # noqa: BLE001 - 节流记账失败不应阻断抽取
+                logger.warning("记录焦点抽取时间失败: %s", e)
             result = await self._extract(recent_messages, existing_facts, existing_entities)
             if result is None:
                 return

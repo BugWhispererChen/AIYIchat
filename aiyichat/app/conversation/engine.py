@@ -1008,7 +1008,7 @@ class ConversationEngine:
         # 昼夜与提醒共用"单一时区源"，与时间感知注入保持同一口径
         pace_hour = (received_at + timedelta(hours=settings.default_timezone_offset)).hour
         delay_budget = float(settings.stream_max_total_delay_seconds)
-        settled = False
+        settle_task: asyncio.Task | None = None
         first_segment = True
         resets = 0  # 本轮已"收回重跑"次数，受 stream_jitter_reset_max 约束
 
@@ -1141,10 +1141,13 @@ class ConversationEngine:
                 # 全部放行内容都被清洗吃掉（模型整段出戏/整段套话）：兜底一句，别让客户看到空屏
                 clean_text = EMPTY_REPLY_FALLBACK
                 yield await release(clean_text)
-            await settle(clean_text, latency_ms)
-            settled = True
+            # 结算放进独立 Task 并 shield：客户端断连时外层生成器可以关闭，
+            # 但记账/落库必须完整执行一次。先赋值再 await，finally 据此判定
+            # "已启动"，避免取消落在 settle 内部时再补一次造成重复消息与重复扣费。
+            settle_task = spawn(settle(clean_text, latency_ms))
+            await asyncio.shield(settle_task)
         finally:
-            if not settled and chunks:
+            if settle_task is None and chunks:
                 # 客户端中止/断连：已放行部分仍要落库。绝不在 finally 里 await
                 # （异步生成器关闭时 await 会触发 ignored GeneratorExit），改交后台任务。
                 spawn(
@@ -2132,7 +2135,9 @@ class ConversationEngine:
         if self.focus_tracker.should_extract(
             message_count=msg_count,
             last_msg=text,
-            last_extract_time=getattr(service_memory, "updated_at", None)
+            last_extract_time=getattr(
+                service_memory, "last_focus_extract_at", None
+            )
             if service_memory else None,
         ):
             spawn_with_limit(

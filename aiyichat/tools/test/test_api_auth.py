@@ -13,8 +13,10 @@ from typing import Any, AsyncIterator, Callable
 import mongomock_motor
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from app.api import conversations_api
+from app.api.auth_api import client_ip
 from app.config import settings
 from app.db import mongo
 from app.db.repositories.account_repo import AccountRepository
@@ -40,6 +42,7 @@ _WEB_KEYS = (
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login",
+    "trust_proxy_headers",
 )
 
 
@@ -62,6 +65,8 @@ def web_flags():
     settings.web_bot_id = WEB_BOT_ID
     settings.web_default_profile_slug = PROFILE_SLUG
     settings.web_free_quota_template_id = ""
+    # 测试客户端用 X-Forwarded-For 模拟不同客户端 IP，等价于"代理已覆写"场景
+    settings.trust_proxy_headers = True
     register_limiter.reset()
     login_limiter.reset()
     captcha_service.reset()
@@ -373,6 +378,24 @@ class TestAuthApiFlow:
 
 class TestRateLimitApi:
     """IP 限流：注册与登录各自独立计数并返回 429。"""
+
+    def test_client_ip_ignores_forged_header_by_default(self) -> None:
+        """默认直连部署不信任 X-Forwarded-For；仅显式开启时才取代理写入值。"""
+        request = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"203.0.113.5, 10.0.0.1")],
+            "client": ("198.51.100.2", 12345),
+        })
+        old = settings.trust_proxy_headers
+        try:
+            settings.trust_proxy_headers = False
+            assert client_ip(request) == "198.51.100.2"
+            settings.trust_proxy_headers = True
+            assert client_ip(request) == "203.0.113.5"
+        finally:
+            settings.trust_proxy_headers = old
 
     def test_register_429(self) -> None:
         settings.web_rate_limit_register = 2

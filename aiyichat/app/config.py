@@ -165,6 +165,9 @@ class _RuntimeSettings:
     admin_username: str = "admin"
     admin_password: str = ""
     admin_session_hours: int = 24
+    admin_login_rate_limit: int = 10  # 单 IP 登录请求上限（10 分钟滑动窗口）
+    admin_login_max_fail: int = 5  # 同一用户名连续登录失败上限
+    admin_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
 
     # 阿里云百炼
     dashscope_api_key: str = ""
@@ -329,6 +332,9 @@ class _RuntimeSettings:
     # C 端自助管理配额：每账号可自建的角色/服务数量上限（0 表示关闭该能力）
     web_max_profiles: int = 5  # 私有角色数量上限
     web_max_services: int = 3  # 对话服务数量上限
+    # 仅当反向代理已用 $remote_addr 覆写 X-Forwarded-For 时开启；默认直连
+    # uvicorn 时信任该头等于让客户端自选限流 key（P1-10）
+    trust_proxy_headers: bool = False
 
     def __init__(self) -> None:
         # 基础设施字段不可热重载，直接从 _bootstrap 同步
@@ -440,6 +446,9 @@ class _RuntimeSettings:
             "time_day_separator_enabled", "message_time_tag_year_enabled",
             "memory_inject_time_suffix", "time_jionlp_enabled",
             "admin_username", "admin_password", "admin_session_hours",
+            "admin_login_rate_limit", "admin_login_max_fail",
+            "admin_login_lockout_minutes",
+            "trust_proxy_headers",
             "dashscope_api_key",
             "asr_enabled", "asr_config_id",
             "vision_enabled", "vision_config_id",
@@ -586,6 +595,10 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         admin_username: str = Field(default="admin")
         admin_password: str = Field(default="")
         admin_session_hours: int = Field(default=24)
+        admin_login_rate_limit: int = Field(default=10)
+        admin_login_max_fail: int = Field(default=5)
+        admin_login_lockout_minutes: int = Field(default=15)
+        trust_proxy_headers: bool = Field(default=False)
         dashscope_api_key: str = Field(default="")
         asr_enabled: bool = Field(default=False)
         asr_config_id: str = Field(default="dashscope-default")

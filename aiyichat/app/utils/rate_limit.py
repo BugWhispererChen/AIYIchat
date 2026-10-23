@@ -85,6 +85,8 @@ WINDOW_SECONDS = 600.0
 # 模块级单例：注册/登录共用进程内计数
 register_limiter = SlidingWindowLimiter()
 login_limiter = SlidingWindowLimiter()
+# 后台管理员登录单独计数：不能与 C 端登录共用，否则前台爆破会误伤后台
+admin_login_limiter = SlidingWindowLimiter()
 # 账号中心写操作（改密 / 资料 / 清理 / 注销）共用一个计数器：
 # key 已含 scope 与凭据 ID，不同动作与不同账号互不影响，只需注意别把同 IP 的其他账号打死
 account_limiter = SlidingWindowLimiter()
@@ -98,6 +100,9 @@ _ACCOUNT_SCOPES = frozenset(
         "account_delete",
         "web_bot_write",
         "web_bot_qr",
+        # 扫码轮询与取码分开计数：轮询频率天然远高于取码，共用阈值会让绑定流程
+        # 在二维码有效期内必然撞上 429
+        "web_bot_poll",
     }
 )
 
@@ -118,6 +123,8 @@ def _limiter_for(scope: str) -> SlidingWindowLimiter:
         return register_limiter
     if scope == "login":
         return login_limiter
+    if scope == "admin_login":
+        return admin_login_limiter
     if scope in _ACCOUNT_SCOPES:
         return account_limiter
     raise ValueError(f"未注册的限流作用域: {scope}")

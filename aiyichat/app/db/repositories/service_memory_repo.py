@@ -539,6 +539,27 @@ class ServiceMemoryRepository:
             return False
         return (intersection / union) >= threshold
 
+    async def mark_focus_extract(
+        self, service_id: str, when: Optional[datetime] = None
+    ) -> None:
+        """记录一次焦点/事实抽取，供 5 分钟节流使用。
+
+        只写 `last_focus_extract_at`，不碰 `updated_at`——后者会被心情、
+        引用刷新等每轮写入，不能代表抽取时间。
+        """
+        now = when or datetime.now(timezone.utc)
+        await self._collection().update_one(
+            {"service_id": service_id},
+            {
+                "$set": {"last_focus_extract_at": now},
+                "$setOnInsert": {
+                    "service_id": service_id,
+                    "facts": [],
+                },
+            },
+            upsert=True,
+        )
+
     async def delete_by_service(self, service_id: str) -> bool:
         """删除指定服务的所有记忆（Service 级联删除时调用）。"""
         result = await self._collection().delete_one({"service_id": service_id})

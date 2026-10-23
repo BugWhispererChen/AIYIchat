@@ -533,6 +533,41 @@ class TestServiceMemoryRepository:
 
         run_with_db(body)
 
+    def test_mark_focus_extract_isolated_from_updated_at(self) -> None:
+        """焦点抽取节流时间独立存储：心情/引用刷新改 updated_at 不能影响它。"""
+        from app.db.mongo import get_database
+
+        async def body() -> None:
+            repo = ServiceMemoryRepository()
+            collection = get_database().service_memories
+            old_updated = datetime(2026, 10, 1, 8, tzinfo=timezone.utc)
+            old_extract = datetime(2026, 10, 1, 9, tzinfo=timezone.utc)
+            await collection.insert_one({
+                "service_id": "svc-1",
+                "updated_at": old_updated,
+                "last_focus_extract_at": old_extract,
+                "facts": [],
+            })
+            when = datetime(2026, 10, 2, 10, tzinfo=timezone.utc)
+            await repo.mark_focus_extract("svc-1", when)
+            doc = await collection.find_one({"service_id": "svc-1"})
+            assert doc is not None
+            assert doc["last_focus_extract_at"].replace(tzinfo=timezone.utc) == when
+            assert doc["updated_at"].replace(tzinfo=timezone.utc) == old_updated
+            memory = await repo.find_by_service("svc-1")
+            assert memory is not None
+            assert memory.last_focus_extract_at is not None
+            assert memory.last_focus_extract_at.replace(
+                tzinfo=timezone.utc
+            ) == when
+            # 文档不存在时也能建立节流锚点（首次抽取前服务可能还没有记忆文档）
+            await repo.mark_focus_extract("svc-new", when)
+            created = await repo.find_by_service("svc-new")
+            assert created is not None
+            assert created.last_focus_extract_at is not None
+
+        run_with_db(body)
+
     def test_topic_and_facts(self) -> None:
         async def body():
             repo = ServiceMemoryRepository()

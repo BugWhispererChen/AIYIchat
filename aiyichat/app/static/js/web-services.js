@@ -324,7 +324,7 @@
 
     async function removeBot(bot) {
         const suffix = bot.service_count
-            ? '其下 ' + bot.service_count + ' 个服务会一并删除，对话历史仍保留。'
+            ? '其下 ' + bot.service_count + ' 个服务会一并删除，对话历史保留，服务记忆将清除。'
             : '此操作不可恢复。';
         if (!window.confirm('确定删除渠道「' + bot.name + '」？' + suffix)) return;
         const result = await window.WebAuth.call(
@@ -405,7 +405,15 @@
                 return;
             }
             if (token !== qrToken) return;
-            if (!polled.ok) { status.textContent = polled.detail || '轮询失败'; return; }
+            if (!polled.ok) {
+                if (polled.status === 429) {
+                    status.textContent = '请求过于频繁，稍后自动重试…';
+                    setTimeout(poll, 6000);
+                    return;
+                }
+                status.textContent = polled.detail || '轮询失败';
+                return;
+            }
             const state = polled.data.status;
             if (state === 'waiting') { setTimeout(poll, 3000); return; }
             if (state === 'rate_limited') {
@@ -485,7 +493,15 @@
                 return;
             }
             if (token !== qrToken) return;
-            if (!polled.ok) { status.textContent = polled.detail || '轮询失败'; return; }
+            if (!polled.ok) {
+                if (polled.status === 429) {
+                    status.textContent = '请求过于频繁，稍后自动重试…';
+                    setTimeout(poll, 6000);
+                    return;
+                }
+                status.textContent = polled.detail || '轮询失败';
+                return;
+            }
             const state = polled.data.status;
             if (state === 'waiting') { setTimeout(poll, 2000); return; }
             if (state === 'success') {
@@ -760,7 +776,7 @@
     }
 
     async function removeService(svc) {
-        if (!window.confirm('确定删除服务「' + svc.name + '」？对话历史仍会保留。')) return;
+        if (!window.confirm('确定删除服务「' + svc.name + '」？对话历史保留，服务记忆将清除。')) return;
         const result = await window.WebAuth.call(
             '/api/web/services/' + encodeURIComponent(svc.id),
             { method: 'DELETE' }

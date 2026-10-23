@@ -3,12 +3,16 @@
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.admin.auth import require_admin
 
 logger = logging.getLogger(__name__)
 
-proactive_router = APIRouter()
+# 主动消息的触发与记录查询都是内部运维能力：挂在公网 API 前缀下，
+# 必须显式要求后台管理员会话，不能依赖"ID 不可猜"来当鉴权。
+proactive_router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 class ProactiveTriggerRequest(BaseModel):

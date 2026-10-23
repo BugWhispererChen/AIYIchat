@@ -8,6 +8,7 @@
 - 凭据与业务身份分离：密码哈希只进 `web_credentials`，不进会被 prompt 消费的 user 对象。
 """
 
+import asyncio
 import logging
 import re
 import secrets
@@ -350,7 +351,7 @@ async def register(
     credential = await credentials.insert(
         WebCredentialCreate(
             username=name,
-            password_hash=hash_password(password),
+            password_hash=await asyncio.to_thread(hash_password, password),
             status="pending",
             created_ip=ip,
             consent=consent,
@@ -424,7 +425,10 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
 
     if credential.is_locked:
         raise AuthError("login_locked", "登录失败次数过多，请稍后再试", 429)
-    if not verify_password(password, credential.password_hash):
+    password_ok = await asyncio.to_thread(
+        verify_password, password, credential.password_hash
+    )
+    if not password_ok:
         locked_until = await credentials.register_login_failure(
             credential.id, settings.web_login_max_fail, settings.web_login_lockout_minutes
         )
@@ -511,13 +515,18 @@ async def change_password(
     credential = await repo.find_by_id(credential_id)
     if credential is None:
         raise AuthError("credential_not_found", "账号不存在", 404)
-    if not verify_password(current_password, credential.password_hash):
+    if not await asyncio.to_thread(
+        verify_password, current_password, credential.password_hash
+    ):
         raise AuthError("invalid_current_password", "当前密码不正确", 400)
-    if verify_password(new_password, credential.password_hash):
+    if await asyncio.to_thread(
+        verify_password, new_password, credential.password_hash
+    ):
         raise AuthError("same_password", "新密码不能与当前密码相同", 400)
     validate_password(credential.username, new_password)
 
-    if not await repo.set_password(credential_id, hash_password(new_password)):
+    new_hash = await asyncio.to_thread(hash_password, new_password)
+    if not await repo.set_password(credential_id, new_hash):
         raise AuthError("password_change_failed", "密码修改失败，请稍后重试", 500)
 
     revoked = await WebSessionRepository().delete_others(credential_id, keep_session_id)
@@ -561,7 +570,9 @@ async def reset_password(credential_id: str, new_password: str, operator: str) -
     if credential is not None:
         username = credential.username
     validate_password(username, new_password)
-    ok = await WebCredentialRepository().set_password(credential_id, hash_password(new_password))
+    ok = await WebCredentialRepository().set_password(
+        credential_id, await asyncio.to_thread(hash_password, new_password)
+    )
     if ok:
         await WebSessionRepository().delete_by_credential(credential_id)
     return ok

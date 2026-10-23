@@ -206,10 +206,21 @@ class TestHttpFlows:
                 FakeAiohttpResponse(text=json.dumps({"ret": 0}))
             ])
             client._session = session
-            await client.send_text("u-1", "hi")
+            assert await client.send_text("u-1", "hi") is True
             assert session.calls  # 发出请求
             # send_message 包装成功返回 True
             assert await client.send_message("u-1", "hi") is True
+
+            # 平台业务错误必须返回 False，并把原因留给调度器
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(
+                    text=json.dumps({"ret": 100, "msg": "context invalid"})
+                )
+            ])
+            assert await client.send_text("u-1", "hi") is False
+            assert client.last_send_error == "context invalid"
+            # 空文本同样视为失败
+            assert await client.send_text("u-1", "   ") is False
 
         _run(body())
 
@@ -409,13 +420,16 @@ class TestAesMediaAndProactive:
     def test_send_proactive(self) -> None:
         async def body():
             client = _make_client()
-            client.send_text = AsyncMock()
+            client.send_text = AsyncMock(return_value=True)
             # 无 context_token → 失败
             assert await client.send_proactive("u-1", "hi") is False
             # 有 token → 成功
             client._context_tokens["u-1"] = "ctx"
             assert await client.send_proactive("u-1", "hi") is True
             client.send_text.assert_awaited()
+            # 平台发送失败必须原样返回 False（不能吞成成功）
+            client.send_text = AsyncMock(return_value=False)
+            assert await client.send_proactive("u-1", "hi") is False
 
         _run(body())
 

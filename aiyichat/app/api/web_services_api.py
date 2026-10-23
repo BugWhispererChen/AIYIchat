@@ -9,7 +9,8 @@
   到系统载体渠道）；
 - 角色必须对该账号可见（公共角色或本人私有角色）且处于启用状态；
 - 数量受 `settings.web_max_services` 约束，渠道与服务共用同一上限；
-- 始终保留至少一个启用中的服务，否则账号会失去聊天能力。
+- 始终保留至少一个启用中的服务，且当前登录身份不能失去最后一个活跃服务，
+  否则账号会失去聊天能力。
 """
 
 import logging
@@ -31,6 +32,7 @@ from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceCreate, ServiceInDB, ServiceUpdate
 from app.services import web_channel_service
 from app.services.auth_service import ensure_account_web_bot
+from app.services.service_cleanup import purge_service_memory
 from app.services.web_channel_service import ChannelError
 
 logger = logging.getLogger(__name__)
@@ -211,6 +213,38 @@ async def _require_owned_service(
     return svc, None
 
 
+async def _last_active_guard(
+    principal: WebPrincipal, svc: ServiceInDB
+) -> Optional[JSONResponse]:
+    """停用/删除活跃服务前的双重保护。
+
+    - 账号维度：账号至少要保留一个启用中的服务（既有产品规则）；
+    - 登录身份维度：当前身份也必须保留一个启用中的服务，否则
+      `require_current_identity` 会因 no_service 拒绝后续所有核心接口，
+      用户会被自己的操作锁死（账号下的渠道服务挂在别的身份上，不能兜底）。
+    """
+    siblings = await _service_repo.list_by_account(principal.account_id)
+    account_active_others = [
+        s for s in siblings if s.id != svc.id and s.is_active
+    ]
+    if not account_active_others:
+        return _bad(
+            "last_active_service",
+            "至少需要保留一个启用中的服务才能继续聊天",
+            409,
+        )
+    if svc.identity_id == principal.identity_id:
+        own = await _service_repo.list_by_identity(principal.identity_id)
+        own_active_others = [s for s in own if s.id != svc.id and s.is_active]
+        if not own_active_others:
+            return _bad(
+                "last_active_service",
+                "当前登录身份至少需要保留一个启用中的服务才能继续聊天",
+                409,
+            )
+    return None
+
+
 @web_services_router.get("")
 async def list_web_services(request: Request) -> JSONResponse:
     """列出本人所有对话服务（聊天页的角色切换器数据源）。"""
@@ -376,16 +410,11 @@ async def update_web_service(
             return _bad("invalid_timezone", tz_err)
         update.timezone = tz
     if payload.is_active is not None and payload.is_active != svc.is_active:
-        # 停用前确认不是最后一个启用中的服务：否则账号直接失去聊天能力
+        # 停用前确认账号与当前登录身份都还有活跃服务（见 _last_active_guard）
         if not payload.is_active:
-            siblings = await _service_repo.list_by_account(principal.account_id)
-            active_others = [s for s in siblings if s.id != svc.id and s.is_active]
-            if not active_others:
-                return _bad(
-                    "last_active_service",
-                    "至少需要保留一个启用的服务才能继续聊天",
-                    409,
-                )
+            guard = await _last_active_guard(principal, svc)
+            if guard is not None:
+                return guard
         update.is_active = payload.is_active
 
     saved = await _service_repo.update(svc.id, update)
@@ -416,16 +445,17 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
     if err is not None or svc is None:
         return err or _bad("not_found", "服务不存在", 404)
 
-    siblings = await _service_repo.list_by_account(principal.account_id)
-    remaining_active = [
-        s for s in siblings if s.id != svc.id and s.is_active
-    ]
-    if svc.is_active and not remaining_active:
-        return _bad(
-            "last_active_service",
-            "至少需要保留一个启用中的服务才能继续聊天",
-            409,
-        )
+    if svc.is_active:
+        guard = await _last_active_guard(principal, svc)
+        if guard is not None:
+            return guard
+
+    # 先清记忆/快照再删服务行：反过来会让服务行消失后这些数据再也无法定位
+    try:
+        await purge_service_memory([svc])
+    except Exception:  # noqa: BLE001 - 清理失败时保留服务，便于用户重试
+        logger.exception("删除服务前清理记忆失败: service=%s", svc.id)
+        return _bad("cleanup_failed", "清理服务记忆失败，请稍后重试", 500)
 
     if not await _service_repo.delete(svc.id):
         return _bad("not_found", "服务不存在", 404)

@@ -28,6 +28,7 @@ from app.db.repositories.identity_repo import IdentityRepository
 from app.models.profile import PromptProfileCreate
 from app.models.service import ServiceCreate
 from app.models.identity import IdentityCreate
+from app.utils.rate_limit import admin_login_limiter
 
 
 async def _setup_app(override_auth: bool = True):
@@ -40,6 +41,18 @@ async def _setup_app(override_auth: bool = True):
     if override_auth:
         app.dependency_overrides[require_admin] = lambda: "admin"
     return app
+
+
+@pytest.fixture(autouse=True)
+def _reset_admin_login_guards():
+    """后台登录限流/锁定是进程内状态，用例之间必须相互隔离。"""
+    from app.admin.auth import reset_admin_guards
+
+    admin_login_limiter.reset()
+    reset_admin_guards()
+    yield
+    admin_login_limiter.reset()
+    reset_admin_guards()
 
 
 async def _teardown_app(app) -> None:
@@ -102,6 +115,131 @@ class TestAuthFlow:
                         "/admin/accounts", headers={"HX-Request": "true"}
                     )
                     assert resp.status_code == 200 and "会话已过期" in resp.text
+            finally:
+                settings.admin_password = old_pw
+                await _teardown_app(app)
+
+        _run(flow())
+
+
+class TestAdminLoginGuards:
+    """后台登录防爆破：用户名锁定与 IP 限流。"""
+
+    def test_username_lockout_and_reset(self) -> None:
+        async def flow() -> None:
+            from app.admin.auth import reset_admin_guards
+
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            old_max_fail = settings.admin_login_max_fail
+            old_rate = settings.admin_login_rate_limit
+            settings.admin_password = "test-pw"
+            settings.admin_login_max_fail = 3
+            settings.admin_login_rate_limit = 100
+            admin_login_limiter.reset()
+            reset_admin_guards()
+            try:
+                async with _client(app) as client:
+                    for _ in range(2):
+                        resp = await client.post(
+                            "/admin/login",
+                            data={"username": "admin", "password": "wrong"},
+                        )
+                        assert resp.status_code == 200
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "wrong"},
+                    )
+                    assert resp.status_code == 429 and "次数过多" in resp.text
+                    # 锁定期内即使密码正确也拒绝
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "test-pw"},
+                    )
+                    assert resp.status_code == 429
+                    reset_admin_guards()
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "test-pw"},
+                    )
+                    assert resp.status_code == 303
+            finally:
+                settings.admin_password = old_pw
+                settings.admin_login_max_fail = old_max_fail
+                settings.admin_login_rate_limit = old_rate
+                admin_login_limiter.reset()
+                reset_admin_guards()
+                await _teardown_app(app)
+
+        _run(flow())
+
+    def test_ip_rate_limit(self) -> None:
+        async def flow() -> None:
+            from app.admin.auth import reset_admin_guards
+
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            old_max_fail = settings.admin_login_max_fail
+            old_rate = settings.admin_login_rate_limit
+            settings.admin_password = "test-pw"
+            settings.admin_login_max_fail = 100
+            settings.admin_login_rate_limit = 2
+            admin_login_limiter.reset()
+            reset_admin_guards()
+            try:
+                async with _client(app) as client:
+                    for _ in range(2):
+                        resp = await client.post(
+                            "/admin/login",
+                            data={"username": "admin", "password": "wrong"},
+                        )
+                        assert resp.status_code == 200
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "test-pw"},
+                    )
+                    assert resp.status_code == 429
+            finally:
+                settings.admin_password = old_pw
+                settings.admin_login_max_fail = old_max_fail
+                settings.admin_login_rate_limit = old_rate
+                admin_login_limiter.reset()
+                reset_admin_guards()
+                await _teardown_app(app)
+
+        _run(flow())
+
+
+class TestProactiveApiAuth:
+    """内部运维接口必须要求后台会话。"""
+
+    def test_requires_admin_session(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            settings.admin_password = "test-pw"
+            try:
+                async with _client(app) as client:
+                    resp = await client.get(
+                        "/api/proactive/records",
+                        params={"identity_id": "x", "bot_id": "y"},
+                    )
+                    assert resp.status_code == 401
+
+                    login = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "test-pw"},
+                    )
+                    assert login.status_code == 303
+                    token = login.cookies.get("admin_session")
+                    assert token
+                    resp = await client.get(
+                        "/api/proactive/records",
+                        params={"identity_id": "x", "bot_id": "y"},
+                        cookies={"admin_session": token},
+                    )
+                    assert resp.status_code == 200
+                    assert resp.json() == []
             finally:
                 settings.admin_password = old_pw
                 await _teardown_app(app)
@@ -728,7 +866,8 @@ class TestProactiveApi:
 
     def test_trigger_and_records(self) -> None:
         async def flow() -> None:
-            app = await _setup_app(override_auth=False)
+            # 鉴权由 TestProactiveApiAuth 覆盖；本用例只关心业务分支
+            app = await _setup_app(override_auth=True)
             try:
                 from unittest.mock import AsyncMock
 

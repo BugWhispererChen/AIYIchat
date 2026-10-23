@@ -21,6 +21,7 @@ class BotConfig(BaseModel):
     app_id: str = ""
     app_secret: str = ""
     sandbox_mode: bool = True
+    is_blocked: bool = False
 
 
 async def async_load_bots_config() -> list[BotConfig]:
@@ -42,6 +43,7 @@ async def async_load_bots_config() -> list[BotConfig]:
             app_id=d.app_id,
             app_secret=d.app_secret,
             sandbox_mode=d.sandbox_mode,
+            is_blocked=d.is_blocked,
         )
         for d in docs
     ]

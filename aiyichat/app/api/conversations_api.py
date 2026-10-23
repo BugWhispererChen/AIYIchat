@@ -199,7 +199,7 @@ async def chat_stream(req: StreamChatRequest, request: Request):
             )
             raise HTTPException(status_code=403, detail="platform_id 与登录身份不匹配")
 
-        # 显式选择伙伴时按账号归属校验：可跨身份，但必须同账号
+        # 显式选择服务时按账号归属校验：可跨身份，但必须同账号
         svc: Optional[ServiceInDB] = None
         if req.service_id.strip():
             svc = await _require_account_service_http(principal, req.service_id.strip())

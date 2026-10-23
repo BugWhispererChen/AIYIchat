@@ -1,4 +1,4 @@
-"""C 端网页路由：注册 / 登录 / 极简聊天 / 角色 / 伙伴 / 账号中心。
+"""C 端网页路由：注册 / 登录 / 极简聊天 / 聊天服务 / 账号中心。
 
 页面只是静态壳，本模块不接触凭据与数据库：所有业务一律走前端直连
 `/api/auth/*` 与 `/api/conversations/chat/stream`，因此这里只做模板渲染与开关拦截。
@@ -139,15 +139,15 @@ async def chat_page(request: Request) -> Response:
 
 @web_router.get("/web/profiles", response_class=HTMLResponse)
 async def profiles_page(request: Request) -> Response:
-    """角色自助管理页：列表与编辑表单都在前端直连 `/api/web/profiles` 完成。"""
+    """旧角色页已并入「聊天服务」，保留链接并落到角色分区。"""
     if not settings.web_auth_enabled:
         return _disabled_page()
-    return _render(request, "profiles.html")
+    return RedirectResponse(url="/web/services#roles", status_code=307)
 
 
 @web_router.get("/web/services", response_class=HTMLResponse)
 async def services_page(request: Request) -> Response:
-    """伙伴（对话服务）自助管理页：把角色装配成可选的对话对象。"""
+    """聊天服务自助管理页：渠道、服务与角色三个分区。"""
     if not settings.web_auth_enabled:
         return _disabled_page()
     return _render(request, "services.html")

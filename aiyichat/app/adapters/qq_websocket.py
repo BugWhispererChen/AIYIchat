@@ -1092,6 +1092,20 @@ class QQWebSocketClient:
                 pass
 
 
+def is_runnable_qq(cfg: BotConfig) -> bool:
+    """QQ 渠道是否具备启动条件：平台匹配、凭据齐全且未被管理员停用。
+
+    C 端自助创建但尚未扫码绑定的渠道也会被活跃服务引用；没有这道守卫，
+    BotManager 会拿着空凭据反复铸 token，日志与平台调用都会被噪声淹没。
+    """
+    return bool(
+        cfg.platform == "qq"
+        and cfg.app_id
+        and cfg.app_secret
+        and not cfg.is_blocked
+    )
+
+
 class BotManager:
     """Bot 生命周期管理器，支持热加载 bots.yaml 配置。"""
 
@@ -1179,8 +1193,11 @@ class BotManager:
                 logger.warning("活跃服务查询失败，跳过本轮: %s", e)
                 continue
 
-            # 只保留被活跃服务引用的 Bot 配置
-            new_configs = [c for c in new_configs if c.id in active_bot_ids]
+            # 只保留被活跃服务引用、凭据齐全且未停用的 Bot 配置
+            new_configs = [
+                c for c in new_configs
+                if c.id in active_bot_ids and is_runnable_qq(c)
+            ]
 
             # 同时刷新 settings
             try:
@@ -1201,9 +1218,9 @@ class BotManager:
             await self._apply_diff(new_configs)
 
     async def _apply_diff(self, new_configs: list[BotConfig]):
-        """对比新旧配置，执行增删改（只处理QQ平台Bot）"""
-        # 只处理QQ平台的Bot
-        qq_configs = [c for c in new_configs if c.platform == "qq"]
+        """对比新旧配置，执行增删改（只处理可运行的QQ平台Bot）"""
+        # 只处理具备启动条件的QQ渠道
+        qq_configs = [c for c in new_configs if is_runnable_qq(c)]
         new_map = {c.id: c for c in qq_configs}
         current_ids = set(self._registry.keys())
         new_ids = set(new_map.keys())

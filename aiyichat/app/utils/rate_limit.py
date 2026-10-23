@@ -91,7 +91,14 @@ account_limiter = SlidingWindowLimiter()
 
 # 账号中心的限流作用域：统一走 account_limiter，避免每新增一个端点就新增一个单例
 _ACCOUNT_SCOPES = frozenset(
-    {"account_password", "account_write", "account_data", "account_delete"}
+    {
+        "account_password",
+        "account_write",
+        "account_data",
+        "account_delete",
+        "web_bot_write",
+        "web_bot_qr",
+    }
 )
 
 

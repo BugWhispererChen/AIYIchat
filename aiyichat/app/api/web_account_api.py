@@ -204,7 +204,7 @@ async def get_quota(request: Request, order_limit: int = 20) -> JSONResponse:
 
 @web_account_router.get("/data")
 async def get_data(request: Request) -> JSONResponse:
-    """数据概览：对话/消息/记忆总量与按伙伴的分布。"""
+    """数据概览：对话/消息/记忆总量与按服务的分布。"""
     try:
         principal = await _principal(request)
     except AuthError as exc:
@@ -217,7 +217,7 @@ async def get_data(request: Request) -> JSONResponse:
 
 @web_account_router.get("/memories")
 async def get_memories(request: Request) -> JSONResponse:
-    """长期记忆明细：按伙伴分组，排除向量与评分等内部字段。"""
+    """长期记忆明细：按服务分组，排除向量与评分等内部字段。"""
     try:
         principal = await _principal(request)
     except AuthError as exc:
@@ -276,7 +276,7 @@ async def clear_conversations(request: Request, payload: ConfirmPayload) -> JSON
 
 @web_account_router.post("/data/memories/{service_id}/clear")
 async def clear_memory(request: Request, service_id: str, payload: ConfirmPayload) -> JSONResponse:
-    """清空指定伙伴的长期记忆；该伙伴与其他身份共享上下文时拒绝。"""
+    """清空指定服务的长期记忆；该服务与其他身份共享上下文时拒绝。"""
     try:
         principal = await _principal(request)
         _limit("account_data", principal, request, _RATE_DATA)

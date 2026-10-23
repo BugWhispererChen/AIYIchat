@@ -16,6 +16,8 @@ class BotConfigCreate(BaseModel):
     account_id: str
     name: str  # 必填：Bot 显示名称
     platform: Literal["qq", "wechat", "web"] = Field(default="qq")
+    # 渠道来源：admin=管理员后台创建，web=C 端用户自助创建
+    origin: Literal["admin", "web"] = "admin"
     app_id: str = ""
     app_secret: str = ""
     sandbox_mode: bool = True
@@ -50,7 +52,8 @@ class BotConfigInDB(BotConfigCreate):
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
-        # 兼容旧数据：is_blocked / block_reason 可能不存在
+        # 兼容旧数据：origin / is_blocked / block_reason 可能不存在
+        doc.setdefault("origin", "admin")
         doc.setdefault("is_blocked", False)
         doc.setdefault("block_reason", "")
         return cls(**doc)

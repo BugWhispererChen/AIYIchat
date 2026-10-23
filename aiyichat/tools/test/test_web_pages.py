@@ -27,7 +27,7 @@ PROFILE_SLUG = "lin-yu-page"
 PASSWORD = "passw0rd9"
 LEAK_USERNAME = "leakcheck"
 
-PAGE_PATHS = ("/web/register", "/web/login", "/web/chat", "/web/account")
+PAGE_PATHS = ("/web/register", "/web/login", "/web/chat", "/web/account", "/web/services", "/web/profiles")
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
@@ -163,6 +163,32 @@ class TestWebPagesRender:
                     assert "/api/conversations/chat/stream" in html
                     assert "退出登录" in html
                     assert "Design Tokens" in html
+            finally:
+                mongo._db = None
+
+        asyncio.run(flow())
+
+    def test_services_page_landmarks_and_profiles_redirect(self) -> None:
+        """聊天服务页三区齐备；旧角色页 307 落到角色分区。"""
+
+        async def flow() -> None:
+            app = await _setup_app("t_web_pages_services")
+            try:
+                async with _client(app) as client:
+                    resp = await client.get("/web/services")
+                    assert resp.status_code == 200
+                    html = resp.text
+                    for marker in (
+                        "svc-tabs", "channel-list", "service-list", "role-list",
+                        "bot-editor", "service-editor", "web-services.js",
+                        "web-roles.js", "聊天服务",
+                    ):
+                        assert marker in html, marker
+                    assert "Design Tokens" in html
+
+                    redirect = await client.get("/web/profiles", follow_redirects=False)
+                    assert redirect.status_code == 307
+                    assert redirect.headers["location"] == "/web/services#roles"
             finally:
                 mongo._db = None
 

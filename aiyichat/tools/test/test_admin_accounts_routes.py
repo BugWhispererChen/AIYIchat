@@ -301,7 +301,7 @@ class TestAccountBots:
         _run(flow())
 
     def test_bot_edit_secret_masked_and_preserved(self) -> None:
-        """详情页不许回显明文 App Secret；脱敏串与留空都不许覆盖库内真值。"""
+        """详情页不再提供 App Secret 入口；后端直连轮换仍不覆盖脱敏串/空值。"""
         real_secret = "abcd1234wxyz"
 
         async def flow() -> None:
@@ -318,7 +318,8 @@ class TestAccountBots:
                     resp = await client.get(f"/admin/accounts/{acc_id}")
                     assert resp.status_code == 200
                     assert real_secret not in resp.text, "明文凭据仍被渲染进 HTML"
-                    assert "abcd****wxyz" in resp.text, "脱敏占位符未出现"
+                    assert "abcd****wxyz" not in resp.text, "详情页仍回显脱敏凭据"
+                    assert 'name="app_secret"' not in resp.text, "详情页仍提供手填入口"
 
                     # 提交脱敏串或留空：一律保持库内原值
                     for payload in ({"app_secret": "abcd****wxyz"}, {"app_secret": "  "}):
@@ -405,7 +406,7 @@ class TestAccountServices:
                         data={"identity_id": uid, "bot_id": bid, "profile_id": slug},
                     )
                     assert resp.status_code == 200
-                    assert "一个 Bot 只允许创建一个服务" in resp.text
+                    assert "一个渠道只允许创建一个服务" in resp.text
 
                     # 已绑定真实平台账号的身份不能再建服务
                     uid2, bid2, slug2 = await self._seed_entities(acc_id)
@@ -437,7 +438,7 @@ class TestAccountServices:
                         data={"identity_id": uid4, "bot_id": bid4, "profile_id": slug4},
                     )
                     assert resp.status_code == 200
-                    assert "该 Bot 已被禁用" in resp.text
+                    assert "该渠道已被禁用" in resp.text
 
                     # 被禁用的角色
                     uid5, bid5, slug5 = await self._seed_entities(acc_id)

@@ -74,21 +74,19 @@ async def lifespan(app: FastAPI):
             "请尽快在管理后台「角色管理」中创建角色"
         )
 
-    # 从 MongoDB 加载 Bot 配置，仅启动被活跃服务引用的 Bot
+    # 从 MongoDB 加载 Bot 配置，仅启动被活跃服务引用且凭据齐全的 QQ 渠道
     from app.bot_config import async_load_bots_config
     from app.db.repositories.service_repo import ServiceRepository
+    from app.adapters.qq_websocket import BotManager, is_runnable_qq
 
     bot_configs = await async_load_bots_config()
     active_bot_ids = await ServiceRepository().list_active_bot_ids()
-    # 只保留被活跃服务引用的 QQ Bot
     qq_configs = [
         c for c in bot_configs
-        if c.platform == "qq" and c.id in active_bot_ids
+        if c.id in active_bot_ids and is_runnable_qq(c)
     ]
 
     # 始终启动 QQ BotManager（即使初始无 Bot 也需要监控循环感知新服务）
-    from app.adapters.qq_websocket import BotManager
-
     qq_manager = BotManager()
     await qq_manager.start(qq_configs)
     if qq_configs:

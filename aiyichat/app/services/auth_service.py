@@ -207,7 +207,7 @@ async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
 
     优先复用账号名下未停用的 `platform="web"` Bot（管理员可在账号详情页建多个）；
     其次回落到系统载体 Bot（存量部署）；两者都没有时自动创建一个账号级 Bot，
-    使注册与新建伙伴不再依赖全局配置。
+    使注册与新建服务不再依赖全局配置。
     """
     repo = BotConfigRepository()
     own = [b for b in await repo.list_by_account(account_id) if b.platform == "web"]
@@ -232,7 +232,12 @@ async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
         return bot.id
 
     created = await repo.create(
-        BotConfigCreate(account_id=account_id, name=name or "网页对话", platform="web")
+        BotConfigCreate(
+            account_id=account_id,
+            name=name or "网页助手",
+            platform="web",
+            origin="web",
+        )
     )
     logger.info("为账号 %s 自动创建网页载体 Bot %s", account_id, created.id)
     return created.id
@@ -362,7 +367,7 @@ async def register(
             AccountCreate(name=f"web:{name}", remark="C 端网页身份自助注册")
         )
         draft.account_id = account.id
-        bot_id = await ensure_account_web_bot(account.id, name=f"web:{name}")
+        bot_id = await ensure_account_web_bot(account.id, name="网页助手")
 
         quota_update, quota_source = await build_free_quota(account.id)
         await QuotaRepository().create_or_update(account.id, quota_update)
@@ -380,7 +385,7 @@ async def register(
 
         service = await ServiceRepository().create(
             ServiceCreate(
-                name=f"web:{name}",
+                name="默认服务",
                 account_id=account.id,
                 identity_id=identity.id,
                 bot_id=bot_id,

@@ -18,8 +18,7 @@
         </button>
         <span class="quota-chip" id="quota-info">正在读取账号信息…</span>
         <span class="spacer"></span>
-        <a class="icon-btn" href="/web/profiles">我的角色</a>
-        <a class="icon-btn" href="/web/services">我的伙伴</a>
+        <a class="icon-btn" href="/web/services">聊天服务</a>
         <a class="icon-btn" href="/web/account">账号</a>
         <button class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
             {{ icon('sun', 'icon-sun') }}
@@ -28,7 +27,7 @@
         <button class="icon-btn" id="logout-btn">退出登录</button>
     </div>
 
-    <!-- 伙伴（对话服务）选择：一个伙伴即一个可对话的角色 -->
+    <!-- 服务选择：一个服务 = 角色 × 渠道，是聊天页可切换的对话单元 -->
     <div class="partner-bar">
         <label for="service-select">正在对话</label>
         <select id="service-select" disabled></select>

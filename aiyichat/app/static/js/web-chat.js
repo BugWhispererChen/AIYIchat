@@ -1,4 +1,4 @@
-/* C 端会话页：额度、伙伴切换、SSE 流式对话、历史会话回看。
+/* C 端会话页：额度、服务切换、SSE 流式对话、历史会话回看。
  *
  * 与后端的约定全部来自 DOM 上的 data-* 属性：
  *   body[data-token-key]        令牌存储键
@@ -201,7 +201,7 @@
         return data;
     }
 
-    /* 伙伴（对话服务）列表：只有一个时锁死选择器，多个时供身份切换角色 */
+    /* 服务（对话服务）列表：只有一个时锁死选择器，多个时供身份切换角色 */
     async function loadServices() {
         var result = await window.WebAuth.call('/api/web/services');
         if (!result.ok) {
@@ -214,7 +214,7 @@
             var one = items[0];
             var only = document.createElement('option');
             only.value = one ? one.id : '';
-            only.textContent = one ? one.profile_name + channelSuffix(one.bot_platform) : '未配置伙伴';
+            only.textContent = one ? one.profile_name + channelSuffix(one.bot_platform) : '未配置服务';
             if (one) {
                 only.dataset.label = one.profile_name;
                 only.dataset.platform = one.bot_platform || '';
@@ -243,12 +243,12 @@
         updateChannelNote();
     }
 
-    /* 单伙伴时下拉被禁用，仍必须带上 service_id：否则历史与发送会退化成"按身份"口径 */
+    /* 单服务时下拉被禁用，仍必须带上 service_id：否则历史与发送会退化成"按身份"口径 */
     function currentServiceId() {
         return serviceSelect.value || '';
     }
 
-    /* 历史会话侧栏：后端按伙伴归组返回会话，点击即只读回看该会话消息 */
+    /* 历史会话侧栏：后端按服务归组返回会话，点击即只读回看该会话消息 */
     async function loadSessions() {
         if (!sessionList) return;
         var query = currentServiceId() ? '?service_id=' + encodeURIComponent(currentServiceId()) : '';
@@ -454,8 +454,8 @@
         var shared = platform && platform !== 'web';
         addNote(
             '已切换为「' + partnerLabel() + '」' +
-            (shared ? '，该伙伴的对话与记忆和' + channelName(platform) + '渠道共享。'
-                    : '，各伙伴的对话与记忆相互独立。')
+            (shared ? '，该服务的对话与记忆和' + channelName(platform) + '渠道共享。'
+                    : '，各服务的对话与记忆相互独立。')
         );
         updateChannelNote();
         loadSessions();

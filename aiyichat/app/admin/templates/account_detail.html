@@ -12,7 +12,7 @@
 {% endblock %}
 
 {% block content %}
-{{ page_header('账号详情：' ~ account.name, '管理账号信息、身份、Bot 和对话服务', '运营管理') }}
+{{ page_header('账号详情：' ~ account.name, '管理账号信息、身份、渠道和对话服务', '运营管理') }}
 
 {{ alert('success', success) }}
 {{ alert('error', error) }}
@@ -33,7 +33,7 @@
     <div class="tab-labels">
         <button type="button" class="tab-label active" data-tab="info">基本信息</button>
         <button type="button" class="tab-label" data-tab="identities">身份管理 <small class="muted">({{ identities|length }})</small></button>
-        <button type="button" class="tab-label" data-tab="bots">Bot 管理 <small class="muted">({{ bots|length }})</small></button>
+        <button type="button" class="tab-label" data-tab="bots">渠道管理 <small class="muted">({{ bots|length }})</small></button>
         <button type="button" class="tab-label" data-tab="services">对话服务 <small class="muted">({{ service_infos|length }})</small></button>
     </div>
 
@@ -55,10 +55,10 @@
                 </div>
                 <div class="ui-cluster">
                     <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存</button>
-                    {# 删除账号：级联删除关联身份/Bot/服务，需二次确认 #}
+                    {# 删除账号：级联删除关联身份/渠道/服务，需二次确认 #}
                     <button type="submit" formaction="/admin/accounts/{{ account.id }}/delete"
                             class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" data-danger data-confirm-text="删除账号"
-                            data-confirm="确认删除账号「{{ account.name }}」？此操作不可恢复，关联的身份和 Bot 数据也将被删除！">删除账号</button>
+                            data-confirm="确认删除账号「{{ account.name }}」？此操作不可恢复，关联的身份和渠道数据也将被删除！">删除账号</button>
                 </div>
             </form>
         </section>
@@ -261,11 +261,11 @@
         </section>
     </div>
 
-    {# ─────────── Tab 3：Bot 管理 ─────────── #}
+    {# ─────────── Tab 3：渠道管理 ─────────── #}
     <div class="tab-content" data-tab-content="bots">
         <section class="ui-card">
             <div class="ui-card-head">
-                <h4 class="ui-card-title">Bot 管理 <small class="muted u-fs-82">({{ bots|length }} 个)</small></h4>
+                <h4 class="ui-card-title">渠道管理 <small class="muted u-fs-82">({{ bots|length }} 个)</small></h4>
             </div>
             {% if bots %}
             <div class="ui-grid ui-grid--tile">
@@ -301,16 +301,7 @@
                                 <span class="ui-label">平台</span>
                                 <input class="ui-input" type="text" value="{{ bot.platform }}" disabled>
                             </label>
-                            <label class="ui-field">
-                                <span class="ui-label">App ID</span>
-                                <input class="ui-input" type="text" name="app_id" value="{{ bot.app_id }}">
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-label">App Secret</span>
-                                <input class="ui-input" type="text" name="app_secret" value="" autocomplete="off"
-                                       placeholder="{{ bot.app_secret_masked if bot.has_secret else 'App Secret（留空保持不变）' }}">
-                            </label>
-                            <p class="ui-note">凭据不回显；留空或保留脱敏值（含 *）则不更新。</p>
+                            <p class="ui-note">凭据通过下方「扫码绑定凭据」获取与更新，后台不再提供手填入口。</p>
                             {% if bot.platform == 'qq' %}
                             <label class="ui-cluster">
                                 <input type="checkbox" name="sandbox_mode" role="switch" {{ 'checked' if bot.sandbox_mode }}>
@@ -322,14 +313,14 @@
                             {% endif %}
                             <div class="ui-cluster u-mt-2">
                                 <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-fill">保存修改</button>
-                                {# 删除 Bot：不可恢复，需二次确认 #}
+                                {# 删除渠道：不可恢复，需二次确认 #}
                                 <button type="submit" formaction="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/delete"
                                         class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger u-fill" data-danger data-confirm-text="删除"
-                                        data-confirm="确认删除 Bot「{{ bot.name }}」？此操作不可恢复！">删除</button>
+                                        data-confirm="确认删除渠道「{{ bot.name }}」？此操作不可恢复！">删除</button>
                             </div>
                         </form>
                         {% if bot.platform == 'wechat' %}
-                        <!-- 微信操作区：扫码登录 / 停止 Bot -->
+                        <!-- 微信操作区：扫码登录 / 停止渠道 -->
                         <div class="ui-inset u-mt-3">
                             <div class="ui-cluster">
                                 {% if bot.status != 'online' %}
@@ -342,10 +333,10 @@
                                 </button>
                                 <span id="qr-loading-{{ bot.id }}" class="htmx-indicator muted">加载中...</span>
                                 {% else %}
-                                {# 停止 Bot：将断开连接，需二次确认 #}
+                                {# 停止渠道：将断开连接，需二次确认 #}
                                 <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/stop"
-                                      data-confirm="确认停止 Bot「{{ bot.name }}」？Bot 将断开连接。" class="u-m0">
-                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">停止 Bot</button>
+                                      data-confirm="确认停止渠道「{{ bot.name }}」？渠道将断开连接。" class="u-m0">
+                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">停止渠道</button>
                                 </form>
                                 {% endif %}
                             </div>
@@ -368,15 +359,15 @@
                                 </button>
                                 <span id="qr-loading-{{ bot.id }}" class="htmx-indicator muted">加载中...</span>
                             </div>
-                            <p class="ui-note">用手机QQ扫码选择机器人，自动填入 App ID / App Secret</p>
+                            <p class="ui-note">用手机QQ扫码选择机器人，自动获取凭据</p>
                             <div id="qr-area-{{ bot.id }}" class="u-mt-2"></div>
                         </div>
                         {% endif %}
                         <form method="post" action="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/toggle-block"
-                              {% if not bot.is_blocked %}data-confirm="确定禁用 Bot「{{ bot.name }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用 Bot「{{ bot.name }}」？"{% endif %} class="u-mt-2">
+                              {% if not bot.is_blocked %}data-confirm="确定禁用渠道「{{ bot.name }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用渠道「{{ bot.name }}」？"{% endif %} class="u-mt-2">
                             <input type="hidden" name="block_reason" value="">
                             {% if not bot.is_blocked %}
-                            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">禁用 Bot</button>
+                            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">禁用渠道</button>
                             {% else %}
                             <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">启用</button>
                             {% endif %}
@@ -386,16 +377,16 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="muted">暂无 Bot</p>
+            <p class="muted">暂无渠道</p>
             {% endif %}
 
             <details class="u-mt-3">
-                <summary class="ui-summary">+ 新增 Bot</summary>
+                <summary class="ui-summary">+ 新增渠道</summary>
                 <form method="post" action="/admin/accounts/{{ account.id }}/bots/create" class="inset-block">
                     <div class="ui-grid ui-grid--2">
                         <label class="ui-field">
-                            <span class="ui-label">Bot 名称</span>
-                            <input class="ui-input" type="text" name="name" placeholder="Bot 名称" required>
+                            <span class="ui-label">渠道名称</span>
+                            <input class="ui-input" type="text" name="name" placeholder="渠道名称" required>
                         </label>
                         <label class="ui-field">
                             <span class="ui-label">平台</span>
@@ -407,23 +398,14 @@
                         </label>
                     </div>
                     <div id="qq-only-fields">
-                        <div class="ui-grid ui-grid--2">
-                            <label class="ui-field">
-                                <span class="ui-label">App ID</span>
-                                <input class="ui-input" type="text" name="app_id" placeholder="App ID（可留空，创建后扫码绑定）">
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-label">App Secret</span>
-                                <input class="ui-input" type="text" name="app_secret" placeholder="App Secret（可留空，创建后扫码绑定）">
-                            </label>
-                        </div>
+                        <p class="ui-note">QQ 渠道创建后，请使用「扫码绑定凭据」获取凭据。</p>
                         <label class="ui-cluster">
                             <input type="checkbox" name="sandbox_mode" role="switch" checked>
                             <span>沙箱模式（仅QQ）</span>
                         </label>
                     </div>
                     <div class="ui-cluster">
-                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加 Bot</button>
+                        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加渠道</button>
                     </div>
                 </form>
             </details>
@@ -453,7 +435,7 @@
                             </div>
                             <div class="ui-cluster">
                                 <span class="ui-badge ui-badge--line">身份：{{ sinfo.identity.name or sinfo.identity.platform_id if sinfo.identity else '-' }}</span>
-                                <span class="ui-badge ui-badge--line">Bot：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
+                                <span class="ui-badge ui-badge--line">渠道：{{ sinfo.bot.name if sinfo.bot else '-' }}</span>
                                 <span class="ui-badge ui-badge--line">角色：{{ sinfo.profile.name if sinfo.profile else '-' }}</span>
                                 {% if sinfo.service.share_group_id %}
                                 <span class="ui-badge ui-badge--ink">共享组：{{ sinfo.service.share_group_id[:8] }}</span>
@@ -508,14 +490,14 @@
                 {% endfor %}
             </div>
             {% else %}
-            {{ empty('暂无对话服务', '在下方选择身份、Bot 与角色来创建第一个对话服务', 'chat') }}
+            {{ empty('暂无对话服务', '在下方选择身份、渠道与角色来创建第一个对话服务', 'chat') }}
             {% endif %}
         </section>
 
         <!-- 添加对话服务 -->
         <section class="ui-card">
             <div class="ui-card-head"><h4 class="ui-card-title">添加对话服务</h4></div>
-            <p class="muted u-fs-85">服务名称将自动生成：{身份}-{角色}-{Bot名称}</p>
+            <p class="muted u-fs-85">服务名称将自动生成：{身份}-{角色}-{渠道名称}</p>
             <form method="post" action="/admin/accounts/{{ account.id }}/services" class="ui-stack">
                 <div class="ui-grid ui-grid--3">
                     <label class="ui-field">
@@ -528,9 +510,9 @@
                         </select>
                     </label>
                     <label class="ui-field">
-                        <span class="ui-label">选择 Bot</span>
+                        <span class="ui-label">选择渠道</span>
                         <select class="ui-select" name="bot_id" required>
-                            <option value="">选择 Bot...</option>
+                            <option value="">选择渠道...</option>
                             {% for b in bots %}
                             <option value="{{ b.id }}">{{ b.name }} ({{ b.platform }})</option>
                             {% endfor %}
@@ -555,7 +537,7 @@
 </div>
 
 <script>
-/* 新增 Bot 表单：按平台切换 QQ 专属字段的显示 */
+/* 新增渠道 表单：按平台切换 QQ 专属字段的显示 */
 function toggleBotFields(platform) {
     var qqFields = document.getElementById('qq-only-fields');
     if (qqFields) qqFields.style.display = platform === 'qq' ? '' : 'none';
@@ -643,11 +625,11 @@ function pollQQBindStatus(botId) {
                     // 平台限流：退避后继续等待扫码，不中断流程
                     setTimeout(poll, 6000);
                 } else if (data.status === 'verifying') {
-                    // 绑定成功，正在验证Bot状态
+                    // 绑定成功，正在验证渠道状态
                     document.querySelector('#qr-area-' + botId).innerHTML =
                         '<div class="alert alert-info">' +
                         '<strong>绑定成功！</strong><br>' +
-                        '正在验证Bot状态，请稍候...<br>' +
+                        '正在验证渠道状态，请稍候...<br>' +
                         '<small>验证完成后页面将自动刷新</small>' +
                         '</div>';
                     // 延迟刷新页面，让验证完成

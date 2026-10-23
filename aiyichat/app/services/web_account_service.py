@@ -281,14 +281,14 @@ async def _group_is_exclusive(service: ServiceInDB, identity_id: str) -> bool:
 
 
 async def _owned_services(identity: IdentityInDB) -> list[ServiceInDB]:
-    """取当前身份名下的伙伴（对话服务），按创建时间正序。"""
+    """取当前身份名下的服务（对话服务），按创建时间正序。"""
     services = await ServiceRepository().list_by_identity(identity.id)
     services.sort(key=lambda s: s.created_at)
     return services
 
 
 async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
-    """数据概览：对话/消息/记忆总量与按伙伴的分布。"""
+    """数据概览：对话/消息/记忆总量与按服务的分布。"""
     services = await _owned_services(identity)
     conversations = await ConversationRepository().list_by_identity(identity.id)
     conv_by_key: dict[str, list[Any]] = {}
@@ -330,7 +330,7 @@ async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
 
 
 async def memories_payload(identity: IdentityInDB) -> list[dict[str, Any]]:
-    """按伙伴列出长期记忆明细（排除向量与评分内部字段）。"""
+    """按服务列出长期记忆明细（排除向量与评分内部字段）。"""
     repo = ServiceMemoryRepository()
     items: list[dict[str, Any]] = []
     for svc in await _owned_services(identity):
@@ -399,10 +399,10 @@ async def clear_conversations(identity: IdentityInDB) -> dict[str, int]:
 
 
 async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str, Any]:
-    """清空某个伙伴的长期记忆（含其注入快照）；共享组含他人服务时拒绝。"""
+    """清空某个服务的长期记忆（含其注入快照）；共享组含他人服务时拒绝。"""
     if not await _group_is_exclusive(service, identity.id):
         raise AuthError(
-            "shared_context", "该伙伴与其他身份共享上下文，请联系管理员处理", 409
+            "shared_context", "该服务与其他身份共享上下文，请联系管理员处理", 409
         )
     key = service.context_key
     memory = await ServiceMemoryRepository().find_by_service(key)
@@ -410,7 +410,7 @@ async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str
     deleted = await ServiceMemoryRepository().delete_by_service(key)
     snapshots = await InjectionSnapshotRepository().delete_by_service_ids([key])
     logger.info(
-        "网页身份 %s 清空伙伴「%s」的记忆：事实 %d，快照 %d",
+        "网页身份 %s 清空服务「%s」的记忆：事实 %d，快照 %d",
         identity.nickname or identity.id, service.name, facts, snapshots,
     )
     return {"service_id": service.id, "facts": facts, "deleted": bool(deleted), "snapshots": snapshots}
@@ -437,7 +437,7 @@ def _owned_profile_payload(profile: PromptProfileInDB) -> dict[str, Any]:
 async def export_payload(
     credential: WebCredentialInDB, identity: IdentityInDB
 ) -> tuple[dict[str, Any], bool]:
-    """组装个人数据包：账号资料、额度、发放记录、伙伴、自建角色、对话与记忆。
+    """组装个人数据包：账号资料、额度、发放记录、服务、自建角色、对话与记忆。
 
     Returns:
         (导出数据, 消息是否被截断)
@@ -599,10 +599,10 @@ async def delete_account(
 
 
 async def find_owned_service(identity: IdentityInDB, service_id: str) -> ServiceInDB:
-    """取回归本人的伙伴；不存在或属于他人一律 404（不区分，避免枚举他人服务 ID）。"""
+    """取回归本人的服务；不存在或属于他人一律 404（不区分，避免枚举他人服务 ID）。"""
     svc = await ServiceRepository().find_by_id(service_id)
     if svc is None or svc.account_id != identity.account_id or svc.identity_id != identity.id:
-        raise AuthError("service_not_found", "伙伴不存在", 404)
+        raise AuthError("service_not_found", "服务不存在", 404)
     return svc
 
 

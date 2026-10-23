@@ -37,6 +37,10 @@ class BotConfigRepository:
         )
         return [BotConfigInDB.from_mongo(doc) async for doc in cursor]
 
+    async def count_by_account(self, account_id: str) -> int:
+        """统计账号下的 Bot 数量。"""
+        return await self._collection().count_documents({"account_id": account_id})
+
     async def find_by_app_id(
         self, platform: str, app_id: str
     ) -> Optional[BotConfigInDB]:
@@ -135,6 +139,22 @@ class BotConfigRepository:
             },
         )
         return result.modified_count > 0
+
+    async def clear_wechat_auth(self, config_id: str) -> bool:
+        """清空微信登录态（退出登录），保留渠道配置本身。"""
+        result = await self._collection().update_one(
+            {"id": config_id},
+            {
+                "$set": {
+                    "bot_token": "",
+                    "context_token": "",
+                    "status": "offline",
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$unset": {"token_expire_at": ""},
+            },
+        )
+        return result.matched_count > 0
 
     async def update_qrcode(self, config_id: str, qrcode_url: str) -> bool:
         """更新微信登录二维码 URL（按 id 查找）。"""

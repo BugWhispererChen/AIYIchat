@@ -363,7 +363,7 @@ class TestWebServiceSelfService:
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
                     resp = await c.post(
                         "/api/web/services",
-                        json={"profile_id": pid, "name": "我的阿禾", "account_id": "x", "bot_id": "x"},
+                        json={"profile_id": pid, "name": "我的阿禾", "account_id": "x"},
                         headers=_h(a),
                     )
                     assert resp.status_code == 201, resp.text
@@ -373,6 +373,14 @@ class TestWebServiceSelfService:
                     assert saved.profile_id == pid
                     assert saved.account_id == (await ProfileRepository().find_by_id(pid)).account_id
                     assert saved.identity_id == me.json()["identity_id"]
+
+                    # 伪造 bot_id 不再被静默忽略：不属于本账号的渠道一律 404
+                    forged = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": pid, "bot_id": "x"},
+                        headers=_h(a),
+                    )
+                    assert forged.status_code == 404, forged.text
             finally:
                 mongo._db = None
 

@@ -18,7 +18,7 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Literal, Optional
 
 import aiohttp
 
@@ -1415,7 +1415,7 @@ class WeChatBotManager:
         """从数据库加载所有在线的微信Bot并启动。"""
         configs = await self._repo.list_by_platform("wechat")
         for cfg in configs:
-            if cfg.status == "online" and cfg.bot_token:
+            if cfg.status == "online" and cfg.bot_token and not cfg.is_blocked:
                 try:
                     await self._start_bot(cfg)
                 except Exception as e:
@@ -1515,10 +1515,10 @@ class WeChatBotManager:
 
     async def _apply_diff(self, new_configs: list[BotConfigInDB]) -> None:
         """对比新旧配置，执行增删改。"""
-        # 只处理在线且有 bot_token 的配置
+        # 只处理在线、有 token 且未被停用的配置
         active_map = {
             c.id: c for c in new_configs
-            if c.status == "online" and c.bot_token
+            if c.status == "online" and c.bot_token and not c.is_blocked
         }
         current_ids = set(self._registry.keys())
         new_ids = set(active_map.keys())
@@ -1540,7 +1540,10 @@ class WeChatBotManager:
     # ── Admin 路由接口 ────────────────────────────────
 
     async def create_bot(
-        self, name: str, account_id: str = ""
+        self,
+        name: str,
+        account_id: str = "",
+        origin: Literal["admin", "web"] = "admin",
     ) -> WeChatClient:
         """创建新Bot（未登录状态）。"""
         from app.models.bot_config import BotConfigCreate
@@ -1549,6 +1552,7 @@ class WeChatBotManager:
             name=name,
             account_id=account_id,
             platform="wechat",
+            origin=origin,
             status="pending_qr",
         )
         created = await self._repo.create(cfg)

@@ -249,7 +249,7 @@
         var c = r.data.counts || {};
         el('data-summary').textContent =
             '对话记录 ' + num(c.conversations) + ' 条 / 消息 ' + num(c.messages) + ' 条 · ' +
-            '长期记忆 ' + num(c.facts) + ' 条 · 伙伴 ' + num(c.services) + ' 个';
+            '长期记忆 ' + num(c.facts) + ' 条 · 服务 ' + num(c.services) + ' 个';
 
         var memories = await WebAuth.call(API + '/memories');
         var byId = {};
@@ -260,7 +260,7 @@
         var wrap = el('service-data');
         wrap.textContent = '';
         if (!r.data.services.length) {
-            wrap.appendChild(mk('div', 'ui-empty', '还没有伙伴，去「我的伙伴」创建一个。'));
+            wrap.appendChild(mk('div', 'ui-empty', '还没有服务，去「聊天服务」创建一个。'));
             return;
         }
         r.data.services.forEach(function (svc) {
@@ -320,13 +320,13 @@
     }
 
     async function clearMemory(svc) {
-        if (!window.confirm('确定清空伙伴「' + svc.name + '」的长期记忆？AI 将不再记得这些事实。')) return;
+        if (!window.confirm('确定清空服务「' + svc.name + '」的长期记忆？AI 将不再记得这些事实。')) return;
         var r = await WebAuth.call(
             API + '/data/memories/' + encodeURIComponent(svc.id) + '/clear',
             json('POST', { confirm: true })
         );
         if (!r.ok) { show('err', r.detail || '清空失败'); return; }
-        show('ok', '已清空该伙伴的记忆（' + r.data.facts + ' 条）。');
+        show('ok', '已清空该服务的记忆（' + r.data.facts + ' 条）。');
         await loadData();
     }
 

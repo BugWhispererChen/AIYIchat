@@ -491,7 +491,7 @@ async def account_bot_delete(
     if svc_count > 0:
         return await _account_detail_with_error(
             request, account_id,
-            f"该 Bot 下有 {svc_count} 个对话服务，请先删除服务",
+            f"该渠道下有 {svc_count} 个对话服务，请先删除服务",
         )
     bot = await _bot_config_repo.find_by_id(config_id)
     if bot and bot.platform == "wechat":
@@ -552,7 +552,7 @@ async def account_bot_toggle_block(
         if svc_count > 0:
             return await _account_detail_with_error(
                 request, account_id,
-                f"该 Bot 下有 {svc_count} 个对话服务，请先删除服务后再禁用",
+                f"该渠道下有 {svc_count} 个对话服务，请先删除服务后再禁用",
             )
         reason = str(form.get("block_reason", "")).strip()
         await _bot_config_repo.set_blocked(config_id, True, reason)
@@ -588,19 +588,19 @@ async def account_service_create(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    # 1:1 约束：一个 Bot 只允许创建一个服务。
-    # 网页 Bot 是载体通道，允许一个 Bot 承载多个伙伴（与 C 端自助建服务一致）。
+    # 1:1 约束：一个渠道只允许创建一个服务。
+    # 网页渠道是载体通道，允许一个渠道承载多个服务（与 C 端自助建服务一致）。
     bot = await _bot_config_repo.find_by_id(bot_id)
     if bot is None or bot.platform != "web":
         existing_bot_svc = await _service_repo.count_by_bot(bot_id)
         if existing_bot_svc > 0:
             return await _account_detail_with_error(
-                request, account_id, "该 Bot 已有服务，一个 Bot 只允许创建一个服务",
+                request, account_id, "该渠道已有服务，一个渠道只允许创建一个服务",
             )
 
     # 检查引用的实体是否被禁用
     identity = await _identity_repo.find_by_id(identity_id)
-    # 检查身份是否已绑定真实平台账号（非UUID表示已有真实身份绑定，新身份将无法使用该Bot）
+    # 检查身份是否已绑定真实平台账号（非UUID表示已有真实身份绑定，新身份将无法使用该渠道）
     if identity:
         try:
             uuid.UUID(identity.platform_id)
@@ -615,7 +615,7 @@ async def account_service_create(
         )
     if bot and bot.is_blocked:
         return await _account_detail_with_error(
-            request, account_id, "该 Bot 已被禁用，无法创建服务",
+            request, account_id, "该渠道已被禁用，无法创建服务",
         )
     profile = await _profile_repo.find_by_slug(profile_id)
     if profile is None:
@@ -625,7 +625,7 @@ async def account_service_create(
             request, account_id, "该角色已被禁用，无法创建服务",
         )
 
-    # 自动生成服务名称：{身份}-{角色}-{Bot名称}
+    # 自动生成服务名称：{身份}-{角色}-{渠道名称}
     name = "-".join(
         p for p in [
             identity.name or identity.platform_id if identity else "",

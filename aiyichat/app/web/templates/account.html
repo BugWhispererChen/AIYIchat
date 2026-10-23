@@ -35,7 +35,7 @@
                 <div class="ui-grid ui-grid--3">
                     <div class="ui-field">
                         <label for="f-nickname">昵称</label>
-                        <input class="ui-input" id="f-nickname" maxlength="30" placeholder="伙伴如何称呼你">
+                        <input class="ui-input" id="f-nickname" maxlength="30" placeholder="对话角色如何称呼你">
                         <div class="ui-help">最长 30 字，用于列表与对话中的称呼。</div>
                     </div>
                     <div class="ui-field">
@@ -47,7 +47,7 @@
                 <div class="ui-field">
                     <label for="f-desc">自我描述</label>
                     <textarea class="ui-textarea" id="f-desc" maxlength="600"
-                              placeholder="介绍一下自己，AI 伙伴会据此调整说话方式"></textarea>
+                              placeholder="介绍一下自己，AI 角色会据此调整说话方式"></textarea>
                     <div class="ui-help">这段内容会进入对话上下文，最长 600 字。</div>
                 </div>
                 <div class="ui-cluster ui-cluster--bar">
@@ -113,14 +113,14 @@
         <section id="account-data" class="account-section">
             {% call card('我的数据') %}
                 <div class="ui-help" id="data-summary">正在统计账号数据…</div>
-                <div id="service-data"><div class="ui-empty">正在读取伙伴数据…</div></div>
+                <div id="service-data"><div class="ui-empty">正在读取服务数据…</div></div>
                 <div class="ui-cluster ui-cluster--bar">
                     <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="export-data">导出我的数据</button>
                     <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--danger" id="clear-conversations">清空全部对话记录</button>
                 </div>
                 <p class="ui-note">
                     「清空全部对话记录」会删除你的消息、AI 回复以及由此生成的图片，长期记忆不受影响；<br>
-                    每个伙伴的记忆可在上方各自清空。导出文件不含密码、登录令牌等凭据信息。
+                    每个服务的记忆可在上方各自清空。导出文件不含密码、登录令牌等凭据信息。
                 </p>
             {% endcall %}
         </section>

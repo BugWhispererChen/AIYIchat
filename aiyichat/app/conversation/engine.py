@@ -813,7 +813,7 @@ class ConversationEngine:
         if service_id:
             candidate = await self.service_repo.find_by_id(service_id)
             # 显式选择时不做回落：越权、停用或不存在的服务一律按"无可用服务"处理，
-            # 避免静默改用同一 Bot 下的其他伙伴
+            # 避免静默改用同一 Bot 下的其他服务
             if (
                 candidate is not None
                 and candidate.is_active

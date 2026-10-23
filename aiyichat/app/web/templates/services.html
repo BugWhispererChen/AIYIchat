@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的伙伴 - 爱易聊</title>
+    <title>聊天服务 - 爱易聊</title>
     <link rel="icon" href="data:,">
     {% include "partials/_assets.html" %}
+    <script src="{{ asset('js/web-services.js') }}" defer></script>
+    <script src="{{ asset('js/web-roles.js') }}" defer></script>
     {% set active_page = "services" %}
     {% include "partials/_web_shell.html" %}
 </head>
@@ -14,261 +16,139 @@
 
     {% from "partials/_ui.html" import page_header, card %}
     <div class="page ui-page">
-        {{ page_header('我的伙伴', '一个"伙伴"就是你在对话页可以选择的一个角色。想同时拥有多个聊天对象，就在这里各建一个。') }}
+        {{ page_header('聊天服务', '渠道负责接入 QQ / 微信 / 网页，服务把角色装到渠道上；回到对话页按服务切换。') }}
 
         <div id="banner" class="ui-alert" hidden></div>
 
-        {% call card('我的伙伴列表',
-             action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="new-btn">+ 新建伙伴</button>') %}
-            <span class="u-muted u-fs-82" id="quota-line"></span>
-            <div id="service-list"><div class="ui-empty">正在读取伙伴列表…</div></div>
-        {% endcall %}
-
-        {# 编辑卡要挂 id 与 hidden 钩子，宏不提供这两个参数，交给外层 div #}
-        <div id="editor-card" hidden>
-            {% call card('新建伙伴') %}
-                <div class="ui-grid ui-grid--3">
-                    <div class="ui-field">
-                        <label for="f-name">伙伴名称</label>
-                        <input class="ui-input" id="f-name" maxlength="60" placeholder="留空自动按角色命名">
-                    </div>
-                    <div class="ui-field">
-                        <label for="f-profile">扮演的角色 *</label>
-                        <select class="ui-select" id="f-profile"></select>
-                    </div>
-                    <div class="ui-field">
-                        <label for="f-tz">时区（选填）</label>
-                        <input class="ui-input" id="f-tz" placeholder="例如 Asia/Shanghai">
-                        <div class="ui-help">影响主动问候与作息判断，留空用系统默认。</div>
-                    </div>
-                </div>
-                <div class="ui-cluster ui-cluster--bar">
-                    <button type="button" class="ui-btn ui-btn--primary" id="save-btn">保存</button>
-                    <button type="button" class="ui-btn ui-btn--ghost" id="cancel-btn">取消</button>
-                </div>
-            {% endcall %}
+        <div class="svc-summary" aria-label="资源概览">
+            <span class="svc-stat"><strong id="stat-services">-</strong><span>服务</span></span>
+            <span class="svc-stat"><strong id="stat-bots">-</strong><span>渠道</span></span>
+            <span class="svc-stat"><strong id="stat-roles">-</strong><span>角色</span></span>
         </div>
 
-        {% call card('使用说明') %}
-            <p class="ui-note">
-                新建或修改后，回到「对话」页顶部的角色下拉框选择要聊的伙伴即可；每个伙伴各自保留自己的对话与记忆。<br>
-                账号下由 QQ / 微信渠道使用的服务也会出现在这里，选中它可回看并继续该渠道的对话；改动会同时影响对应渠道。<br>
-                至少需要保留一个启用中的伙伴，否则无法继续聊天。
-            </p>
-        {% endcall %}
+        <div class="svc-tabs" role="tablist" aria-label="聊天服务分区">
+            <button type="button" class="svc-tab active" data-svc-tab="channels" role="tab" aria-selected="true">
+                渠道 <span class="svc-tab-count" id="tab-count-bots"></span>
+            </button>
+            <button type="button" class="svc-tab" data-svc-tab="services" role="tab" aria-selected="false">
+                服务 <span class="svc-tab-count" id="tab-count-services"></span>
+            </button>
+            <button type="button" class="svc-tab" data-svc-tab="roles" role="tab" aria-selected="false">
+                角色 <span class="svc-tab-count" id="tab-count-roles"></span>
+            </button>
+        </div>
+
+        {# ── 渠道 ───────────────────────────────────── #}
+        <section class="svc-panel active" data-svc-panel="channels">
+            {% call card('渠道',
+                 action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="bot-new-btn">+ 添加渠道</button>') %}
+                <p class="ui-note">渠道是接入平台的实际连接。QQ / 微信渠道每个只能挂一个服务；网页渠道可挂多个服务。</p>
+                <div id="channel-list"><div class="ui-empty">正在读取渠道…</div></div>
+            {% endcall %}
+
+            <div id="bot-editor" class="svc-editor" hidden>
+                {% call card('添加渠道') %}
+                    <div class="platform-pick" id="bot-platform-pick" role="group" aria-label="选择渠道平台">
+                        <button type="button" class="platform-option active" data-bot-platform="qq">QQ</button>
+                        <button type="button" class="platform-option" data-bot-platform="wechat">微信</button>
+                        <button type="button" class="platform-option" data-bot-platform="web">网页</button>
+                    </div>
+                    <div class="ui-grid ui-grid--3">
+                        <div class="ui-field">
+                            <label for="bot-name">渠道名称 *</label>
+                            <input class="ui-input" id="bot-name" maxlength="40" placeholder="例如：工作助手">
+                        </div>
+                        <div class="ui-field">
+                            <label for="bot-profile">首个服务的角色 *</label>
+                            <select class="ui-select" id="bot-profile"></select>
+                            <div class="ui-help">创建渠道时同时装配第一个服务。</div>
+                        </div>
+                        <div class="ui-field">
+                            <label for="bot-tz">时区（选填）</label>
+                            <input class="ui-input" id="bot-tz" placeholder="例如 Asia/Shanghai">
+                        </div>
+                    </div>
+                    <div id="qq-fields">
+                        <p class="ui-help">QQ 渠道创建后，使用「扫码绑定」获取凭据。</p>
+                        <label class="ui-cluster">
+                            <input type="checkbox" id="bot-sandbox" checked>
+                            <span>沙箱模式（仅 QQ）</span>
+                        </label>
+                    </div>
+                    <div class="ui-cluster ui-cluster--bar">
+                        <button type="button" class="ui-btn ui-btn--primary" id="bot-create-btn">创建渠道</button>
+                        <button type="button" class="ui-btn ui-btn--ghost" id="bot-cancel-btn">取消</button>
+                    </div>
+                {% endcall %}
+            </div>
+
+            <div id="bot-edit" class="svc-editor" hidden>
+                {% call card('编辑渠道') %}
+                    <div class="ui-field">
+                        <label for="bot-edit-name">渠道名称 *</label>
+                        <input class="ui-input" id="bot-edit-name" maxlength="40">
+                    </div>
+                    <div id="bot-edit-qq">
+                        <div class="ui-field">
+                            <label for="bot-edit-sandbox">沙箱模式</label>
+                            <select class="ui-select" id="bot-edit-sandbox">
+                                <option value="true">开启</option>
+                                <option value="false">关闭</option>
+                            </select>
+                        </div>
+                        <p class="ui-help">凭据通过「扫码绑定」获取与更新；改名后渠道会在约 30 秒内同步。</p>
+                    </div>
+                    <div class="ui-cluster ui-cluster--bar">
+                        <button type="button" class="ui-btn ui-btn--primary" id="bot-save-btn">保存</button>
+                        <button type="button" class="ui-btn ui-btn--ghost" id="bot-edit-cancel-btn">取消</button>
+                    </div>
+                {% endcall %}
+            </div>
+        </section>
+
+        {# ── 服务 ───────────────────────────────────── #}
+        <section class="svc-panel" data-svc-panel="services">
+            {% call card('服务',
+                 action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="svc-new-btn">+ 添加服务</button>') %}
+                <p class="ui-note">
+                    服务 = 角色 × 渠道。QQ / 微信渠道服务与对应平台共享对话记录，一个渠道只能有一个服务；网页渠道可创建多个。
+                </p>
+                <div id="service-list"><div class="ui-empty">正在读取服务…</div></div>
+            {% endcall %}
+
+            <div id="service-editor" class="svc-editor" hidden>
+                {% call card('新建服务') %}
+                    <div class="ui-grid ui-grid--3">
+                        <div class="ui-field">
+                            <label for="svc-name">服务名称</label>
+                            <input class="ui-input" id="svc-name" maxlength="60" placeholder="留空按角色与渠道命名">
+                        </div>
+                        <div class="ui-field">
+                            <label for="svc-profile">扮演的角色 *</label>
+                            <select class="ui-select" id="svc-profile"></select>
+                        </div>
+                        <div class="ui-field">
+                            <label for="svc-bot">渠道 *</label>
+                            <select class="ui-select" id="svc-bot"></select>
+                            <div class="ui-help" id="svc-bot-help">QQ / 微信渠道已有服务时不可再选。</div>
+                        </div>
+                        <div class="ui-field">
+                            <label for="svc-tz">时区（选填）</label>
+                            <input class="ui-input" id="svc-tz" placeholder="例如 Asia/Shanghai">
+                        </div>
+                    </div>
+                    <div class="ui-cluster ui-cluster--bar">
+                        <button type="button" class="ui-btn ui-btn--primary" id="svc-save-btn">保存</button>
+                        <button type="button" class="ui-btn ui-btn--ghost" id="svc-cancel-btn">取消</button>
+                    </div>
+                {% endcall %}
+            </div>
+        </section>
+
+        {# ── 角色 ───────────────────────────────────── #}
+        <section class="svc-panel" data-svc-panel="roles" id="roles">
+            {% include "partials/_role_section.html" %}
+        </section>
     </div>
-
-    <script>
-    (function () {
-        'use strict';
-
-        const listEl = document.getElementById('service-list');
-        const quotaEl = document.getElementById('quota-line');
-        const bannerEl = document.getElementById('banner');
-        const editorEl = document.getElementById('editor-card');
-        const titleEl = editorEl.querySelector('.ui-card-title');
-        const saveBtn = document.getElementById('save-btn');
-        const nameEl = document.getElementById('f-name');
-        const profileEl = document.getElementById('f-profile');
-        const tzEl = document.getElementById('f-tz');
-        const CHANNEL_NAMES = { qq: 'QQ', wechat: '微信', web: '网页' };
-
-        let services = [];
-        let profiles = [];
-        let editingId = null;
-
-        function show(kind, text) {
-            bannerEl.hidden = false;
-            bannerEl.className = 'ui-alert' + (kind === 'err' ? ' ui-alert--err' : kind === 'ok' ? ' ui-alert--ok' : '');
-            bannerEl.textContent = text;
-        }
-
-        function mkBtn(text, handler, danger) {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'ui-btn ui-btn--ghost ui-btn--sm' + (danger ? ' ui-btn--danger' : '');
-            b.textContent = text;
-            b.addEventListener('click', handler);
-            return b;
-        }
-
-        /* 下拉可选项：启用中的角色才能作为伙伴（含公共与自建） */
-        function fillProfileSelect(selectedId) {
-            profileEl.textContent = '';
-            const usable = profiles.filter(function (p) { return p.is_active; });
-            usable.forEach(function (p) {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = p.name + (p.owned ? '（自建）' : '（公共）');
-                profileEl.appendChild(opt);
-            });
-            if (!usable.length) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '暂无可用角色，请先到「我的角色」创建';
-                profileEl.appendChild(opt);
-                return;
-            }
-            if (selectedId) {
-                profileEl.value = selectedId;
-                // 角色已停用或不可见时 select 无该项：回到第一项并提示
-                if (profileEl.selectedIndex === -1) profileEl.selectedIndex = 0;
-            }
-        }
-
-        function renderList() {
-            listEl.textContent = '';
-            if (!services.length) {
-                const e = document.createElement('div');
-                e.className = 'ui-empty';
-                e.textContent = '还没有伙伴。新建一个即可开始与指定角色对话。';
-                listEl.appendChild(e);
-                return;
-            }
-            services.forEach(function (sv) {
-                const row = document.createElement('div');
-                row.className = 'ui-list-row ui-cluster';
-
-                const platform = sv.bot_platform || '';
-                const channel = CHANNEL_NAMES[platform] || '';
-
-                const grow = document.createElement('div');
-                grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
-                const t = document.createElement('div');
-                t.className = 'u-fw-600';
-                t.textContent = sv.name;
-                const m = document.createElement('div');
-                m.className = 'u-muted u-fs-82';
-                m.textContent = '扮演：' + sv.profile_name
-                    + (channel && platform !== 'web' ? ' · ' + channel + '渠道' : '')
-                    + (sv.timezone ? ' · ' + sv.timezone : '');
-                grow.appendChild(t);
-                grow.appendChild(m);
-                row.appendChild(grow);
-
-                if (sv.current) {
-                    const cur = document.createElement('span');
-                    cur.className = 'ui-badge ui-badge--ink';
-                    cur.textContent = '当前对话';
-                    row.appendChild(cur);
-                }
-                if (channel && platform !== 'web') {
-                    const ch = document.createElement('span');
-                    ch.className = 'ui-badge ui-badge--line';
-                    ch.textContent = channel + '渠道';
-                    row.appendChild(ch);
-                }
-                const tag = document.createElement('span');
-                tag.className = 'ui-badge ' + (sv.is_active ? 'ui-badge--ok' : 'ui-badge--err');
-                tag.textContent = sv.is_active ? '启用中' : '已停用';
-                row.appendChild(tag);
-
-                const acts = document.createElement('div');
-                acts.className = 'ui-cluster ui-cluster--nowrap';
-                acts.appendChild(mkBtn('编辑', function () { openEditor(sv); }));
-                acts.appendChild(mkBtn(sv.is_active ? '停用' : '启用', function () { toggle(sv); }));
-                acts.appendChild(mkBtn('删除', function () { remove(sv); }, true));
-                row.appendChild(acts);
-
-                listEl.appendChild(row);
-            });
-        }
-
-        function renderQuota(data) {
-            const q = data.quota || {};
-            quotaEl.textContent = data.can_create
-                ? '伙伴数量 ' + (q.used || 0) + ' / ' + (q.limit || 0)
-                : '管理员未开放新建伙伴，可编辑现有的角色与时区';
-            document.getElementById('new-btn').hidden = !data.can_create;
-        }
-
-        async function load() {
-            const [svc, prof] = await Promise.all([
-                WebAuth.call('/api/web/services'),
-                WebAuth.call('/api/web/profiles')
-            ]);
-            if (!svc.ok) { show('err', svc.detail || '伙伴列表读取失败'); return; }
-            services = svc.data.items || [];
-            renderQuota(svc.data);
-            profiles = prof.ok ? (prof.data.items || []) : [];
-            renderList();
-        }
-
-        function openEditor(sv) {
-            editingId = sv ? sv.id : null;
-            fillProfileSelect(sv ? sv.profile_id : '');
-            nameEl.value = sv ? sv.name : '';
-            tzEl.value = sv ? (sv.timezone || '') : '';
-            titleEl.textContent = sv ? '编辑伙伴：' + sv.name : '新建伙伴';
-            editorEl.hidden = false;
-            editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            if (!profiles.length) { show('info', '还没有可用角色，请先到「我的角色」创建或启用一个。'); return; }
-            const channel = sv && CHANNEL_NAMES[sv.bot_platform || ''];
-            if (channel && sv.bot_platform !== 'web') {
-                show('info', '这是 ' + channel + ' 渠道的服务：改角色、停用或删除会同时影响该渠道的对话。');
-            }
-        }
-
-        async function save() {
-            if (!editingId && !profileEl.value) { show('err', '请选择要扮演的角色'); return; }
-            const body = { name: nameEl.value.trim(), timezone: tzEl.value.trim() };
-            if (profileEl.value) body.profile_id = profileEl.value;
-
-            let r;
-            if (editingId) {
-                r = await WebAuth.call('/api/web/services/' + encodeURIComponent(editingId), {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-            } else {
-                r = await WebAuth.call('/api/web/services', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-            }
-            if (!r.ok) { show('err', r.detail || '保存失败'); return; }
-            show('ok', '已保存。回到「对话」页选择这个伙伴即可开聊。');
-            closeEditor();
-            await load();
-        }
-
-        async function toggle(sv) {
-            const r = await WebAuth.call('/api/web/services/' + encodeURIComponent(sv.id), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_active: !sv.is_active })
-            });
-            if (!r.ok) { show('err', r.detail || '操作失败'); return; }
-            await load();
-        }
-
-        async function remove(sv) {
-            if (!window.confirm('确定删除伙伴「' + sv.name + '」？其对话历史仍会保留在账号里。')) return;
-            const r = await WebAuth.call('/api/web/services/' + encodeURIComponent(sv.id), { method: 'DELETE' });
-            if (!r.ok) { show('err', r.detail || '删除失败'); return; }
-            show('ok', '伙伴已删除。');
-            await load();
-        }
-
-        function closeEditor() {
-            editorEl.hidden = true;
-            editingId = null;
-        }
-
-        document.getElementById('cancel-btn').addEventListener('click', closeEditor);
-        saveBtn.addEventListener('click', save);
-        document.getElementById('new-btn').addEventListener('click', function () { openEditor(null); });
-        /* 同 profiles.html：内联脚本在解析期执行，defer 的 web-auth.js 还没定义
-           window.WebAuth，直接 load() 会被 catch 吞成"读取失败"。挂到 DOMContentLoaded。 */
-        document.addEventListener('DOMContentLoaded', function () {
-            load().catch(function (e) {
-                console.error('伙伴列表加载失败', e);
-                show('err', '伙伴列表读取失败，请稍后重试');
-            });
-        });
-    })();
-    </script>
 </body>
 </html>

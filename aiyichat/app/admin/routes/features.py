@@ -230,7 +230,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         label="C 端网页登录",
         desc="开启后网页身份可用「用户名 + 密码」登录，并以会话令牌访问流式对话接口；"
         "关闭时 /api/auth/* 与 /web/* 一律 403，QQ / 微信链路完全不受影响。",
-        dependency="可选：在「网页身份」页指定默认载体 Bot（未指定时账号按需自建）",
+        dependency="可选：在「网页身份」页指定默认载体渠道（未指定时账号按需自建）",
         cost="free",
     ),
     FeatureToggle(
@@ -279,7 +279,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         key="human_rhythm_enabled",
         label="拟人节奏参数",
         desc="用下方节奏参数取代旧的按字延迟公式；关闭时沿用 legacy 间隔，行为与改动前一致。",
-        dependency="影响网页与 QQ/微信 Bot 的逐条间隔",
+        dependency="影响网页与 QQ/微信渠道的逐条间隔",
         cost="free",
     ),
     FeatureToggle(

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Literal, Optional
+from uuid import uuid4
 
 from app.db.mongo import get_database
 from app.models.identity import IdentityCreate, IdentityInDB, IdentityUpdate
@@ -187,6 +188,24 @@ class IdentityRepository:
             {"id": identity_id},
             {"$set": update_fields},
         )
+
+    async def reset_platform_binding(self, identity_id: str, bot_id: str) -> bool:
+        """清除身份与指定 Bot 的平台绑定，保留身份行与历史数据。
+
+        C 端删除渠道且该身份已无任何服务时调用，避免同一 openid 在新建渠道时
+        命中旧身份而无法绑定；只清当前 Bot 的映射，身份本身不删除。
+        """
+        result = await self._collection().update_one(
+            {"id": identity_id},
+            {
+                "$set": {
+                    "platform_id": str(uuid4()),
+                    "last_active_at": datetime.now(timezone.utc),
+                },
+                "$unset": {f"bot_openids.{bot_id}": ""},
+            },
+        )
+        return result.matched_count > 0
 
     async def bind_bot_openid(
         self, identity_id: str, bot_id: str, platform_id: str

@@ -3,8 +3,8 @@
 
    与后台共用 tokens/base/components，但走更柔的一档：
    大行高、衬线做角色名、琥珀做"对方"的存在感、暖纸底做长对话。
-   覆盖：认证页分屏、顶栏、会话页（伙伴栏 + 记录流 + 输入区）、
-   角色与伙伴管理页。
+   覆盖：认证页分屏、顶栏、会话页（服务栏 + 记录流 + 输入区）、
+   角色与服务管理页。
    ══════════════════════════════════════════════════════ */
 
 [hidden] { display: none !important; }
@@ -222,7 +222,7 @@
 [data-theme="dark"] .theme-btn .icon-sun { display: block; }
 [data-theme="dark"] .theme-btn .icon-moon { display: none; }
 
-/* ══ 管理页（角色 / 伙伴）══ */
+/* ══ 管理页（角色 / 服务）══ */
 .page { max-width: var(--content-max); margin: 0 auto; padding: 1.4rem var(--page-pad-x) 3rem; }
 /* C 端列表页的卡片、栅格、徽标、提示条一律走 components.css 的 .ui-* 原语，
    本页只保留外壳与场景组件（会话页、登录注册页） */
@@ -280,7 +280,7 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 }
 .chat-main { flex: 1; display: flex; min-height: 0; }
 
-/* 伙伴（对话服务）条：一个伙伴即一个可对话的角色 */
+/* 服务（对话服务）条：一个服务即一个可对话的角色 */
 .partner-bar {
     flex-shrink: 0;
     display: flex;
@@ -598,3 +598,67 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .strength-level.lvl-weak { color: var(--danger-text); }
 .strength-level.lvl-mid { color: var(--warning-text); }
 .strength-level.lvl-strong { color: var(--success-text); }
+
+/* ══ 聊天服务页：渠道 / 服务 / 角色 ══ */
+.svc-summary { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1rem; }
+.svc-stat {
+    display: inline-flex; align-items: baseline; gap: .4rem;
+    padding: .45rem .8rem;
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: var(--surface); font-size: .78rem; color: var(--text-2);
+}
+.svc-stat strong { font-family: var(--font-mono); font-size: .95rem; color: var(--text); }
+.svc-tabs {
+    display: flex; gap: .2rem; margin: 0 0 1rem;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.svc-tab {
+    flex: 0 0 auto; margin: 0; padding: .55rem .9rem;
+    border: 0; border-bottom: 2px solid transparent;
+    background: transparent; color: var(--text-2);
+    font: inherit; font-size: .86rem; cursor: pointer;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.svc-tab:hover { color: var(--text); background: var(--surface-2); }
+.svc-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.svc-tab-count { font-family: var(--font-mono); font-size: .72rem; color: var(--text-3); }
+.svc-panel { display: none; }
+.svc-panel.active { display: block; }
+#channel-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.channel-card {
+    display: flex; flex-direction: column; gap: .55rem;
+    padding: .9rem 1rem;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface);
+}
+.channel-head { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+.channel-name { font-family: var(--font-display); font-size: .98rem; color: var(--text); }
+.channel-meta { line-height: 1.6; }
+.channel-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: auto; padding-top: .2rem; }
+.qr-panel {
+    display: grid; justify-items: center; gap: .4rem;
+    padding-top: .6rem; border-top: 1px dashed var(--border); text-align: center;
+}
+.qr-panel[hidden] { display: none; }
+.qr-image { width: 190px; max-width: 100%; height: auto; padding: .5rem; border-radius: var(--radius-sm); background: #fff; }
+.svc-editor { margin-top: 1rem; }
+.svc-row { align-items: flex-start; }
+.platform-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .9rem; }
+.platform-option {
+    margin: 0; padding: .45rem .9rem;
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: var(--surface); color: var(--text-2);
+    font: inherit; font-size: .84rem; cursor: pointer;
+}
+.platform-option:hover { border-color: var(--border-strong); color: var(--text); }
+.platform-option.active { border-color: var(--primary); background: var(--primary-soft); color: var(--info-text); }
+
+@media (max-width: 900px) {
+    #channel-list { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .svc-summary { gap: .4rem; }
+    .svc-stat { padding: .35rem .6rem; }
+    .channel-actions .ui-btn { flex: 1 1 auto; }
+}

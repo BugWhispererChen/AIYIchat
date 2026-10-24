@@ -151,6 +151,11 @@ async def list_proactive_records(
     """查询身份的主动消息发送记录。"""
     from app.db.repositories.proactive_repo import ProactiveRecordRepository
 
+    # limit 来自调用方：Mongo 里 `limit(0)` 的含义是"不限条数"，
+    # 传 0 或负数就等于把该身份的全部发送记录一次性读进内存再序列化
+    bounded_limit = max(1, min(int(limit or 20), 200))
     repo = ProactiveRecordRepository()
-    records = await repo.find_latest_by_identity(identity_id, bot_id, limit=limit)
+    records = await repo.find_latest_by_identity(
+        identity_id, bot_id, limit=bounded_limit
+    )
     return [r.model_dump() for r in records]

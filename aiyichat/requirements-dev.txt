@@ -6,3 +6,6 @@ ruff>=0.6
 mypy>=1.10
 mongomock>=4.3
 mongomock-motor>=0.0.36
+# 依赖漏洞审计：提交前与出包前的固定动作（`pip-audit -r requirements.txt`）。
+# 此前只有人在用，没有清单声明，换台机器就跑不了这道门禁。
+pip-audit>=2.7

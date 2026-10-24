@@ -177,3 +177,18 @@ def test_chat_text_length_is_bounded() -> None:
 
     asyncio.run(case())
 
+
+def test_qr_poll_messages_are_not_raw_exception_text() -> None:
+    """扫码轮询的 message 会经后台与 C 端两条接口原样返回，不许塞异常原文。
+
+    行为用例要铺 session/bot/manager 一整套替身，这里先钉住形态：
+    把 `str(exc)` 塞进 `message` 的写法会立刻红，改回去也立刻看得见。
+    """
+    source = (_APP_DIR / "services" / "bot_qr_service.py").read_text(encoding="utf-8")
+    banned = [
+        '"message": str(exc)',
+        '"message": msg',
+        'message=f"{exc}"',
+    ]
+    offenders = [item for item in banned if item in source]
+    assert not offenders, "bot_qr_service 又把异常原文回显给调用方了：" + ", ".join(offenders)

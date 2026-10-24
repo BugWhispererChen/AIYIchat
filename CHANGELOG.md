@@ -56,6 +56,10 @@
   DB → 运行时的加载改走新的 `to_stored_dict`（只下发库里真实存在的键）：否则新登记的键会
   用代码默认值悄悄覆盖老实例 `.env` 里已配好的值。`.env.example` 一并补上这 14 个键与注释。
   测试服实测：库里原本就存着 `memory_inject_limit=12` 却一直在跑默认 10，修复后按 12 生效。
+- **扫码轮询不再回显异常原文**：`bot_qr_service` 的 QQ 绑定与微信登录轮询把 `str(exc)`
+  塞进 `message` 返回，而这个字段会经后台与 C 端两条扫码接口原样呈现（`web_bots_api`
+  直接转述），异常原文可能含平台会话标识或内部地址。改为固定话术 + `logger.exception`，
+  并加形态护栏用例防止改回去。
 - **SSE 错误帧不再回显异常原文**：`/api/conversations/chat/stream` 生成中断时把
   `str(e)` 直接写进 `data: [ERROR] …` 发给客户端，而异常里可能带连接串、主机与集合名。
   现在只回稳定话术，细节交给 `logger.exception` 落日志。

@@ -95,8 +95,10 @@ class QQBindSessionStore:
             logger.error("[QQBind] Poll error: %s", msg, exc_info=True)
             if "频率" in msg or "频繁" in msg:
                 self.rate_limited.add(config_id)
-                return {"status": "rate_limited", "message": msg}
-            return {"status": "error", "message": msg}
+                return {"status": "rate_limited", "message": "扫码确认太频繁，请稍候再试"}
+            # 这个 message 会经后台与 C 端两条接口返回（web_bots_api 直接转述），
+            # 异常原文可能带平台会话标识或内部地址，稳定话术即可，细节留在日志
+            return {"status": "error", "message": "绑定失败，请重新获取二维码"}
 
         status = result.get("status")
         if status == "success":
@@ -176,7 +178,9 @@ async def poll_wechat_login(config_id: str, qrcode: str) -> dict:
         return {"status": "waiting", "message": "等待扫码..."}
     except Exception as exc:  # noqa: BLE001 - 平台错误统一转成可读状态
         logger.error("[WeChatBot] Poll QR error: %s", exc, exc_info=True)
-        return {"status": "error", "message": str(exc)}
+        # 这个 message 会经后台与 C 端两条扫码接口原样返回，异常原文可能带
+        # 平台会话标识或内部地址；调用方只需要知道"这次轮询失败"，细节留在日志
+        return {"status": "error", "message": "扫码状态获取失败，请重新获取二维码"}
 
 
 async def logout_wechat(config_id: str) -> bool:

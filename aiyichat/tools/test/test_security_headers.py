@@ -1,8 +1,9 @@
-"""P2 加固项的契约用例：安全响应头、文档暴露范围、后台模板的上游文案渲染。"""
+"""P2 加固项的契约用例：安全响应头、文档暴露范围、后台模板文案注入面、条数上限与会话竞态。"""
 
 import asyncio
 import re
 from pathlib import Path
+from typing import Any
 
 import mongomock_motor
 
@@ -192,3 +193,35 @@ def test_qr_poll_messages_are_not_raw_exception_text() -> None:
     ]
     offenders = [item for item in banned if item in source]
     assert not offenders, "bot_qr_service 又把异常原文回显给调用方了：" + ", ".join(offenders)
+
+def test_duplicate_key_in_create_falls_back_to_existing_conversation() -> None:
+    """跨实例竞态：别人先建成功时用它那条，而不是把 DuplicateKeyError 抛给用户。
+
+    进程内锁只能挡单实例；多进程/多实例下靠 conversations 的部分唯一索引兜底，
+    所以捕获分支必须真的回到"查活跃会话"。
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    from app.db.repositories.conversation_repo import ConversationRepository
+
+    async def case() -> None:
+        mongo._db = mongomock_motor.AsyncMongoMockClient()["test_race_fallback"]
+        try:
+            repo = ConversationRepository()
+            winner = await repo.create("id-1", "p-1", "svc-1")
+
+            async def _boom(*args: Any, **kwargs: Any):
+                raise DuplicateKeyError("E11000 duplicate key error")
+
+            original_create = repo.create
+            repo.create = _boom  # type: ignore[method-assign]
+            try:
+                got = await repo.find_or_create("id-1", "p-1", "svc-1")
+            finally:
+                repo.create = original_create  # type: ignore[method-assign]
+            assert str(got.id) == str(winner.id), (got.id, winner.id)
+        finally:
+            mongo._db = None
+
+    asyncio.run(case())
+

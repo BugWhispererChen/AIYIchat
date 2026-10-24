@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
+from pymongo.errors import DuplicateKeyError
 
 from app.db.mongo import get_database
 from app.db.repositories.object_id import (
@@ -94,7 +95,15 @@ class ConversationRepository:
             conv = await self.find_active(identity_id, profile_id, service_id)
             if conv is not None:
                 return conv
-            return await self.create(identity_id, profile_id, service_id)
+            try:
+                return await self.create(identity_id, profile_id, service_id)
+            except DuplicateKeyError:
+                # 另一个进程/实例抢在同一步建好了（靠 conversations 上的部分唯一索引才可能
+                # 撞上）：用它那条，绝不留下第二条活跃会话。进程内锁挡不住跨实例竞态。
+                raced = await self.find_active(identity_id, profile_id, service_id)
+                if raced is not None:
+                    return raced
+                raise
 
     async def find_active_by_key(
         self, context_key: str

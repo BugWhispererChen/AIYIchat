@@ -174,6 +174,15 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     )
     await _safe_create_index(db.conversations, "service_id")
     await _safe_create_index(db.conversations, "created_at")
+    # 活跃会话唯一性：同一 (身份, 角色, 服务) 只允许一条 status=active 的会话。
+    # find_or_create 的"先查再插"在多进程/多实例下必然有竞态，只有 DB 层能兜住——
+    # 部分索引只管 active，历史归档会话不受影响。测试服实测 0 组重复，可安全建立。
+    await _safe_create_index(
+        db.conversations,
+        [("identity_id", 1), ("profile_id", 1), ("service_id", 1)],
+        unique=True,
+        partialFilterExpression={"status": "active"},
+    )
     # 消息：按 conversation_id + created_at + _id 索引（_id 为同时间戳的兜底排序键），按 role 索引
     await _safe_create_index(
         db.messages,

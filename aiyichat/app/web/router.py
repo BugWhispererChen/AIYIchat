@@ -269,7 +269,14 @@ async def chat_page(request: Request) -> Response:
     """极简聊天页：静态壳，身份与额度由前端带 Bearer 令牌调 `/api/auth/me` 获取。"""
     if not settings.web_auth_enabled:
         return _disabled_page()
-    return _render(request, "chat.html")
+    return _render(
+        request,
+        "chat.html",
+        {
+            "voice_input_enabled": settings.asr_enabled,
+            "voice_reply_enabled": settings.tts_enabled,
+        },
+    )
 
 
 @web_router.get("/web/profiles", response_class=HTMLResponse)

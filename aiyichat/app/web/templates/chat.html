@@ -60,14 +60,25 @@
                 </div>
             </div>
 
-            <form class="chat-input-bar" id="chat-form" data-stream-endpoint="/api/conversations/chat/stream">
+            <form class="chat-input-bar" id="chat-form"
+                  data-stream-endpoint="/api/conversations/chat/stream"
+                  data-voice-endpoint="/api/conversations/chat/voice/stream"
+                  data-voice-input="{{ '1' if voice_input_enabled else '0' }}"
+                  data-voice-reply="{{ '1' if voice_reply_enabled else '0' }}">
                 <div class="composer">
+                    <button type="button" class="mic-btn" id="mic-btn"
+                            aria-label="录音发送语音" aria-pressed="false" title="录音发送语音" hidden>
+                        {{ icon('mic') }}
+                    </button>
                     <textarea id="chat-input" name="text" rows="1" maxlength="2000"
                               placeholder="说点什么，回车发送" disabled></textarea>
                     <button type="submit" class="send-btn" id="send-btn" disabled>发送</button>
                 </div>
             </form>
-            <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+            <p class="composer-hint" id="composer-hint">
+                <span id="composer-hint-text">Enter 发送 · Shift + Enter 换行</span>
+                <button type="button" class="voice-cancel" id="voice-cancel" hidden>取消录音</button>
+            </p>
         </div>
     </div>
 </body>

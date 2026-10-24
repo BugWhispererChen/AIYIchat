@@ -184,7 +184,7 @@ class ResponseProcessor:
             if desc.strip()
         ]
 
-_MAX_DISPLAY_HOLD = 200
+_MAX_DISPLAY_HOLD = 600
 
 
 class DisplayStreamCleaner:
@@ -207,7 +207,8 @@ class DisplayStreamCleaner:
         cut = self._safe_boundary(self._pending)
         # 扣住量必须有上限：模型如果吐出一个永远不闭合的 `[`，无上限就等于整条回复
         # 都不下发（屏幕空白），比原先"标签露出来"更糟。超过上限就照常下发，
-        # 最坏情况退化成改动前的表现。200 足够容纳一条完整的 [IMG:…] 描述。
+        # 最坏情况退化成改动前的表现。600 足够容纳一条完整的长 [IMG:…] 描述：
+        # 实测模型会生成 200+ 字的英文画面描述，200 的上限会让提示词整段漏到屏幕。
         if len(self._pending) - cut > _MAX_DISPLAY_HOLD:
             cut = len(self._pending) - _MAX_DISPLAY_HOLD
         if cut <= 0:

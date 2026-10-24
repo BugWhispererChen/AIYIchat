@@ -75,6 +75,42 @@ class TestGatedFrames:
         assert bubbles == ["在的呀", "今天怎么这么晚"]
 
 
+class TestMediaFrames:
+    """媒体事件：纯文本控制帧，URL 用 | 与类型分隔。"""
+
+    def test_image_frame(self) -> None:
+        event = StreamEvent(
+            kind="media", media_kind="image", media_url="/api/media/abc123"
+        )
+        assert stream_frames(event) == [
+            "data: [MEDIA]image|/api/media/abc123\n\n"
+        ]
+
+    def test_sticker_frame(self) -> None:
+        event = StreamEvent(
+            kind="media", media_kind="sticker", media_url="/api/media/stk"
+        )
+        assert stream_frames(event) == [
+            "data: [MEDIA]sticker|/api/media/stk\n\n"
+        ]
+
+    def test_audio_frame(self) -> None:
+        event = StreamEvent(
+            kind="media", media_kind="audio", media_url="/api/media/voice"
+        )
+        assert stream_frames(event) == [
+            "data: [MEDIA]audio|/api/media/voice\n\n"
+        ]
+
+    def test_invalid_media_event_produces_nothing(self) -> None:
+        assert stream_frames(
+            StreamEvent(kind="media", media_kind="video", media_url="/x")
+        ) == []
+        assert stream_frames(
+            StreamEvent(kind="media", media_kind="image", media_url="")
+        ) == []
+
+
 class TestWebChatJsContract:
     """前端脚本静态契约。"""
 
@@ -107,3 +143,24 @@ class TestWebChatJsContract:
     def test_typing_indicator_still_managed(self) -> None:
         # 占位气泡的 typing 类必须被移除，否则页面永远停在"正在输入"
         assert self.src.count("classList.remove('typing')") >= 3
+
+    def test_handles_media_and_voice_frames(self) -> None:
+        assert "'[MEDIA]'" in self.src and "MEDIA_FRAME" in self.src
+        assert "'[USER_TEXT]'" in self.src and "USER_TEXT_FRAME" in self.src
+        assert "media_kind" not in self.src  # 协议是文本帧，不是 JSON
+        assert "bubble-media" in self.src and "bubble-audio" in self.src
+
+    def test_media_urls_are_validated_before_rendering(self) -> None:
+        assert "safeMediaUrl" in self.src
+        assert "isMediaPath" in self.src
+        assert "'/api/media/'" in self.src
+        # 只允许设置 src，不允许把服务端字符串当 HTML
+        assert ".src = safe" in self.src
+        assert "innerHTML" not in self.src
+
+    def test_voice_recording_contract(self) -> None:
+        assert "MediaRecorder" in self.src
+        assert "getUserMedia" in self.src
+        assert "new FormData" in self.src
+        assert "MAX_VOICE_SECONDS" in self.src
+        assert "setBubbleCaption" in self.src

@@ -16,6 +16,9 @@
     var composer = document.getElementById('chat-form');
     var input = document.getElementById('chat-input');
     var sendBtn = document.getElementById('send-btn');
+    var micBtn = document.getElementById('mic-btn');
+    var voiceCancel = document.getElementById('voice-cancel');
+    var composerHintText = document.getElementById('composer-hint-text');
     var quotaInfo = document.getElementById('quota-info');
     var loadingNote = document.getElementById('loading-note');
     var serviceSelect = document.getElementById('service-select');
@@ -24,10 +27,21 @@
     var sessionRail = document.getElementById('session-rail');
     var banner = document.getElementById('browse-banner');
     var STREAM_URL = (composer && composer.dataset.streamEndpoint) || '/api/conversations/chat/stream';
+    var VOICE_URL = (composer && composer.dataset.voiceEndpoint) || '/api/conversations/chat/voice/stream';
+    var VOICE_INPUT_ENABLED = !!(composer && composer.dataset.voiceInput === '1');
+    var VOICE_REPLY_ENABLED = !!(composer && composer.dataset.voiceReply === '1');
+    var MAX_VOICE_SECONDS = 60;
 
     var streaming = false;
     var browsing = null;      // 正在回看的历史会话 ID；null 表示处于当前对话
     var abort = null;         // 进行中的流请求，便于中止
+    var recording = false;
+    var voiceRecorder = null;
+    var voiceStream = null;
+    var voiceChunks = [];
+    var voiceTimer = null;
+    var voiceStartedAt = 0;
+    var voiceCancelled = false;
 
     function authHeader(extra) {
         return window.WebAuth.authHeader(extra);
@@ -60,6 +74,84 @@
         return div;
     }
 
+    /* 媒体地址只接受服务端能力 URL（/api/media/...）；本地录音气泡额外放行 blob:。
+       绝不把外部地址塞进 img/audio.src，也不用 HTML 注入渲染。 */
+    function safeMediaUrl(url, allowBlob) {
+        if (typeof url !== 'string' || !url) return '';
+        if (url.indexOf('\n') >= 0 || url.indexOf('\r') >= 0) return '';
+        if (isMediaPath(url)) return url;
+        if (allowBlob && url.indexOf('blob:') === 0) return url;
+        return '';
+    }
+
+    function isMediaPath(url) {
+        return url.indexOf('/api/media/') === 0;
+    }
+
+    function addMediaBubble(role, kind, url, name, caption, allowBlob) {
+        var safe = safeMediaUrl(url, allowBlob);
+        if (!safe) return null;
+        dropEmpty();
+        var div = document.createElement('div');
+        div.className = 'bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-assistant') + ' bubble-media';
+        if (role !== 'user' && name) {
+            var label = document.createElement('span');
+            label.className = 'bubble-name';
+            label.textContent = name;
+            div.appendChild(label);
+        }
+        if (kind === 'audio') {
+            var audioLabel = document.createElement('span');
+            audioLabel.className = 'bubble-media-label';
+            audioLabel.textContent = role === 'user' ? '语音消息' : '语音回复';
+            div.appendChild(audioLabel);
+            var audio = document.createElement('audio');
+            audio.className = 'bubble-audio';
+            audio.controls = true;
+            audio.preload = 'metadata';
+            audio.src = safe;
+            div.appendChild(audio);
+        } else {
+            var img = document.createElement('img');
+            img.className = 'bubble-image' + (kind === 'sticker' ? ' is-sticker' : '');
+            img.src = safe;
+            img.alt = kind === 'sticker' ? '表情包' : '图片';
+            img.loading = 'lazy';
+            img.addEventListener('error', function () {
+                img.replaceWith(document.createTextNode('（媒体加载失败）'));
+            });
+            div.appendChild(img);
+        }
+        if (caption) {
+            var cap = document.createElement('span');
+            cap.className = 'bubble-caption';
+            cap.textContent = caption;
+            div.appendChild(cap);
+        }
+        streamBox.appendChild(div);
+        scrollToEnd();
+        return div;
+    }
+
+    function setBubbleCaption(node, text) {
+        if (!node) return;
+        var cap = node.querySelector('.bubble-caption');
+        if (!cap) {
+            cap = document.createElement('span');
+            cap.className = 'bubble-caption';
+            node.appendChild(cap);
+        }
+        cap.textContent = text || '';
+    }
+
+    function playAudioIn(node) {
+        if (!node) return;
+        var audio = node.querySelector('audio');
+        if (!audio) return;
+        var promise = audio.play();
+        if (promise && promise.catch) promise.catch(function () {});
+    }
+
     function addNote(text) {
         dropEmpty();
         var div = document.createElement('div');
@@ -87,6 +179,9 @@
     var MSG_DELIM = '|||';
     var MSG_FRAME = '[MSG]';
     var RESET_FRAME = '[RESET]';
+    var MEDIA_FRAME = '[MEDIA]';
+    var USER_TEXT_FRAME = '[USER_TEXT]';
+    var MEDIA_KINDS = { image: true, sticker: true, audio: true };
 
     function renderReply(bubble, extras, text, done) {
         if (!done) {
@@ -297,7 +392,34 @@
         addNote('正在回看历史对话（只读）');
         rows.forEach(function (m) {
             var role = m.role === 'user' ? 'user' : 'assistant';
-            addBubble(role, m.content || m.text || '', '', partnerLabel());
+            var contentType = m.content_type || 'text';
+            var mediaUrl = m.media_url || '';
+            if (mediaUrl && (contentType === 'voice' || contentType === 'image')) {
+                var kind = contentType === 'voice'
+                    ? 'audio'
+                    : (String(m.content || '').indexOf('表情') >= 0 ? 'sticker' : 'image');
+                var caption = '';
+                if (contentType === 'voice' && role === 'user') {
+                    caption = m.content || '';
+                } else if (
+                    contentType === 'image'
+                    && m.content
+                    && m.content.charAt(0) !== '('
+                    && m.content.indexOf('[对方发送了') !== 0
+                ) {
+                    caption = m.content;
+                }
+                var mediaNode = addMediaBubble(
+                    role, kind, mediaUrl,
+                    role === 'assistant' ? partnerLabel() : '',
+                    caption, false
+                );
+                if (!mediaNode) {
+                    addBubble(role, m.content || m.text || '', '', partnerLabel());
+                }
+            } else {
+                addBubble(role, m.content || m.text || '', '', partnerLabel());
+            }
         });
         if (banner) banner.hidden = false;
     }
@@ -335,31 +457,120 @@
 
     function setStreaming(on) {
         streaming = on;
-        sendBtn.disabled = on;
         sendBtn.textContent = on ? '停止' : '发送';
-        input.disabled = on;
-        if (!on) input.focus();
+        // 流式中保留"停止"可点；录音中发送按钮禁用，避免把录音与文字请求混在一起
+        sendBtn.disabled = recording;
+        input.disabled = on || recording;
+        if (micBtn) micBtn.disabled = on;
+        if (!on && !recording) input.focus();
+    }
+
+    async function consumeSse(resp, onPayload) {
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+        var buffer = '';
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            // 网络分片可能把一帧切断，残片留在 buffer 等下一批
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var consumed = consumeFrames(buffer);
+            buffer = consumed.rest;
+            consumed.frames.forEach(function (frame) {
+                payloadOf(frame).forEach(onPayload);
+            });
+        }
+    }
+
+    function newStreamState(bubble, extras, userBubble) {
+        return {
+            bubble: bubble,
+            extras: extras,
+            reply: '',
+            current: bubble,
+            paced: false,   // 收到过 [MSG] 即进入闸门模式（服务端控气泡边界与节奏）
+            opened: false,  // 本轮首条气泡是否已经开过（[RESET] 后归零）
+            hasMedia: false,
+            userBubble: userBubble || null
+        };
+    }
+
+    function handleMediaFrame(rest) {
+        var sep = rest.indexOf('|');
+        if (sep <= 0) return;
+        var kind = rest.slice(0, sep);
+        var url = rest.slice(sep + 1);
+        if (!MEDIA_KINDS[kind]) return;
+        var node = addMediaBubble('assistant', kind, url, partnerLabel(), '', false);
+        if (node && kind === 'audio') playAudioIn(node);
+    }
+
+    function handleStreamPayload(payload, state) {
+        if (payload === '[DONE]') return;
+        if (payload === RESET_FRAME) {
+            resetTurn(state.bubble, state.extras);
+            state.current = state.bubble;
+            state.opened = false;
+            state.reply = '';
+            return;
+        }
+        if (payload.indexOf('[ERROR]') === 0) {
+            dropExtras(state.extras);
+            state.bubble.classList.remove('typing');
+            state.bubble.classList.add('bubble-error');
+            state.bubble.lastChild.textContent = payload.slice(7).trim() || '对话服务返回异常。';
+            return;
+        }
+        if (payload.indexOf(USER_TEXT_FRAME) === 0) {
+            setBubbleCaption(state.userBubble, payload.slice(USER_TEXT_FRAME.length));
+            return;
+        }
+        if (payload.indexOf(MEDIA_FRAME) === 0) {
+            state.hasMedia = true;
+            handleMediaFrame(payload.slice(MEDIA_FRAME.length));
+            return;
+        }
+        if (payload === MSG_FRAME) {
+            state.paced = true;
+            state.current = openBubble(state.bubble, state.extras, state.opened);
+            state.opened = true;
+            return;
+        }
+        state.reply += payload;
+        if (state.paced) appendInto(state.current, payload);
+        else renderReply(state.bubble, state.extras, state.reply, false);
+    }
+
+    function finishStream(state) {
+        state.bubble.classList.remove('typing');
+        if (!state.paced) renderReply(state.bubble, state.extras, state.reply, true);
+        if (!state.reply && !state.bubble.classList.contains('bubble-error')) {
+            if (state.hasMedia) {
+                // 只有媒体没有文字：空气泡没有存在意义，删掉只留图片/语音气泡
+                dropExtras(state.extras);
+                state.bubble.remove();
+            } else {
+                state.bubble.lastChild.textContent = '（本次没有收到回复，可能是额度已用尽）';
+            }
+        }
     }
 
     async function send() {
-        var text = input.value.trim();
-        if (!text) return;
-        if (browsing) await resumeCurrent();
+        // "停止"按钮也走表单提交，必须先处理中止，否则空输入会提前 return
         if (streaming && abort) { abort.abort(); return; }
+        var text = input.value.trim();
+        if (!text || recording) return;
+        if (browsing) await resumeCurrent();
 
-        setStreaming(true);
         abort = new AbortController();
+        setStreaming(true);
         addBubble('user', text);
         input.value = '';
         autoGrow();
         var name = partnerLabel();
         var bubble = addBubble('assistant', '', 'typing', name);
         var extras = [];
-        var reply = '';
-        var buffer = '';
-        var current = bubble;
-        var paced = false;   // 收到过 [MSG] 即进入闸门模式（服务端控气泡边界与节奏）
-        var opened = false;  // 本轮首条气泡是否已经开过（[RESET] 后归零）
+        var state = newStreamState(bubble, extras, null);
         try {
             var resp = await fetch(STREAM_URL, {
                 method: 'POST',
@@ -370,67 +581,249 @@
             if (resp.status === 401) { toLogin(); return; }
             if (!resp.ok) {
                 var data = await resp.json().catch(function () { return {}; });
-                dropExtras(extras);
-                bubble.classList.remove('typing');
-                bubble.classList.add('bubble-error');
-                bubble.lastChild.textContent = data.detail || '发送失败，请稍后重试。';
+                dropExtras(state.extras);
+                state.bubble.classList.remove('typing');
+                state.bubble.classList.add('bubble-error');
+                state.bubble.lastChild.textContent = data.detail || '发送失败，请稍后重试。';
                 return;
             }
-            var reader = resp.body.getReader();
-            var decoder = new TextDecoder('utf-8');
-            while (true) {
-                var chunk = await reader.read();
-                if (chunk.done) break;
-                // 网络分片可能把一帧切断，残片留在 buffer 等下一批
-                buffer += decoder.decode(chunk.value, { stream: true });
-                var consumed = consumeFrames(buffer);
-                buffer = consumed.rest;
-                consumed.frames.forEach(function (frame) {
-                    payloadOf(frame).forEach(function (payload) {
-                        if (payload === '[DONE]') return;
-                        if (payload === RESET_FRAME) {
-                            resetTurn(bubble, extras);
-                            current = bubble;
-                            opened = false;
-                            reply = '';
-                            return;
-                        }
-                        if (payload.indexOf('[ERROR]') === 0) {
-                            dropExtras(extras);
-                            bubble.classList.remove('typing');
-                            bubble.classList.add('bubble-error');
-                            bubble.lastChild.textContent = payload.slice(7).trim() || '对话服务返回异常。';
-                            return;
-                        }
-                        if (payload === MSG_FRAME) {
-                            paced = true;
-                            current = openBubble(bubble, extras, opened);
-                            opened = true;
-                            return;
-                        }
-                        reply += payload;
-                        if (paced) appendInto(current, payload);
-                        else renderReply(bubble, extras, reply, false);
-                    });
-                });
-            }
-            bubble.classList.remove('typing');
-            if (!paced) renderReply(bubble, extras, reply, true);
-            if (!reply && !bubble.classList.contains('bubble-error')) {
-                bubble.lastChild.textContent = '（本次没有收到回复，可能是额度已用尽）';
-            }
-            await loadMe();       // 回复落库后再刷新余量，额度显示才跟手
-            await loadSessions(); // 会话计数与时间同步更新
+            await consumeSse(resp, function (payload) {
+                handleStreamPayload(payload, state);
+            });
+            finishStream(state);
+            try {
+                await loadMe();       // 回复落库后再刷新余量，额度显示才跟手
+                await loadSessions(); // 会话计数与时间同步更新
+            } catch (e) {}
         } catch (err) {
-            dropExtras(extras);
-            bubble.classList.remove('typing');
-            bubble.classList.add('bubble-error');
-            bubble.lastChild.textContent = err && err.name === 'AbortError'
+            dropExtras(state.extras);
+            state.bubble.classList.remove('typing');
+            state.bubble.classList.add('bubble-error');
+            state.bubble.lastChild.textContent = err && err.name === 'AbortError'
                 ? '（已中止，回复可能不完整）'
                 : '网络异常，回复可能不完整，请重试。';
         } finally {
             abort = null;
             setStreaming(false);
+        }
+    }
+
+    function pickVoiceMimeType() {
+        if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+        var types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/ogg;codecs=opus',
+            'audio/ogg'
+        ];
+        for (var i = 0; i < types.length; i += 1) {
+            if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+        }
+        return '';
+    }
+
+    function releaseVoiceStream() {
+        if (!voiceStream) return;
+        voiceStream.getTracks().forEach(function (track) { track.stop(); });
+        voiceStream = null;
+    }
+
+    function updateRecordingUi(on) {
+        recording = on;
+        if (micBtn) {
+            micBtn.classList.toggle('is-recording', on);
+            micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            micBtn.title = on
+                ? '停止并发送'
+                : (VOICE_REPLY_ENABLED ? '录音发送语音（AI 会语音回复）' : '录音发送语音');
+        }
+        if (voiceCancel) voiceCancel.hidden = !on;
+        if (on) {
+            sendBtn.disabled = true;
+            input.disabled = true;
+            if (composerHintText) {
+                composerHintText.textContent = '录音中 0:00 / 1:00 · 再点麦克风发送';
+            }
+        } else {
+            if (composerHintText) {
+                composerHintText.textContent = 'Enter 发送 · Shift + Enter 换行';
+            }
+            setStreaming(streaming);
+        }
+    }
+
+    function updateVoiceTimer() {
+        if (!recording) return;
+        var seconds = Math.floor((Date.now() - voiceStartedAt) / 1000);
+        if (seconds >= MAX_VOICE_SECONDS) {
+            stopRecording(false);
+            return;
+        }
+        if (composerHintText) {
+            composerHintText.textContent = '录音中 0:'
+                + String(seconds).padStart(2, '0')
+                + ' / 1:00 · 再点麦克风发送';
+        }
+    }
+
+    async function startRecording() {
+        if (streaming || recording) return;
+        if (browsing) await resumeCurrent();
+        try {
+            voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+            addNote('无法使用麦克风，请检查浏览器权限或改用文字输入。');
+            return;
+        }
+        var mime = pickVoiceMimeType();
+        try {
+            voiceRecorder = mime
+                ? new MediaRecorder(voiceStream, { mimeType: mime })
+                : new MediaRecorder(voiceStream);
+        } catch (err) {
+            releaseVoiceStream();
+            addNote('当前浏览器不支持录音，请改用文字输入。');
+            return;
+        }
+        voiceChunks = [];
+        voiceCancelled = false;
+        voiceRecorder.ondataavailable = function (event) {
+            if (event.data && event.data.size > 0) voiceChunks.push(event.data);
+        };
+        voiceRecorder.onstop = finalizeRecording;
+        try {
+            voiceRecorder.start();
+        } catch (err) {
+            releaseVoiceStream();
+            voiceRecorder = null;
+            addNote('录音启动失败，请重试或改用文字输入。');
+            return;
+        }
+        voiceStartedAt = Date.now();
+        updateRecordingUi(true);
+        voiceTimer = setInterval(updateVoiceTimer, 250);
+    }
+
+    function stopRecording(cancel) {
+        voiceCancelled = !!cancel;
+        if (voiceTimer) {
+            clearInterval(voiceTimer);
+            voiceTimer = null;
+        }
+        if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+            voiceRecorder.stop();
+        } else {
+            releaseVoiceStream();
+            updateRecordingUi(false);
+        }
+    }
+
+    function finalizeRecording() {
+        if (voiceTimer) {
+            clearInterval(voiceTimer);
+            voiceTimer = null;
+        }
+        releaseVoiceStream();
+        updateRecordingUi(false);
+        var cancelled = voiceCancelled;
+        voiceCancelled = false;
+        var chunks = voiceChunks;
+        voiceChunks = [];
+        var recorder = voiceRecorder;
+        voiceRecorder = null;
+        if (cancelled) return;
+        var type = (recorder && recorder.mimeType) || 'audio/webm';
+        var blob = new Blob(chunks, { type: type });
+        if (!blob.size) {
+            addNote('没有录到声音，请重试。');
+            return;
+        }
+        sendVoice(blob);
+    }
+
+    async function sendVoice(blob) {
+        if (streaming && abort) { abort.abort(); return; }
+        if (browsing) await resumeCurrent();
+
+        var localUrl = URL.createObjectURL(blob);
+        var userBubble = addMediaBubble(
+            'user', 'audio', localUrl, '', '识别中…', true
+        );
+        abort = new AbortController();
+        setStreaming(true);
+        var name = partnerLabel();
+        var bubble = addBubble('assistant', '', 'typing', name);
+        var extras = [];
+        var state = newStreamState(bubble, extras, userBubble);
+        var form = new FormData();
+        var ext = 'webm';
+        if (blob.type.indexOf('mp4') >= 0) ext = 'm4a';
+        else if (blob.type.indexOf('ogg') >= 0) ext = 'ogg';
+        form.append('audio', blob, 'voice.' + ext);
+        form.append('service_id', currentServiceId());
+        try {
+            var resp = await fetch(VOICE_URL, {
+                method: 'POST',
+                headers: authHeader(),
+                body: form,
+                signal: abort.signal
+            });
+            if (resp.status === 401) { toLogin(); return; }
+            if (!resp.ok) {
+                var data = await resp.json().catch(function () { return {}; });
+                setBubbleCaption(userBubble, '发送失败');
+                dropExtras(state.extras);
+                state.bubble.classList.remove('typing');
+                state.bubble.classList.add('bubble-error');
+                state.bubble.lastChild.textContent = data.detail || '语音发送失败，请重试。';
+                return;
+            }
+            await consumeSse(resp, function (payload) {
+                handleStreamPayload(payload, state);
+            });
+            finishStream(state);
+            try {
+                await loadMe();
+                await loadSessions();
+            } catch (e) {}
+        } catch (err) {
+            setBubbleCaption(userBubble, '发送失败');
+            dropExtras(state.extras);
+            state.bubble.classList.remove('typing');
+            state.bubble.classList.add('bubble-error');
+            state.bubble.lastChild.textContent = err && err.name === 'AbortError'
+                ? '（已中止，回复可能不完整）'
+                : '网络异常，语音回复可能不完整，请重试。';
+        } finally {
+            abort = null;
+            setStreaming(false);
+        }
+    }
+
+    function setupVoice() {
+        if (!micBtn) return;
+        if (
+            !VOICE_INPUT_ENABLED
+            || !window.MediaRecorder
+            || !navigator.mediaDevices
+            || !navigator.mediaDevices.getUserMedia
+        ) {
+            micBtn.hidden = true;
+            return;
+        }
+        micBtn.hidden = false;
+        micBtn.title = VOICE_REPLY_ENABLED
+            ? '录音发送语音（AI 会语音回复）'
+            : '录音发送语音';
+        micBtn.addEventListener('click', function () {
+            if (recording) stopRecording(false);
+            else startRecording();
+        });
+        if (voiceCancel) {
+            voiceCancel.addEventListener('click', function () {
+                stopRecording(true);
+            });
         }
     }
 
@@ -448,6 +841,13 @@
             send();
         }
     });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && recording) {
+            event.preventDefault();
+            stopRecording(true);
+        }
+    });
+    window.addEventListener('beforeunload', releaseVoiceStream);
     serviceSelect.addEventListener('change', function () {
         try { localStorage.setItem(SERVICE_KEY, serviceSelect.value); } catch (e) {}
         var platform = selectedPlatform();
@@ -480,6 +880,7 @@
         setStreaming(false);
         sendBtn.disabled = false;
         input.disabled = false;
+        setupVoice();
         input.focus();
         await loadSessions();
     })().catch(function () {

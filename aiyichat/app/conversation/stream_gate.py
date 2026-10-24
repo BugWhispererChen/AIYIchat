@@ -41,11 +41,15 @@ class StreamEvent:
     kind:
     - ``msg``：一条新气泡，``text`` 为整条气泡文本（已清洗）；节奏由服务端在 yield 之前
       sleep 掉，因此不往协议里塞 delay_ms——前端收到时那条气泡就已经"到点了"；
-    - ``reset``：收回本轮已显示的全部气泡（复读重跑时用），text 为空。
+    - ``reset``：收回本轮已显示的全部气泡（复读重跑时用），text 为空；
+    - ``media``：一条媒体气泡，``media_kind`` 为 image/sticker/audio，
+      ``media_url`` 为 ``/api/media/<public_id>`` 能力地址。
     """
 
     kind: str
     text: str = ""
+    media_kind: str = ""
+    media_url: str = ""
 
 
 @dataclass

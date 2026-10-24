@@ -105,6 +105,8 @@ _ACCOUNT_SCOPES = frozenset(
         "web_bot_poll",
         # 图形验证码：每次调用都要生成图片并在内存挂一份答案，不限流就是免费刷内存的入口
         "captcha",
+        # 网页语音上传：ASR 是外部计费调用，必须在额度预检之前先挡住高频请求
+        "web_voice",
     }
 )
 

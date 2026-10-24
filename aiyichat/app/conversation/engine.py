@@ -77,6 +77,7 @@ from app.models.service_memory import (
     validity_downweight,
 )
 from app.models.injection_snapshot import InjectedFact, InjectionSnapshotInDB
+from app.utils.redaction import mask_secret
 from app.db.repositories.injection_snapshot_repo import (
     InjectionSnapshotRepository,
 )
@@ -705,16 +706,9 @@ class ConversationEngine:
         if image_specs:
             approved: list[tuple[str, bool]] = []
             for spec in image_specs:
-                img_ok, _ = await self.quota_repo.deduct(
-                    service.account_id, "image", 1
-                )
-                if img_ok:
+                if await self._deduct_image_quota(service.account_id, spec[0]):
                     approved.append(spec)
                 else:
-                    logger.warning(
-                        "Image quota exhausted, skipping: %s",
-                        spec[0][:30],
-                    )
                     break
             image_specs = approved
         
@@ -771,14 +765,9 @@ class ConversationEngine:
 
         # 提取当前 profile 的音色设置；表现力参数（指令/音调/情感标签）
         # 由对方情绪与角色心情动态生成，语速由指令文案内自然语言描述控制
-        voice_id = profile.voice_id or "longxiaochun"
-        voice_instruction = ""
-        voice_pitch_rate = 1.0
-        voice_emotion_tag = ""
-        if settings.tts_expression_enabled:
-            voice_instruction = build_tts_instruction(mood, emotion_tag)
-            voice_pitch_rate = mood_pitch_modifier(mood)
-            voice_emotion_tag = pick_emotion_tag(mood, emotion_tag)
+        voice_id, voice_instruction, voice_pitch_rate, voice_emotion_tag = (
+            self._voice_params(profile, mood, emotion_tag)
+        )
 
         logger.info(
             "Turn completed: bot=%s, user=%s, profile=%s, "
@@ -813,6 +802,8 @@ class ConversationEngine:
         content_type: str = "text",
         service_id: str = "",
         identity_id: str = "",
+        media_url: str = "",
+        voice_reply: bool = False,
     ):
         """流式处理对方消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
 
@@ -824,6 +815,8 @@ class ConversationEngine:
         各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (对方, Bot) 查找。
         `identity_id` 用于跨渠道续聊：网页选中 QQ/微信服务时，调用方已完成账号级
         归属校验，这里改用服务自己的身份，从而命中该身份既有的会话与记忆。
+        `media_url` 是对方本轮语音消息的媒体地址，随用户消息一并落库。
+        `voice_reply` 表示本轮需要语音回复（网页语音输入时由接口置 True）。
         """
         # 对方消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
@@ -892,6 +885,7 @@ class ConversationEngine:
                 conversation_id=conversation.id,
                 text=text,
                 emotion_tag=detect_emotion(text),
+                media_url=media_url,
                 content_type=content_type,
                 created_at=received_at,
             )
@@ -1093,6 +1087,7 @@ class ConversationEngine:
                 history=history,
                 memory_facts=memory_facts,
                 current_topic=current_topic,
+                media_url=media_url,
                 content_type=content_type,
                 mood=mood,
                 profile=profile,
@@ -1188,10 +1183,15 @@ class ConversationEngine:
             # 流式结束后：清洗、记账、持久化、异步记忆任务（与主链路共用）
             latency_ms = int((time.monotonic() - start_time) * 1000)
             response_text = "".join(chunks)
-            clean_text = self._resolve_stream_text(
+            clean_text, image_specs, sticker_specs = self._resolve_stream_text(
                 response_text, gate, profile, identity.id
             )
-            if gate is not None and not clean_text:
+            # 有媒体可发时不再塞文字兜底：否则对方会先收到一句"没收到回复"再收到图
+            has_media_specs = bool(
+                (image_specs and settings.imagegen_enabled)
+                or (sticker_specs and settings.sticker_enabled)
+            )
+            if gate is not None and not clean_text and not has_media_specs:
                 # 全部放行内容都被清洗吃掉（模型整段出戏/整段套话）：兜底一句，别让客户看到空屏
                 clean_text = EMPTY_REPLY_FALLBACK
                 yield await release(clean_text)
@@ -1200,40 +1200,57 @@ class ConversationEngine:
             # "已启动"，避免取消落在 settle 内部时再补一次造成重复消息与重复扣费。
             settle_task = spawn(settle(clean_text, latency_ms))
             await asyncio.shield(settle_task)
+            # 文本落库之后再生成媒体：图片生成较慢，不能挡住首字与文字气泡
+            async for event in self._stream_media_events(
+                clean_text=clean_text,
+                user_text=text,
+                image_specs=image_specs,
+                sticker_specs=sticker_specs,
+                profile=profile,
+                mood=mood,
+                service=service,
+                conversation=conversation,
+                emotion_tag=emotion_tag,
+                voice_reply=voice_reply,
+            ):
+                yield event
         finally:
             if settle_task is None and chunks:
                 # 客户端中止/断连：已放行部分仍要落库。绝不在 finally 里 await
                 # （异步生成器关闭时 await 会触发 ignored GeneratorExit），改交后台任务。
+                # 媒体不在断连路径生成：对方已经离开，生成了也看不到，还白扣额度。
+                final_text, _, _ = self._resolve_stream_text(
+                    "".join(chunks), gate, profile, identity.id
+                )
                 spawn(
                     settle(
-                        self._resolve_stream_text(
-                            "".join(chunks), gate, profile, identity.id
-                        ),
+                        final_text,
                         int((time.monotonic() - start_time) * 1000),
                     )
                 )
 
     def _resolve_stream_text(
         self, response_text: str, gate: Optional[SentenceGate], profile, identity_id: str
-    ) -> str:
+    ) -> tuple[str, list[tuple[str, bool]], list[str]]:
         """确定本轮落库文本，并核查"所见即所存"。
 
-        开启闸门时以**已放行文本**为权威——用户看到什么就存什么；同时把原文再跑一遍
-        后处理做幂等自检，两份不一致说明有规则只在单侧生效，记 WARNING 便于发现漂移。
+        返回 (清洗文本, 图片提示, 表情包提示)。后两者从原文提取，供流式收尾的
+        媒体下发使用；开启闸门时文本以**已放行文本**为权威——用户看到什么就存什么；
+        同时把原文再跑一遍后处理做幂等自检，两份不一致说明有规则只在单侧生效。
         未开启闸门时保持改动前行为（对原文跑后处理）。
         """
-        postprocessed, _, _, _ = self._postprocess_response(
-            response_text, profile, identity_id
+        postprocessed, _, image_specs, sticker_specs = (
+            self._postprocess_response(response_text, profile, identity_id)
         )
         if gate is None:
-            return postprocessed
+            return postprocessed, image_specs, sticker_specs
         released = gate.released_text
         if normalize_text(released) != normalize_text(postprocessed):
             logger.warning(
                 "流式所见非所存：released=%r postprocessed=%r",
                 released[:80], postprocessed[:80],
             )
-        return released
+        return released, image_specs, sticker_specs
 
     def _recent_assistant_texts(self, history: list) -> list[str]:
         """取最近 N 条 assistant 文本（时间升序），供复读比对。"""
@@ -2536,6 +2553,224 @@ class ConversationEngine:
                 account_id=account_id,
             ))
         return tasks
+
+    async def _deduct_image_quota(self, account_id: str, prompt: str) -> bool:
+        """按张预扣图片额度；不足时只记日志并返回 False。"""
+        ok, _ = await self.quota_repo.deduct(account_id, "image", 1)
+        if not ok:
+            logger.warning(
+                "Image quota exhausted, skipping: %s", prompt[:30]
+            )
+        return ok
+
+    @staticmethod
+    def _voice_params(
+        profile: PromptProfileInDB,
+        mood: CharacterMood | None,
+        emotion_tag: str | None,
+    ) -> tuple[str, str, float, str]:
+        """音色与表现力参数：非流式结果与流式语音回复共用同一口径。"""
+        voice_id = profile.voice_id or "longxiaochun"
+        voice_instruction = ""
+        voice_pitch_rate = 1.0
+        voice_emotion_tag = ""
+        if settings.tts_expression_enabled:
+            voice_instruction = build_tts_instruction(mood, emotion_tag)
+            voice_pitch_rate = mood_pitch_modifier(mood)
+            voice_emotion_tag = pick_emotion_tag(mood, emotion_tag)
+        return (
+            voice_id,
+            voice_instruction,
+            voice_pitch_rate,
+            voice_emotion_tag,
+        )
+
+    async def _stream_voice_reply(
+        self,
+        *,
+        text: str,
+        profile: PromptProfileInDB,
+        mood: CharacterMood | None,
+        emotion_tag: str | None,
+        account_id: str,
+        conversation: ConversationInDB,
+    ) -> StreamEvent | None:
+        """合成整轮语音回复并落库；按条扣语音额度，失败原路退还。"""
+        if not account_id or not text.strip():
+            return None
+        ok, reason = await self.quota_repo.deduct(account_id, "voice", 1)
+        if not ok:
+            logger.info("语音额度不足(%s)，本轮降级为文字回复", reason)
+            return None
+
+        charged = True
+        try:
+            from app.db.repositories.message_repo import MessageRepository
+            from app.services.audio_utils import audio_content_type
+            from app.services.media_storage import save_audio_from_bytes
+            from app.services.tts_service import TTSService
+
+            voice_id, instruction, pitch_rate, voice_emotion = (
+                self._voice_params(profile, mood, emotion_tag)
+            )
+            audio = await asyncio.wait_for(
+                TTSService().synthesize(
+                    text,
+                    voice_id=voice_id,
+                    instruction=instruction,
+                    pitch_rate=pitch_rate,
+                    emotion_tag=voice_emotion,
+                ),
+                timeout=60,
+            )
+            media_url = await save_audio_from_bytes(
+                audio, audio_content_type(audio)
+            )
+            await MessageRepository().create(
+                conversation_id=conversation.id,
+                role="assistant",
+                content="(语音回复)",
+                content_type="voice",
+                media_url=media_url,
+            )
+            charged = False
+            return StreamEvent(
+                kind="media", media_kind="audio", media_url=media_url
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("流式 TTS 语音回复失败: %s", e)
+            return None
+        finally:
+            if charged:
+                await self.quota_repo.refund(account_id, "voice", 1)
+
+    async def _stream_media_events(
+        self,
+        *,
+        clean_text: str,
+        user_text: str,
+        image_specs: list[tuple[str, bool]],
+        sticker_specs: list[str],
+        profile: PromptProfileInDB,
+        mood: CharacterMood | None,
+        service: ServiceInDB,
+        conversation: ConversationInDB,
+        emotion_tag: str | None,
+        voice_reply: bool,
+    ) -> AsyncIterator[StreamEvent]:
+        """流式收尾的媒体下发：语音 → 图片 → 表情包。
+
+        任一媒体失败只记日志，不阻断已经完成的文字回复；图片额度按张预扣，
+        生成失败退该张。媒体消息单独落库，供历史回看。
+        """
+        # 1. 语音回复：只有对方本轮发语音时才触发，避免文字聊天把语音额度打光
+        if voice_reply and settings.tts_enabled and clean_text.strip():
+            try:
+                event = await self._stream_voice_reply(
+                    text=clean_text,
+                    profile=profile,
+                    mood=mood,
+                    emotion_tag=emotion_tag,
+                    account_id=service.account_id,
+                    conversation=conversation,
+                )
+            except Exception as e:
+                logger.error("流式语音回复失败: %s", e)
+                event = None
+            if event is not None:
+                yield event
+
+        # 2. 图片：每张单独扣额度；生成失败退该张
+        image_tasks: list[ImageTask] = []
+        if image_specs:
+            if not settings.imagegen_enabled:
+                logger.info(
+                    "图片生成已关闭，丢弃 %d 个图片提示且不扣额度: account=%s",
+                    len(image_specs), service.account_id,
+                )
+            else:
+                image_tasks = self._build_image_tasks(
+                    image_specs, profile, mood, account_id=service.account_id
+                )
+        if image_tasks:
+            from app.services.imagegen_service import ImageGenService
+
+            imagegen = ImageGenService()
+            for task in image_tasks:
+                if not await self._deduct_image_quota(
+                    service.account_id, task.prompt
+                ):
+                    break
+                charged = True
+                try:
+                    img_bytes = await asyncio.wait_for(
+                        imagegen.generate_for_task(task), timeout=120
+                    )
+                    from app.db.repositories.message_repo import MessageRepository
+                    from app.services.media_storage import save_image_from_bytes
+
+                    media_url = await save_image_from_bytes(img_bytes)
+                    await MessageRepository().create(
+                        conversation_id=conversation.id,
+                        role="assistant",
+                        content="(AI生成了一张图片)",
+                        content_type="image",
+                        media_url=media_url,
+                    )
+                    charged = False
+                    yield StreamEvent(
+                        kind="media",
+                        media_kind="image",
+                        media_url=media_url,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error("流式图片生成/发送失败: %s", e)
+                finally:
+                    if charged:
+                        await self.quota_repo.refund(
+                            service.account_id, "image", 1
+                        )
+
+        # 3. 表情包：本地库已有媒体，不扣额度；媒体不存在则跳过
+        try:
+            sticker_tasks = await self._resolve_sticker_tasks(
+                sticker_specs, user_text, profile
+            )
+        except Exception as e:
+            logger.warning("流式表情包任务组装失败: %s", e)
+            return
+        for task in sticker_tasks:
+            try:
+                from app.db.repositories.media_repo import MediaRepository
+                from app.db.repositories.message_repo import MessageRepository
+
+                media_id = task.media_url.rsplit("/", 1)[-1]
+                media_doc = await MediaRepository().find_by_id(media_id)
+                if not media_doc or not media_doc.get("data"):
+                    logger.warning(
+                        "表情包媒体不存在: id=%s", mask_secret(media_id)
+                    )
+                    continue
+                await MessageRepository().create(
+                    conversation_id=conversation.id,
+                    role="assistant",
+                    content="(发送了一个表情包)",
+                    content_type="image",
+                    media_url=task.media_url,
+                )
+                yield StreamEvent(
+                    kind="media",
+                    media_kind="sticker",
+                    media_url=task.media_url,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("流式表情包下发失败: %s", e)
 
     async def _resolve_profile(
         self, profile_id: str, account_id: str

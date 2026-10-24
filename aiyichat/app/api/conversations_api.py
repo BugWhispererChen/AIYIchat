@@ -2,7 +2,7 @@ from typing import Optional
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -12,12 +12,24 @@ from app.api.auth_api import (
     require_account_service,
     require_current_identity,
 )
+from app.config import settings
 from app.db.repositories.conversation_repo import ConversationRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.conversation import ConversationInDB
 from app.models.service import ServiceInDB
 from app.models.web_credential import normalize_username
+from app.services.voice_input import (
+    ALLOWED_AUDIO_TYPES,
+    MAX_TRANSCRIPT_CHARS,
+    MAX_VOICE_BYTES,
+    VOICE_RATE_LIMIT,
+    VoiceInputError,
+    normalize_audio_type,
+    prepare_audio,
+    transcribe_wav,
+)
+from app.utils.rate_limit import RateLimited, check_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +75,51 @@ async def _require_account_service_http(
         return await require_account_service(principal, service_id)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+async def _resolve_stream_target(
+    principal: WebPrincipal,
+    *,
+    service_id: str,
+    bot_id: str = "",
+) -> tuple[str, str, str, str, str]:
+    """解析流式对话目标。
+
+    返回 (bot_id, engine_identity_id, service_id, platform_id, nickname)。
+    显式服务必须同账号；显式 bot_id 必须是当前身份或所选服务的 Bot。
+    文本流与语音流共用这一处口径，避免两条入口的越权校验出现漂移。
+    """
+    svc: Optional[ServiceInDB] = None
+    if service_id.strip():
+        svc = await _require_account_service_http(
+            principal, service_id.strip()
+        )
+    allowed_bot_ids = {principal.bot_id}
+    if svc is not None:
+        allowed_bot_ids.add(svc.bot_id)
+    if bot_id and bot_id not in allowed_bot_ids:
+        logger.warning(
+            "越权尝试：登录账号 %s 试图指定未授权的 bot_id=%s",
+            principal.username,
+            bot_id,
+        )
+        raise HTTPException(status_code=403, detail="无权使用该 Bot")
+
+    resolved_bot_id = svc.bot_id if svc is not None else principal.bot_id
+    engine_identity_id = svc.identity_id if svc is not None else ""
+    resolved_service_id = svc.id if svc is not None else ""
+    platform_id = principal.username
+    # 昵称一律取会话身份（账号中心可改），不接受客户端入参
+    nickname = principal.nickname or principal.username
+    if not resolved_bot_id or not platform_id:
+        raise HTTPException(status_code=400, detail="缺少可用的对话服务")
+    return (
+        resolved_bot_id,
+        engine_identity_id,
+        resolved_service_id,
+        platform_id,
+        nickname,
+    )
 
 
 async def _conversation_readable(
@@ -147,6 +204,8 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
             "id": m.id,
             "role": m.role,
             "content": m.content,
+            "content_type": m.content_type,
+            "media_url": m.media_url,
             "emotion_tag": m.emotion_tag,
             "created_at": m.created_at.isoformat(),
         }
@@ -165,7 +224,8 @@ def stream_frames(item: object) -> list[str]:
 
     两种产出都要能吃：未开放行闸门时引擎 yield 裸 str，输出与改动前**逐字节一致**；
     开闸门时 yield StreamEvent，气泡边界用 ``[MSG]`` 控制帧表达、正文另起一帧，
-    复读重跑用 ``[RESET]`` 让前端收回本轮气泡。
+    复读重跑用 ``[RESET]`` 让前端收回本轮气泡；流式收尾的图片/表情包/语音用
+    ``[MEDIA]<kind>|<url>`` 单帧下发。
 
     控制帧刻意保持纯文本而不是 JSON——payloadOf 会对每个 payload 无差别地把
     ``\\n`` 反解成真实换行，JSON 载荷会被这一步破坏。
@@ -175,6 +235,14 @@ def stream_frames(item: object) -> list[str]:
     kind = getattr(item, "kind", "msg")
     if kind == "reset":
         return [_sse_frame("[RESET]")]
+    if kind == "media":
+        media_kind = getattr(item, "media_kind", "")
+        media_url = getattr(item, "media_url", "")
+        if media_kind not in ("image", "sticker", "audio") or not media_url:
+            return []
+        # 纯文本控制帧：payloadOf 会把字面 \n 反转义，JSON 载荷不可靠；
+        # URL 是服务端生成的能力地址，不含换行，用 | 分隔足够。
+        return [_sse_frame(f"[MEDIA]{media_kind}|{media_url}")]
     body = getattr(item, "text", "")
     if not body:
         return []
@@ -201,31 +269,18 @@ async def chat_stream(req: StreamChatRequest, request: Request):
         )
         raise HTTPException(status_code=403, detail="登录状态异常，请重新登录")
 
-    # 显式选择服务时按账号归属校验：可跨身份，但必须同账号
-    svc: Optional[ServiceInDB] = None
-    if req.service_id.strip():
-        svc = await _require_account_service_http(principal, req.service_id.strip())
-    allowed_bot_ids = {principal.bot_id}
-    if svc is not None:
-        allowed_bot_ids.add(svc.bot_id)
-    if req.bot_id and req.bot_id not in allowed_bot_ids:
-        logger.warning(
-            "越权尝试：登录账号 %s 试图指定未授权的 bot_id=%s",
-            principal.username,
-            req.bot_id,
-        )
-        raise HTTPException(status_code=403, detail="无权使用该 Bot")
-
-    # 服务绑定的 Bot/身份决定用哪个角色与哪条既有会话（跨渠道续聊的关键）
-    bot_id = svc.bot_id if svc is not None else principal.bot_id
-    engine_identity_id = svc.identity_id if svc is not None else ""
-    platform, platform_id = "web", principal.username
-    # 昵称一律取会话身份（账号中心可改），不接受客户端入参：
-    # 否则任何人只要在请求体里换一个 nickname 就能冒充他人的称呼写进 prompt
-    nickname = principal.nickname or principal.username
-    service_id = svc.id if svc is not None else ""
-    if not bot_id or not platform_id:
-        raise HTTPException(status_code=400, detail="缺少可用的对话服务")
+    (
+        bot_id,
+        engine_identity_id,
+        service_id,
+        platform_id,
+        nickname,
+    ) = await _resolve_stream_target(
+        principal,
+        service_id=req.service_id,
+        bot_id=req.bot_id,
+    )
+    platform = "web"
 
     engine = ConversationEngine(bot_id=bot_id)
 
@@ -245,6 +300,109 @@ async def chat_stream(req: StreamChatRequest, request: Request):
             # 原文回显给客户端等于把内部异常（可能含连接串、集合名、路径）交给匿名调用方；
             # 客户端只需要知道"这轮断了"，细节进日志（logger.exception 带完整栈）
             logger.exception("流式回复中断: conversation stream failed")
+            yield _sse_frame("[ERROR] 回复中断，请重新发送试试")
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@conversations_router.post("/chat/voice/stream")
+async def chat_voice_stream(
+    request: Request,
+    audio: UploadFile = File(...),
+    service_id: str = Form(""),
+):
+    """网页语音输入：上传音频 → ASR → 复用流式对话链路。
+
+    语音额度只按 AI 语音回复扣，这里的 ASR 不额外扣语音额度；但 ASR 是外部
+    计费调用，所以在转写之前先做账号级限流与服务归属校验。
+    """
+    principal = await _require_current_identity_or_401(request)
+    if not settings.asr_enabled:
+        raise HTTPException(status_code=503, detail="语音输入未启用")
+    try:
+        check_rate_limit("web_voice", principal.account_id, VOICE_RATE_LIMIT)
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=exc.message,
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+
+    content_type = normalize_audio_type(audio.content_type or "")
+    if content_type not in ALLOWED_AUDIO_TYPES:
+        raise HTTPException(status_code=415, detail="不支持的音频格式")
+
+    # 归属校验放在 ASR 之前：未授权请求不该消耗外部识别额度
+    (
+        bot_id,
+        engine_identity_id,
+        resolved_service_id,
+        platform_id,
+        nickname,
+    ) = await _resolve_stream_target(principal, service_id=service_id)
+
+    try:
+        declared_length = int(request.headers.get("content-length", "0") or "0")
+    except ValueError:
+        declared_length = 0
+    if declared_length > MAX_VOICE_BYTES + 64 * 1024:
+        raise HTTPException(status_code=413, detail="语音文件过大")
+
+    try:
+        raw_audio = await audio.read(MAX_VOICE_BYTES + 1)
+    finally:
+        await audio.close()
+    if not raw_audio:
+        raise HTTPException(status_code=400, detail="语音文件为空")
+    if len(raw_audio) > MAX_VOICE_BYTES:
+        raise HTTPException(status_code=413, detail="语音文件过大")
+
+    try:
+        wav_data, mp3_data, _duration = await prepare_audio(raw_audio)
+    except VoiceInputError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=exc.message
+        ) from exc
+
+    transcript = await transcribe_wav(wav_data)
+    if not transcript:
+        raise HTTPException(status_code=422, detail="没听清，请再说一次")
+    transcript = transcript[:MAX_TRANSCRIPT_CHARS]
+
+    from app.services.media_storage import save_audio_from_bytes
+
+    try:
+        user_media_url = await save_audio_from_bytes(mp3_data, "audio/mpeg")
+    except Exception:
+        logger.exception("网页语音消息保存失败")
+        raise HTTPException(
+            status_code=500, detail="语音保存失败，请重试"
+        ) from None
+
+    from app.conversation.engine import ConversationEngine
+
+    engine = ConversationEngine(bot_id=bot_id)
+
+    async def event_gen():
+        try:
+            # 先告诉前端识别结果：本地语音气泡的"识别中…"可立即替换成文字
+            yield _sse_frame("[USER_TEXT]" + transcript)
+            async for item in engine.handle_message_stream(
+                platform="web",
+                platform_id=platform_id,
+                text=transcript,
+                nickname=nickname,
+                content_type="voice",
+                service_id=resolved_service_id,
+                identity_id=engine_identity_id,
+                media_url=user_media_url,
+                voice_reply=True,
+            ):
+                for frame in stream_frames(item):
+                    yield frame
+        except Exception:
+            logger.exception("语音流式回复中断: conversation voice stream failed")
             yield _sse_frame("[ERROR] 回复中断，请重新发送试试")
         yield "data: [DONE]\n\n"
 

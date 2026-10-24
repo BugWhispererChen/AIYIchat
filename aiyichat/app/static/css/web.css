@@ -415,6 +415,48 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
     color: var(--amber-ink);
     margin-bottom: .25rem;
 }
+/* 图片/表情包/语音气泡：媒体本身要按原始比例呈现，不能继承文本的 pre-wrap 布局 */
+.bubble-media {
+    max-width: min(360px, 86%);
+    padding: .4rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    white-space: normal;
+}
+.bubble-media.bubble-user {
+    background: var(--primary-soft);
+    border-color: var(--border-strong);
+    border-left: 1px solid var(--border-strong);
+}
+.bubble-image {
+    display: block;
+    max-width: min(320px, 78vw);
+    max-height: 360px;
+    border-radius: calc(var(--radius) - 2px);
+    object-fit: contain;
+}
+.bubble-image.is-sticker { max-width: 160px; max-height: 160px; }
+.bubble-media-label {
+    display: block;
+    margin: 0 0 .2rem .1rem;
+    font-size: .72rem;
+    color: var(--text-3);
+}
+.bubble-audio {
+    display: block;
+    width: min(320px, 72vw);
+    margin: 0;
+}
+.bubble-caption {
+    display: block;
+    margin-top: .35rem;
+    font-size: .8rem;
+    line-height: 1.55;
+    color: var(--text-2);
+    white-space: pre-wrap;
+}
 /* 空对话引导：首条消息出现前占位，避免整屏空白 */
 .transcript-empty {
     margin: auto;
@@ -463,14 +505,52 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
     width: 100%;
     max-width: 46rem;
     margin: 0 auto;
-    /* 用 grid 固定两列：文本框吃满剩余宽度、按钮按内容取宽，
+    /* 三列：麦克风 + 文本框 + 发送。文本框吃满剩余宽度、按钮按内容取宽，
        避免 Pico 对 button 的默认宽度规则把输入框挤成一条 */
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr auto;
     align-items: end;
     gap: .55rem;
 }
+.mic-btn {
+    grid-column: 1;
+    width: 2.55rem;
+    height: 2.55rem;
+    margin: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text-2);
+    cursor: pointer;
+}
+.mic-btn:hover { color: var(--amber-ink); border-color: var(--amber); }
+.mic-btn.is-recording {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border-color: var(--danger);
+    animation: mic-pulse 1.2s ease-in-out infinite;
+}
+.mic-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.voice-cancel {
+    margin-left: .45rem;
+    padding: .05rem .3rem;
+    border: 0;
+    background: transparent;
+    color: var(--danger-text);
+    font-size: .68rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+@keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--danger-bg); }
+    50% { box-shadow: 0 0 0 5px transparent; }
+}
 .chat-input-bar textarea {
+    grid-column: 2;
     flex: 1;
     min-width: 0;
     margin: 0;
@@ -484,6 +564,7 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 }
 .chat-input-bar textarea:focus { border-color: var(--primary-ink); box-shadow: var(--focus-ring); outline: none; }
 .send-btn {
+    grid-column: 3;
     width: auto;
     margin: 0;
     padding: .55rem 1.15rem;

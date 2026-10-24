@@ -245,3 +245,21 @@ def test_unclosed_bracket_cannot_stall_the_stream() -> None:
     )
     assert len("".join(cleaner.flush())) <= _MAX_DISPLAY_HOLD
 
+
+
+def test_long_image_tag_is_held_until_closed() -> None:
+    """长 [IMG:…] 提示词不能被扣住上限提前放出，否则英文画面描述会漏到屏幕。"""
+    from app.conversation.response_processor import (
+        DisplayStreamCleaner,
+        ResponseProcessor,
+    )
+
+    tag = "[IMG:" + "画面描述" * 80 + "]"
+    cleaner = DisplayStreamCleaner(ResponseProcessor())
+    emitted: list[str] = []
+    for char in ("你好" + tag + "收到"):
+        emitted += cleaner.push(char)
+    emitted += cleaner.flush()
+    joined = "".join(emitted)
+    assert "画面描述" not in joined, joined[:200]
+    assert "你好" in joined and "收到" in joined

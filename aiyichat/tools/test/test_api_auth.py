@@ -789,6 +789,53 @@ class TestChatStreamPayloadCleaning:
 
         asyncio.run(flow())
 
+    def test_media_frame_reaches_browser(self) -> None:
+        """媒体事件过网关后必须是 [MEDIA]kind|url，URL 原样交给前端校验。"""
+        import app.conversation.engine as engine_module
+        from app.conversation.stream_gate import StreamEvent
+
+        class _MediaEngine:
+            def __init__(self, bot_id: str = "") -> None:
+                self.bot_id = bot_id
+
+            async def handle_message_stream(self, **kwargs: Any) -> AsyncIterator[Any]:
+                yield StreamEvent(kind="msg", text="看图")
+                yield StreamEvent(
+                    kind="media", media_kind="image",
+                    media_url="/api/media/pic-1",
+                )
+
+        async def flow() -> None:
+            app = await _setup_app("t_stream_media_frame")
+            original = engine_module.ConversationEngine
+            engine_module.ConversationEngine = _MediaEngine  # type: ignore[misc]
+            try:
+                async with _client(app) as client:
+                    await _register(client, "mediabot")
+                    await _approve("mediabot")
+                    token = await _login(client, "mediabot")
+                    resp = await client.post(
+                        "/api/conversations/chat/stream",
+                        json={"text": "来张图"},
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    assert resp.status_code == 200, resp.text
+                    payloads = [
+                        line.removeprefix("data: ")
+                        for line in resp.text.splitlines()
+                        if line.startswith("data:")
+                    ]
+                    assert payloads == [
+                        "[MSG]", "看图",
+                        "[MEDIA]image|/api/media/pic-1",
+                        "[DONE]",
+                    ], payloads
+            finally:
+                engine_module.ConversationEngine = original  # type: ignore[misc]
+                mongo._db = None
+
+        asyncio.run(flow())
+
     def test_error_frame_keeps_internals_out(self) -> None:
         """生成中断时只给稳定话术：异常原文可能带连接串、主机与集合名。"""
         import app.conversation.engine as engine_module

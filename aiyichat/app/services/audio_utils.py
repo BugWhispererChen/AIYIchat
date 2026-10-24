@@ -76,6 +76,17 @@ async def wav_to_silk(wav_data: bytes) -> bytes:
     return await asyncio.to_thread(_convert, wav_data)
 
 
+def audio_content_type(data: bytes) -> str:
+    """按文件头判断音频容器：WAV 或 MP3。
+
+    TTS 不同模型族返回的容器不同（CosyVoice 多为 MP3、Qwen-TTS 可能为 WAV），
+    存媒体库时若 content_type 写错，浏览器会拒绝播放。
+    """
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "audio/wav"
+    return "audio/mpeg"
+
+
 def _pcm_to_wav(
     pcm_data: bytes,
     sample_rate: int = 24000,

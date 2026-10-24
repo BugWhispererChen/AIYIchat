@@ -105,9 +105,21 @@ async def collect(db) -> dict[str, list[str]]:
     return orphans
 
 
-async def run(apply: bool) -> int:
-    from bson import ObjectId
+async def delete_by_ids(db, name: str, ids: list[str]) -> int:
+    """按 id 列表删除某集合的文档，返回删除条数。
 
+    同一集合里 _id 可能两种形态并存：新写入用 UUID 字符串（proactive_records 全是），
+    历史数据用 ObjectId（早期的 messages / injection_snapshots）。一律转 ObjectId
+    会在第一个非 hex 的 id 上抛 InvalidId——实测 apply 删完 95 条消息后就崩在这里，
+    所以按"字符串 + ObjectId"双形态匹配。
+    """
+    from app.db.repositories.object_id import id_variants_list
+
+    result = await db[name].delete_many({"_id": {"$in": id_variants_list(ids)}})
+    return int(result.deleted_count)
+
+
+async def run(apply: bool) -> int:
     from app.db.mongo import close_db, connect_db, get_database
 
     await connect_db()
@@ -134,9 +146,7 @@ async def run(apply: bool) -> int:
         for name, ids in orphans.items():
             if name == "media" or not ids:
                 continue
-            query_ids = [ObjectId(i) for i in ids]
-            result = await db[name].delete_many({"_id": {"$in": query_ids}})
-            deleted[name] = int(result.deleted_count)
+            deleted[name] = await delete_by_ids(db, name, ids)
 
         referenced_after = await _referenced_media_ids(db)
         media_docs = [

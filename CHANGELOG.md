@@ -64,6 +64,12 @@
   现按单 IP 10 分钟 30 次限流；`messages?limit` clamp 到 1..200，流式请求体文本上限 4000。
 
 ### 修复
+- **`purge_orphans --apply` 遇到 UUID 字符串主键就崩**：脚本删引用方时把每个 id 无条件
+  `ObjectId(i)`，而 `proactive_records` 的 `_id` 全部是 UUID 字符串——实测执行到
+  `bson.errors.InvalidId` 时前一个集合（messages 95 条）已经删完、后面的快照/token/媒体都没删，
+  留下"清理做了一半"的中间状态。改为按「字符串 + ObjectId」双形态匹配（与级联删除同一口径），
+  并把删除抽成 `delete_by_ids` 配 `tools/test/test_purge_orphans.py` 三条用例钉住：
+  两种主键形态混列都要删净、空列表不误伤、以及媒体只按 `public_id` 被引用时不得报成孤儿。
 - **媒体迁移链路打通**：定妆照 seed 不再把迁移好的 `public_id` URL 倒回 ObjectId
   （seed 每次启动都跑，倒回后普通访问者又看不到定妆照）；`backfill_media_public_id`
   改为可续跑并随 Docker 镜像与部署包分发；测试服已备份后执行，302 条媒体补 ID、

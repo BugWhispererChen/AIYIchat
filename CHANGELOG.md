@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### 新增
+- **微信表情包日志不再裸打媒体 URL**：`media 不存在` 那条告警把整条 `/api/media/<public_id>`
+  写进日志，而 public_id 是读取该图的能力令牌——拿到日志的人就能直接取图。改打掩码值。
+  同时给凭据日志护栏加了一条按语句（AST）扫描的规则：媒体引用没经 `mask_secret`/`brief_json`
+  就进日志一律失败。这条规则必须按语句扫——此前用行级正则扫是 0 命中，改成 AST 才捞出这一处：
+  跨行的 `logger.warning(` + 换行参数正是行级正则的盲区。
 - **全仓静态护栏 `tools/test/test_no_dangerous_calls.py`**：提交审查是按 diff 走的，而开源
   初始提交里带进来、此后再没被改过的代码永远不会出现在 diff 中。把一次性全仓扫描
   （反序列化、eval/exec、`os.system`/`shell=True`、`yaml.load` 非 SafeLoader、Mongo `$where`、

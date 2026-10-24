@@ -36,7 +36,7 @@ from app.conversation.sticker_task import (
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.models.bot_config import BotConfigInDB
 from app.services.voice_window import voice_window
-from app.utils.redaction import brief_json
+from app.utils.redaction import brief_json, mask_secret
 from app.utils.tasks import spawn
 
 if TYPE_CHECKING:
@@ -1342,7 +1342,8 @@ class WeChatClient(ChannelAdapter):
             media_doc = await MediaRepository().find_by_id(media_id)
             if not media_doc or not media_doc.get("data"):
                 logger.warning(
-                    "%s 表情包媒体不存在: %s", self._label, task.media_url
+                    "%s 表情包媒体不存在: id=%s",
+                    self._label, mask_secret(media_id),
                 )
                 return
 

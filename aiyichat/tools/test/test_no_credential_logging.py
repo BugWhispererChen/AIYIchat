@@ -289,3 +289,57 @@ def test_templates_do_not_render_secrets() -> None:
         for match in _SECRET_RENDER_RE.finditer(html.read_text(encoding="utf-8"))
     ]
     assert not offenders, "模板渲染了明文凭据：\n" + "\n".join(offenders)
+
+_MEDIA_REF_RE = re.compile(r"(media_url|public_id|ref_image_url|reference_image_url|media_id)", re.I)
+_LOG_FUNCS_ALL = _LOG_METHODS | {"print"}
+
+
+def _media_refs_in(node: ast.AST) -> Iterator[str]:
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name) and _MEDIA_REF_RE.search(sub.id):
+            yield sub.id
+        elif isinstance(sub, ast.Attribute) and _MEDIA_REF_RE.search(sub.attr):
+            yield sub.attr
+
+
+def _wrapped_in_mask(node: ast.AST) -> bool:
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call):
+            name = getattr(sub.func, "attr", "") or getattr(sub.func, "id", "")
+            if name in _MASK_FUNCS:
+                return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "path", list(_python_files()), ids=lambda p: str(p.relative_to(_APP_DIR))
+)
+def test_media_capability_url_not_logged_raw(path: Path) -> None:
+    """媒体 `public_id` 是 URL 里的能力令牌，日志只能出现掩码值。
+
+    按语句（AST）而不是按行扫：`logger.info(
+ "…%s", x, task.media_url
+)` 这种跨行写法
+    用行级正则会整片漏掉——本轮就是这么捞出微信表情包那条的。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        fname = getattr(func, "attr", None) or getattr(func, "id", None)
+        if fname not in _LOG_FUNCS_ALL:
+            continue
+        args = list(node.args)[1 if fname != "print" else 0:]
+        args += [kw.value for kw in node.keywords]
+        for arg in args:
+            for name in _media_refs_in(arg):
+                if _wrapped_in_mask(arg):
+                    continue
+                offenders.append(
+                    f"{path.name}:{node.lineno} 日志直出媒体引用 `{name}`，"
+                    f"请用 mask_secret(...) 处理后再打"
+                )
+    assert not offenders, "\n".join(offenders)
+

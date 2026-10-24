@@ -343,11 +343,44 @@ class AppSettingsDocument(BaseModel):
     # 仅当反向代理已用 $remote_addr 覆写 X-Forwarded-For 时开启
     trust_proxy_headers: bool = False
 
+
+    # 以下键此前只在 .env 生效：AppSettingsDocument 没声明它们，pydantic 读回即丢弃，
+# 库里存了也不生效。补进文档后由 to_stored_dict 保证「库里没有该键」不会被代码默认值
+# 覆盖，因此老实例的 .env 配置照旧生效；新装环境 seed_from_env 会把全部键写进库。
+    chat_presence_penalty: float = 0.3
+    summary_max_length: int = 200
+    topic_history_max: int = 10
+    topic_stall_detection_enabled: bool = True
+    topic_stall_threshold: int = 4
+    topic_stall_similarity: float = 0.6
+    memory_max_facts: int = 30
+    memory_extract_interval: int = 6
+    memory_inject_limit: int = 10
+    memory_max_entities: int = 50
+    memory_entity_scan_turns: int = 3
+    memory_entity_merge_threshold: float = 0.75
+    proactive_llm_temperature: float = 0.92
+    sticker_max_dimension: int = 500
+
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
     )
+
+    @property
+    def to_stored_dict(self) -> dict[str, Any]:
+        """只返回文档里真实存着的键，供 DB → 运行时加载使用。
+
+        「库里没这个键」与「库里存着默认值」不是一回事：刚登记进文档的键在老实例的库里
+        并不存在，若按 to_flat_dict 全量下发，加载时就会用代码默认值悄悄覆盖部署者在
+        .env 里配好的值。新装环境由 seed_from_env 把全部键写进库，不受影响。
+        """
+        flat = self.to_flat_dict
+        if not self.model_fields_set:
+            # 代码里直接构造的实例（无来源文档）保持全量视图，供展示与校验使用
+            return flat
+        return {k: v for k, v in flat.items() if k in self.model_fields_set}
 
     @property
     def to_flat_dict(self) -> dict[str, Any]:

@@ -136,6 +136,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "reply_warmth_enabled",
         "empty_reply_fallback_enabled",
         "embedding_breaker_enabled",
+        # 话题停滞检测开关（补登记）
+        "topic_stall_detection_enabled",
         "proactive_yield_enabled",
         "profile_routine_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
@@ -179,6 +181,11 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "web_login_max_fail", "web_login_lockout_minutes",
         "web_rate_limit_register", "web_rate_limit_login",
         "web_max_profiles", "web_max_services",
+        # 记忆与话题治理、摘要长度、表情尺寸（补登记，避免以 str 入库）
+        "summary_max_length", "topic_history_max", "topic_stall_threshold",
+        "memory_max_facts", "memory_extract_interval", "memory_inject_limit",
+        "memory_max_entities", "memory_entity_scan_turns",
+        "memory_entity_merge_threshold", "sticker_max_dimension",
     }
     float_fields = {
         "reflection_temperature", "reflection_timeout_seconds",
@@ -191,6 +198,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "stream_jitter_overlap_ratio",
         "human_jitter_ratio", "human_night_factor", "human_long_pause_prob",
         "reply_jitter_similarity_warn", "reply_jitter_retry_temp_step",
+        # 采样惩罚与话题相似度（补登记）
+        "chat_presence_penalty", "topic_stall_similarity",
     }
 
     for key, val in raw.items():

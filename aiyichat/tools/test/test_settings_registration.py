@@ -284,3 +284,80 @@ class TestPacingFormUpdates:
         """Bot 侧条数下限是 1：填 0 会让整轮回复一条都发不出去。"""
         updates = self._updates({"multi_message_max_count": "0"})
         assert updates["multi_message_max_count"] == 1
+
+
+class TestDotenvOnlyKeysNowReachDb:
+    """原先只在 .env 生效的 14 个键必须完成三处登记。
+
+    它们不在后台表单里，所以前两组成员覆盖不到；漏登记的后果是
+    "写进库也读不回来"，与 web_max_* 是同一类静默失效。
+    """
+
+    KEYS = (
+        "chat_presence_penalty", "summary_max_length", "topic_history_max",
+        "topic_stall_detection_enabled", "topic_stall_threshold",
+        "topic_stall_similarity", "memory_max_facts", "memory_extract_interval",
+        "memory_inject_limit", "memory_max_entities", "memory_entity_scan_turns",
+        "memory_entity_merge_threshold", "proactive_llm_temperature",
+        "sticker_max_dimension",
+    )
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_key_in_all_layers(self, key: str) -> None:
+        assert hasattr(settings, key), f"{key} 在 Settings 上不存在"
+        assert key in _document_fields(), f"{key} 未登记进 AppSettingsDocument"
+        assert key in set(_Settings._fields()), f"{key} 不在重载白名单"
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_default_matches(self, key: str) -> None:
+        doc_default = AppSettingsDocument.model_fields[key].default
+        code_default = getattr(_Settings, key)
+        assert type(doc_default) is type(code_default), (
+            f"{key} 默认值类型不一致：{type(doc_default)} vs {type(code_default)}"
+        )
+        assert doc_default == code_default, (
+            f"{key} 默认值漂移：DB 文档 {doc_default!r} vs 代码 {code_default!r}"
+        )
+
+    def test_stored_view_skips_keys_absent_in_db(self) -> None:
+        """库里没这个键时不能用代码默认值覆盖运行时的 .env 配置。
+
+        这是补登记新键的前提：`to_flat_dict` 全量下发的话，老实例一升级，
+        部署者在 .env 配好的值就会被文档默认值悄悄改掉。
+        """
+        doc = AppSettingsDocument(memory_max_facts=99)
+        assert "memory_max_facts" in doc.to_stored_dict
+        assert "summary_max_length" not in doc.to_stored_dict, "库里没有的键不该下发"
+        # 但全量视图仍然完整：展示层与契约用例靠它
+        assert "summary_max_length" in doc.to_flat_dict
+        assert doc.to_stored_dict["memory_max_facts"] == 99
+
+    def test_load_from_db_keeps_dotenv_value_for_absent_key(self) -> None:
+        """走真实加载路径复核：缺失键保留原值，存在键生效。"""
+        import asyncio
+
+        import mongomock_motor
+
+        from app.db import mongo
+        from app.config import load_settings_from_db
+
+        async def case() -> None:
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_stored_only"]
+            old_facts = settings.memory_max_facts
+            old_limit = settings.memory_inject_limit
+            try:
+                settings.memory_inject_limit = 4242  # 模拟 .env 里部署者配的值
+                from app.db.repositories.app_settings_repo import AppSettingsRepository
+
+                await AppSettingsRepository().upsert({"memory_max_facts": 12})
+                await load_settings_from_db()
+                assert settings.memory_max_facts == 12
+                assert settings.memory_inject_limit == 4242, (
+                    "库里没有 memory_inject_limit，却被代码默认值覆盖了 .env 配置"
+                )
+            finally:
+                settings.memory_max_facts = old_facts
+                settings.memory_inject_limit = old_limit
+                mongo._db = None
+
+        asyncio.run(case())

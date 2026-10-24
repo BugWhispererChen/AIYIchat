@@ -376,7 +376,7 @@ class _RuntimeSettings:
 
             doc = await repo.get_document()
             if doc:
-                changed = self._apply_dict(doc.to_flat_dict)
+                changed = self._apply_dict(doc.to_stored_dict)
                 self._sync_to_environ()
                 logger.info("Settings reloaded from database: %d field(s) changed", len(changed))
                 return changed
@@ -763,7 +763,7 @@ async def load_settings_from_db() -> set[str]:
         settings._sync_to_environ()
         return changed
 
-    changed = settings._apply_dict(doc.to_flat_dict)
+    changed = settings._apply_dict(doc.to_stored_dict)
     settings._sync_to_environ()
     logger.info("App settings loaded from database: %d field(s) changed", len(changed))
     return changed

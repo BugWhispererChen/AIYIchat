@@ -560,7 +560,24 @@ class ConversationEngine:
             conversation_id=conversation.id,
             pending_event_count=len(pending_events),
         )
-        
+
+        # 8b. Prompt 组装后按完整上下文再预检一次：覆盖 system/历史/记忆/工具轮次，
+        # 避免早期预检只看"本条输入 + 输出上限"而低估真实消耗
+        quota_ok, quota_reason = await self._quota_precheck_for_messages(
+            service.account_id, messages
+        )
+        if not quota_ok:
+            logger.warning(
+                "Quota denied after prompt assembly: account=%s, reason=%s",
+                service.account_id,
+                quota_reason,
+            )
+            return EngineResult(
+                text=f"额度不足：{quota_reason}",
+                conversation_id=conversation.id,
+            )
+        prompt_text = self._messages_text(messages)
+
         # 9. 调用LLM（全局 max_tokens 作为防失控护栏，长度由 Prompt 软引导）
         provider = get_llm_provider()
         start_time = time.monotonic()
@@ -670,7 +687,12 @@ class ConversationEngine:
             image_specs = fc_image_specs + image_specs
         
         # 5b. 按 API 实际 usage 一次性结算本轮 token 消耗（非阻塞，仅记账）
-        await self._settle_usage(service.account_id, usage)
+        await self._settle_usage(
+            service.account_id,
+            usage,
+            prompt_text=prompt_text,
+            reply_text=response_text,
+        )
         
         # 5c. 图片生成方向：扣减 image_quota（每张1额度，额度不足则移除）
         if image_specs:
@@ -988,6 +1010,15 @@ class ConversationEngine:
             pending_event_count=len(pending_events),
         )
 
+        # Prompt 组装后按完整上下文再预检一次（与普通链路同口径）
+        quota_ok, quota_reason = await self._quota_precheck_for_messages(
+            service.account_id, messages
+        )
+        if not quota_ok:
+            yield f"额度不足：{quota_reason}"
+            return
+        prompt_text = self._messages_text(messages)
+
         # 流式生成（usage_sink 收集后端返回的 token 用量，供结束后结算）
         provider = get_llm_provider()
         start_time = time.monotonic()
@@ -1036,6 +1067,8 @@ class ConversationEngine:
                     prompt_tokens=usage_sink.get("prompt_tokens", 0),
                     completion_tokens=usage_sink.get("completion_tokens", 0),
                 ),
+                prompt_text=prompt_text,
+                reply_text=clean_text,
             )
             await self._finalize_turn(
                 conversation=conversation,
@@ -2051,27 +2084,66 @@ class ConversationEngine:
             return False, "额度不足"
         return True, ""
 
-    async def _settle_usage(self, account_id: str, usage: LLMUsage) -> None:
-        """按 API 实际 usage 一次性结算本轮 token 消耗（非阻塞，仅记账）。
+    @staticmethod
+    def _messages_text(messages: list[dict]) -> str:
+        """把组装后的 Prompt 拼成纯文本，供预检/零 usage 结算估算。"""
+        return "\n".join(str(m.get("content", "")) for m in messages)
 
-        usage 为零（部分后端不返回）时跳过扣费并记 warning，避免误扣；
-        扣减失败（极端并发下不足）记 warning，不影响回复。
+    async def _quota_precheck_for_messages(
+        self, account_id: str, messages: list[dict]
+    ) -> tuple[bool, str]:
+        """按完整 Prompt 预检额度。
+
+        旧预检只算"本条输入 + 输出上限"，漏掉 system/历史/记忆；这里把组装后的
+        Prompt 全量计入。Function Calling 最多 3 轮，按 3 倍输出上限预留。
         """
-        if usage.total <= 0:
+        rounds = 3 if settings.function_calling_enabled else 1
+        required = (
+            estimate_tokens(self._messages_text(messages))
+            + settings.chat_max_tokens * rounds
+        )
+        return await self._quota_precheck(account_id, required)
+
+    async def _settle_usage(
+        self,
+        account_id: str,
+        usage: LLMUsage,
+        *,
+        prompt_text: str = "",
+        reply_text: str = "",
+    ) -> None:
+        """按实际用量结算本轮 token，允许超过额度上限。
+
+        预检无法精确预知 system/历史/记忆/工具轮次的真实消耗；若结算仍用严格
+        `deduct` 的 `used + amount <= limit`，超出的那部分会扣费失败且 used 不增长，
+        用户就能反复通过预检免费使用。这里用 `charge` 如实记账，used 允许超过
+        limit，下一轮预检自然拒绝。后端不返回 usage 时按 Prompt+回复估算兜底。
+        """
+        amount = usage.total
+        if amount <= 0:
+            amount = estimate_tokens(prompt_text) + estimate_tokens(reply_text)
             logger.warning(
-                "LLM usage 缺失，跳过 Token 结算: account=%s", account_id
+                "LLM usage 缺失，按估算结算: account=%s, amount=%d",
+                account_id,
+                amount,
             )
+        if amount <= 0:
             return
         logger.info(
-            "Token 结算: account=%s, prompt=%d, completion=%d, total=%d",
-            account_id, usage.prompt_tokens, usage.completion_tokens,
+            "Token 结算: account=%s, prompt=%d, completion=%d, total=%d, charged=%d",
+            account_id,
+            usage.prompt_tokens,
+            usage.completion_tokens,
             usage.total,
+            amount,
         )
-        ok, reason = await self.quota_repo.deduct(account_id, "text", usage.total)
+        ok, reason = await self.quota_repo.charge(account_id, "text", amount)
         if not ok:
-            logger.warning(
-                "Token 额度扣减失败: account=%s, amount=%d, reason=%s",
-                account_id, usage.total, reason,
+            logger.error(
+                "Token 额度记账失败: account=%s, amount=%d, reason=%s",
+                account_id,
+                amount,
+                reason,
             )
 
     async def _finalize_turn(

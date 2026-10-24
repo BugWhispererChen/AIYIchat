@@ -466,6 +466,34 @@ class TestQuotaRepository:
 
         run_with_db(body)
 
+    def test_charge_allows_overage_and_blocks_next_deduct(self) -> None:
+        """实际量结算允许超额：used 超过 limit 后严格扣减/预检自然失败。"""
+        async def body():
+            repo = QuotaRepository()
+            await repo.create_or_update(
+                "acc-1",
+                AccountQuotaUpdate(
+                    text_quota=QuotaEntry(limit=100, used=95),
+                    voice_quota=QuotaEntry(limit=1, used=0),
+                    image_quota=QuotaEntry(limit=1, used=0),
+                ),
+            )
+            ok, reason = await repo.charge("acc-1", "text", 50)
+            assert ok is True and reason == ""
+            quota = await repo.find_by_account("acc-1")
+            assert quota is not None
+            assert quota.text_quota.used == 145
+            assert quota.text_quota.used > quota.text_quota.limit
+
+            # 下一轮严格扣减会被上限拦住，不会继续免费使用
+            ok, reason = await repo.deduct("acc-1", "text", 1)
+            assert ok is False and reason == "额度不足"
+
+            ok, reason = await repo.charge("missing", "text", 1)
+            assert ok is False and reason == "额度记录不存在"
+
+        run_with_db(body)
+
 
 class TestQuotaTemplateRepository:
     """额度模板仓库测试集。"""
@@ -512,5 +540,44 @@ class TestOrderRepository:
 
             total = await repo.sum_amount(days=30)
             assert total == 10.0
+
+        run_with_db(body)
+
+
+class TestMediaRepositoryCompat:
+    """媒体新旧 ID 兼容：public_id 能力令牌 + 旧 ObjectId 管理员兜底。"""
+
+    def test_public_id_and_legacy_lookup_and_delete(self) -> None:
+        async def body():
+            from app.db.repositories.media_repo import (
+                MediaRepository,
+                media_ids_from_message_docs,
+            )
+
+            repo = MediaRepository()
+            db = mongo.get_database()
+            public_id = await repo.create(b"new", "image/png")
+            assert len(public_id) == 32
+            doc = await repo.find_by_id(public_id)
+            assert doc is not None and doc["public_id"] == public_id
+
+            legacy = await db.media.insert_one({
+                "data": b"old", "content_type": "image/png",
+            })
+            legacy_id = str(legacy.inserted_id)
+            assert await repo.find_by_id(legacy_id) is not None
+            assert await repo.find_by_id("not-an-id") is None
+
+            # 消息 URL 反解同时兼容新旧 ID
+            ids = media_ids_from_message_docs([
+                {"media_url": f"/api/media/{legacy_id}"},
+                {"media_url": f"/api/media/{public_id}"},
+            ])
+            assert set(ids) == {legacy_id, public_id}
+
+            assert await repo.delete(public_id) is True
+            assert await repo.find_by_id(public_id) is None
+            assert await repo.delete_by_ids([legacy_id]) == 1
+            assert await repo.find_by_id(legacy_id) is None
 
         run_with_db(body)

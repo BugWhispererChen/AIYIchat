@@ -120,6 +120,7 @@ def _build_engine(
         return_value=_make_quota_doc() if quota_doc is ... else quota_doc
     )
     engine.quota_repo.deduct = AsyncMock(return_value=(True, ""))
+    engine.quota_repo.charge = AsyncMock(return_value=(True, ""))
     engine.quota_repo.refund = AsyncMock(return_value=True)
 
     engine.turn_recorder = MagicMock()
@@ -700,10 +701,9 @@ class TestHappyPath:
         # LLM 恰好调用一次
         provider.complete_with_usage.assert_awaited_once()
 
-        # Token 结算：仅一次扣减，金额 = API usage 总量（非字符数）
-        engine.quota_repo.deduct.assert_awaited_once_with(
-            "acc-1", "text", usage.total
-        )
+        # Token 结算：仅一次记账，金额 = API usage 总量（非字符数）
+        charged = engine.quota_repo.charge.await_args
+        assert charged.args[:3] == ("acc-1", "text", usage.total)
 
         # 双向消息均持久化，且 AI 回复带模型名
         engine.turn_recorder.record_identity_message.assert_awaited_once()
@@ -821,12 +821,12 @@ class TestTokenBilling:
 
         _run(engine, "聊聊最近的事", usage=usage)
 
-        engine.quota_repo.deduct.assert_awaited_once_with(
-            "acc-1", "text", 192
-        )
+        charged = engine.quota_repo.charge.await_args
+        assert charged.args[:3] == ("acc-1", "text", 192)
 
-    def test_precheck_threshold_blocks_llm(self) -> None:
+    def test_precheck_threshold_blocks_llm(self, monkeypatch) -> None:
         """余额低于 预估输入 token + 输出上限 → 拒绝且不调用 LLM。"""
+        monkeypatch.setattr(settings, "chat_max_tokens", 2048)
         # 余额 2050 < estimate_tokens("你好")(3) + chat_max_tokens(2048) = 2051
         engine = _build_engine(quota_doc=_make_quota_doc(limit=4098, used=2048))
 
@@ -836,8 +836,8 @@ class TestTokenBilling:
         provider.complete_with_usage.assert_not_awaited()
         engine.quota_repo.deduct.assert_not_awaited()
 
-    def test_zero_usage_skips_deduct(self) -> None:
-        """后端未返回 usage（零值）：跳过扣费，回复照常返回。"""
+    def test_zero_usage_charges_estimate(self) -> None:
+        """后端未返回 usage（零值）：按 Prompt+回复估算记账，不再免费。"""
         engine = _build_engine()
 
         result, _ = _run(
@@ -846,6 +846,20 @@ class TestTokenBilling:
 
         assert result.text == "在的呀"
         engine.quota_repo.deduct.assert_not_awaited()
+        charged = engine.quota_repo.charge.await_args
+        assert charged.args[0:2] == ("acc-1", "text")
+        assert charged.args[2] > 0
+
+    def test_precise_precheck_counts_prompt(self, monkeypatch) -> None:
+        """Prompt 组装后的预检必须计入 system/历史等完整上下文。"""
+        monkeypatch.setattr(settings, "chat_max_tokens", 2048)
+        engine = _build_engine(quota_doc=_make_quota_doc(limit=2500, used=0))
+
+        ok, reason = asyncio.run(engine._quota_precheck_for_messages(
+            "acc-1", [{"content": "你" * 1000}]
+        ))
+
+        assert ok is False and reason == "额度不足"
 
 
 class TestBotNotFound:
@@ -915,7 +929,8 @@ class TestReplyJitterDetection:
         assert retry_kwargs["messages"][-1]["role"] == "system"
         assert retry_kwargs["temperature"] <= 1.0
         # 计费以重试后的真实 usage 结算（不重复扣首次消耗）
-        engine.quota_repo.deduct.assert_awaited_once_with("acc-1", "text", 40)
+        charged = engine.quota_repo.charge.await_args
+        assert charged.args[:3] == ("acc-1", "text", 40)
 
     def test_still_repeat_after_retry_sends_anyway(self) -> None:
         """重试后仍复读：重试 N 次后仍复读则照常发送并记日志。"""
@@ -937,7 +952,7 @@ class TestReplyJitterDetection:
         assert result.text == repeated
         # 最多重试 reply_jitter_retry_max 次（默认 2），总调用 = 1 + 2 = 3
         assert provider.complete_with_usage.await_count == 3
-        engine.quota_repo.deduct.assert_awaited_once()
+        engine.quota_repo.charge.assert_awaited_once()
 
     def test_no_history_no_retry(self) -> None:
         """无历史 assistant 消息：即使开关开启也不触发重试。"""
@@ -1263,8 +1278,8 @@ class TestStreamRepeatGuard:
         ):
             self._collect(engine, provider, "周末干嘛")
         # 流式 10+20 与重跑 5+7 都要计入，重跑的真实成本不能被漏记
-        engine.quota_repo.deduct.assert_awaited_once()
-        assert 42 in engine.quota_repo.deduct.await_args.args
+        engine.quota_repo.charge.assert_awaited_once()
+        assert 42 in engine.quota_repo.charge.await_args.args
 
     def test_guard_off_no_retry(self) -> None:
         engine = self._engine_with_history(self.OLD)

@@ -350,6 +350,7 @@ class TestDashboardAndSettings:
     def test_dashboard_multimedia_reload_metrics(self) -> None:
         async def flow() -> None:
             app = await _setup_app()
+            old_max_tokens = settings.chat_max_tokens
             try:
                 async with _client(app) as client:
                     resp = await client.get("/admin/")
@@ -381,6 +382,7 @@ class TestDashboardAndSettings:
                     resp = await client.get("/admin/api/metrics")
                     assert resp.status_code == 200
             finally:
+                settings.chat_max_tokens = old_max_tokens
                 await _teardown_app(app)
 
         _run(flow())
@@ -810,44 +812,12 @@ class TestPublicApi:
 
         _run(flow())
 
-    def test_conversations_and_media_api(self) -> None:
+    def test_media_api(self) -> None:
         async def flow() -> None:
             app = await _setup_app(override_auth=False)
             try:
-                conv_repo = ConversationRepository()
-                msg_repo = MessageRepository()
-                svc_repo = ServiceRepository()
-                svc = await svc_repo.create(ServiceCreate(
-                    account_id="acc-1", identity_id="u-1", bot_id="b-1",
-                    profile_id="p-1", share_group_id="grp-1",
-                ))
-                conv = await conv_repo.create("u-1", "p-1", svc.id)
-                await msg_repo.create(conv.id, "user", "hi", emotion_tag="joy")
-
                 async with _client(app) as client:
-                    # 无过滤 → 空
-                    resp = await client.get("/api/conversations")
-                    assert resp.status_code == 200 and resp.json() == []
-                    # 按身份
-                    resp = await client.get(
-                        "/api/conversations", params={"identity_id": "u-1"}
-                    )
-                    assert resp.status_code == 200 and len(resp.json()) == 1
-                    # 按服务（含共享组补充）
-                    resp = await client.get(
-                        "/api/conversations", params={"service_id": svc.id}
-                    )
-                    assert resp.status_code == 200
-
-                    # 消息历史；不存在对话 → 404
-                    resp = await client.get(f"/api/conversations/{conv.id}/messages")
-                    assert resp.status_code == 200 and len(resp.json()) == 1
-                    resp = await client.get(
-                        "/api/conversations/" + "0" * 24 + "/messages"
-                    )
-                    assert resp.status_code == 404
-
-                    # 媒体：不存在 → 404；存在 → 返回二进制
+                    # 媒体：不存在 → 404；新 public_id → 返回二进制
                     resp = await client.get("/api/media/" + "0" * 24)
                     assert resp.status_code == 404
                     from app.db.repositories.media_repo import MediaRepository
@@ -856,6 +826,60 @@ class TestPublicApi:
                     assert resp.status_code == 200
                     assert resp.content == b"img-bytes"
             finally:
+                await _teardown_app(app)
+
+        _run(flow())
+
+
+class TestMediaAccess:
+    """媒体访问：新 public_id 是能力令牌，旧 ObjectId 仅管理员可读。"""
+
+    def test_public_capability_and_legacy_admin_only(self) -> None:
+        async def flow() -> None:
+            from app.db.repositories.media_repo import MediaRepository
+
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            settings.admin_password = "media-pw"
+            try:
+                async with _client(app) as client:
+                    pid = await MediaRepository().create(b"new-bytes", "image/png")
+                    assert len(pid) == 32
+                    resp = await client.get(f"/api/media/{pid}")
+                    assert resp.status_code == 200
+                    assert resp.content == b"new-bytes"
+                    cache = resp.headers["cache-control"]
+                    assert "private" in cache and "public" not in cache
+                    assert resp.headers["x-content-type-options"] == "nosniff"
+
+                    # 旧 ObjectId 无能力令牌：匿名 404，管理员会话可读
+                    legacy = await mongo.get_database().media.insert_one({
+                        "data": b"old-bytes", "content_type": "image/png",
+                    })
+                    oid = str(legacy.inserted_id)
+                    assert (
+                        await client.get(f"/api/media/{oid}")
+                    ).status_code == 404
+
+                    login = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "media-pw"},
+                    )
+                    assert login.status_code == 303
+                    token = login.cookies.get("admin_session")
+                    assert token
+                    resp = await client.get(
+                        f"/api/media/{oid}", cookies={"admin_session": token}
+                    )
+                    assert resp.status_code == 200
+                    assert resp.content == b"old-bytes"
+
+                    # 非法 ID 不再 500
+                    assert (
+                        await client.get("/api/media/not-an-id")
+                    ).status_code == 404
+            finally:
+                settings.admin_password = old_pw
                 await _teardown_app(app)
 
         _run(flow())
@@ -911,6 +935,18 @@ class TestProactiveApi:
                         "identity_id": identity.id, "bot_id": "b-1", "content": "在吗",
                     })
                     assert resp.status_code == 200 and resp.json()["success"] is False
+
+                    # 发送抛异常：返回可读失败并落 failed，不能留 pending
+                    scheduler._send_message = AsyncMock(side_effect=RuntimeError("boom"))
+                    resp = await client.post("/api/proactive/trigger", json={
+                        "identity_id": identity.id, "bot_id": "b-1", "content": "在吗",
+                    })
+                    assert resp.status_code == 200 and resp.json()["success"] is False
+                    latest = await ProactiveRecordRepository().find_latest_by_identity(
+                        identity.id, "b-1", limit=1
+                    )
+                    assert latest and latest[0].status == "failed"
+                    assert "boom" in latest[0].error_msg
 
                     # 记录查询
                     await ProactiveRecordRepository().create(ProactiveRecord(

@@ -255,7 +255,36 @@ class TestProactiveRecordRepository:
 
         run_with_db(body)
 
-    def test_cleanup_old_records(self) -> None:
+    def test_mark_stale_pending_failed(self) -> None:
+        """超时 pending 回收为 failed；新 pending 与其他状态不受影响。"""
+        async def body():
+            repo = ProactiveRecordRepository()
+            old = datetime.now(timezone.utc) - timedelta(minutes=30)
+            stale_id = await repo.create(ProactiveRecord(
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
+                stage=1, created_at=old,
+            ))
+            fresh_id = await repo.create(ProactiveRecord(
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
+                stage=2,
+            ))
+            sent_id = await repo.create(ProactiveRecord(
+                identity_id="u-1", platform_openid="oid-1", bot_id="b-1",
+                stage=3, status="sent", created_at=old,
+            ))
+            count = await repo.mark_stale_pending_failed(
+                datetime.now(timezone.utc) - timedelta(minutes=15), "发送中断"
+            )
+            assert count == 1
+            stale = await repo.find_by_id(stale_id)
+            assert stale is not None and stale.status == "failed"
+            assert "发送中断" in stale.error_msg
+            fresh = await repo.find_by_id(fresh_id)
+            assert fresh is not None and fresh.status == "pending"
+            sent = await repo.find_by_id(sent_id)
+            assert sent is not None and sent.status == "sent"
+
+        run_with_db(body)
         async def body():
             repo = ProactiveRecordRepository()
             old = datetime.now(timezone.utc) - timedelta(days=40)

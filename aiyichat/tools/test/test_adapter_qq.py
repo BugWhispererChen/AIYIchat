@@ -274,7 +274,14 @@ class TestSendReply:
             client = _make_client()
             client._send_reply = AsyncMock(return_value=True)
             assert await client.send_proactive("u-1", "hi") is True
-            client._send_reply.assert_awaited()
+            c2c = client._send_reply.await_args.kwargs
+            assert c2c["is_wakeup"] is True
+
+            assert await client.send_proactive(
+                "u-1", "hi", is_group=True, group_id="g-1"
+            ) is True
+            group = client._send_reply.await_args.kwargs
+            assert group["is_wakeup"] is False
 
         _run(body())
 

@@ -611,10 +611,10 @@ async def _services_of(identity_id: str) -> list[Any]:
     return await ServiceRepository().list_by_identity(identity_id)
 
 
-class TestLegacyBehaviourUnchanged:
-    """开关关闭时既有 API 行为完全不变（老实例无感知）。"""
+class TestConversationApiAlwaysRequiresAuth:
+    """HTTP 对话接口不再有匿名旧分支：开关关闭或无令牌一律拒绝。"""
 
-    def test_stream_without_token_still_works(self) -> None:
+    def test_switch_off_closes_http_api(self) -> None:
         settings.web_auth_enabled = False
 
         async def flow() -> None:
@@ -623,17 +623,43 @@ class TestLegacyBehaviourUnchanged:
                 async with _client(app) as client:
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"bot_id": WEB_BOT_ID, "platform": "qq", "platform_id": "openid-1", "text": "hi"},
+                        json={"bot_id": WEB_BOT_ID, "platform": "qq",
+                              "platform_id": "openid-1", "text": "hi"},
                     )
-                    assert resp.status_code == 200
-                    assert "data: echo|qq|openid-1|" in resp.text
-                    assert (await client.get("/api/conversations")).status_code == 200
-                    # 非法会话 ID 走既有 404 通道（用合法 ObjectId 形态避免落到仓储层异常）
-                    assert (await client.get(f"/api/conversations/{'0' * 24}/messages")).status_code == 404
+                    assert resp.status_code == 401
+                    assert (await client.get("/api/conversations")).status_code == 401
+                    assert (
+                        await client.get(
+                            f"/api/conversations/{'0' * 24}/messages"
+                        )
+                    ).status_code == 401
+                    assert _FakeEngine.calls == []
             finally:
                 mongo._db = None
 
         _with_fake_engine(flow)
+
+    def test_no_token_cannot_read_conversation(self) -> None:
+        async def flow() -> None:
+            app = await _setup_app("t_conv_no_token")
+            try:
+                async with _client(app) as client:
+                    # 先有合法会话也不能被匿名读取
+                    from app.db.repositories.conversation_repo import (
+                        ConversationRepository,
+                    )
+
+                    conv = await ConversationRepository().create(
+                        "identity-x", PROFILE_SLUG, "service-x"
+                    )
+                    resp = await client.get(
+                        f"/api/conversations/{conv.id}/messages"
+                    )
+                    assert resp.status_code == 401
+            finally:
+                mongo._db = None
+
+        asyncio.run(flow())
 
     def test_auth_endpoints_refused(self) -> None:
         """开关关闭时注册/登录一律 403，不写入任何网页凭据。"""

@@ -109,12 +109,21 @@ async def trigger_proactive_message(
     await repo.create(record)
 
     # 发送
-    success = await scheduler._send_message(
-        platform=identity.platform,
-        bot_id=req.bot_id,
-        platform_id=target_id,
-        content=content,
-    )
+    try:
+        success = await scheduler._send_message(
+            platform=identity.platform,
+            bot_id=req.bot_id,
+            platform_id=target_id,
+            content=content,
+        )
+    except Exception as exc:  # noqa: BLE001 - 手动触发也要落 failed 并返回可读错误
+        logger.exception("手动触发主动消息失败: identity=%s", identity.id)
+        await repo.mark_failed(record.id, f"发送异常: {exc}")
+        return ProactiveTriggerResponse(
+            success=False,
+            message=f"发送失败：{exc}",
+            record_id=record.id,
+        )
 
     if success:
         await repo.mark_sent(record.id, content)

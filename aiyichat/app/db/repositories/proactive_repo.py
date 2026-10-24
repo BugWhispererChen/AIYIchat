@@ -40,6 +40,21 @@ class ProactiveRecordRepository:
             {"$set": {"status": "failed", "error_msg": error_msg}},
         )
 
+    async def mark_stale_pending_failed(
+        self, cutoff: datetime, reason: str
+    ) -> int:
+        """把超时仍停留在 pending 的记录标记为 failed。
+
+        正常情况下 pending 只在"已生成内容、正在发送"的短窗口内存在；
+        进程重启、发送协程被取消等异常会让它永久停留，而阶段去重不统计
+        pending，最终变成每 15 分钟重复生成内容的成本黑洞。
+        """
+        result = await self._collection().update_many(
+            {"status": "pending", "created_at": {"$lt": cutoff}},
+            {"$set": {"status": "failed", "error_msg": reason}},
+        )
+        return int(result.modified_count)
+
     async def find_latest_by_identity(
         self, identity_id: str, bot_id: str, limit: int = 10
     ) -> list[ProactiveRecordInDB]:

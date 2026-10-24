@@ -99,8 +99,9 @@
 
 用户名 + 密码自助注册 → 管理员审核 → 网页登录 → 流式对话，配套独立账号与额度、
 图形验证码、IP 滑动窗口限流、登录失败锁定与会话并发上限。全部能力挂在
-`WEB_AUTH_ENABLED` / `WEB_REGISTER_ENABLED` 开关后，**默认关闭**：老实例升级后无感知，
-QQ / 微信链路行为不变。管理后台「网页身份」页承担审核、封禁、密码重置与额度治理。
+`WEB_AUTH_ENABLED` / `WEB_REGISTER_ENABLED` 开关后，**默认关闭**：QQ / 微信链路行为不变。
+HTTP 对话接口（`/api/conversations/*`）始终要求 Bearer 网页会话，不再保留匿名旧分支。
+管理后台「网页身份」页承担审核、封禁、密码重置与额度治理。
 
 - 注册页 `GET /web/register`、登录页 `GET /web/login`、聊天页 `GET /web/chat`、
   聊天服务页 `GET /web/services`、账号中心 `GET /web/account`
@@ -194,10 +195,15 @@ docker compose logs --tail=50 app
 - **管理后台**：`https://<host>/admin`（默认 443 端口，由 `.env` 的 `HTTPS_PORT` 指定；
   登录后可管理角色、账号与渠道、多媒体配置等）
 - **健康检查**：`/api/health`
+- **媒体访问**：新媒体使用不可枚举的 `/api/media/{public_id}` 能力 URL；
+  升级前的旧 `/api/media/{ObjectId}` 链接仅管理员会话可读。如需恢复旧链接的
+  对外访问，运行 `python -m tools.migrations.backfill_media_public_id`
+  （默认 dry-run，确认后加 `--apply`）
 - **C 端网页身份**（可选）：`https://<host>/web/login`，需先在管理后台「网页身份」页
   打开开关；系统载体渠道可选（作为未自建网页渠道的账号的默认载体），留空时新账号
   会自动创建一个账号级 `platform=web` 渠道。开启后聊天服务页为 `/web/services`，
-  账号中心为 `/web/account`；开关关闭时 `/web/*` 与 `/api/auth/*` 一律 403
+  账号中心为 `/web/account`；开关关闭时 `/web/*`、`/api/auth/*` 与
+  `/api/conversations/*` 一律拒绝匿名访问
 
 QQ / 微信渠道在管理后台的「账号详情 → 渠道管理」中添加：QQ 凭据通过扫码绑定获取，
 微信通过扫码登录；配置保存于数据库并支持热加载，无需本地配置文件。

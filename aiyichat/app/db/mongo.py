@@ -192,6 +192,10 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await _safe_create_index(db.orders, "account_id")
     # 内容安全事件：按账号查询与清理
     await _safe_create_index(db.safety_events, "account_id")
+    # 媒体：public_id 是新的不可枚举能力令牌；旧文档没有该字段，故用稀疏唯一索引
+    await _safe_create_index(
+        db.media, "public_id", unique=True, sparse=True
+    )
     # 记忆注入快照：按服务（含共享组 key）查询与清理
     await _safe_create_index(db.injection_snapshots, "service_id")
     # 内容安全事件：按类型+时间、创建时间索引（供审计分页/统计）

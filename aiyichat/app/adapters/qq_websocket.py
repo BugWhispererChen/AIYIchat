@@ -640,7 +640,8 @@ class QQWebSocketClient:
             msg_id="",
             is_group=is_group,
             group_id=group_id,
-            is_wakeup=True,
+            # 互动召回（is_wakeup）仅支持 C2C；群聊必须走普通主动消息
+            is_wakeup=not is_group,
         )
 
     # ── 多媒体输入处理 ──────────────────────────────

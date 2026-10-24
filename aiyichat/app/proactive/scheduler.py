@@ -140,12 +140,20 @@ class ProactiveScheduler:
             logger.debug("主动关怀总开关已关闭，跳过本轮扫描")
             return
 
+        now = datetime.now(timezone.utc)
+        # 回收陈旧 pending：进程中断时发送协程可能没机会 mark_failed，
+        # 而 pending 不计入阶段去重，不回收会每 15 分钟重复生成内容
+        stale = await self._proactive_repo.mark_stale_pending_failed(
+            now - timedelta(minutes=15), "发送中断（超时自动回收）"
+        )
+        if stale:
+            logger.warning("回收陈旧主动消息记录: %d 条", stale)
+
         # 获取所有活跃服务
         services = await self._service_repo.list_all_active()
         if not services:
             return
 
-        now = datetime.now(timezone.utc)
         # 只关注30天内活跃过的对方（超过30天不再发送）
         cutoff = now - timedelta(days=30)
 
@@ -438,12 +446,23 @@ class ProactiveScheduler:
             return
 
         # 执行发送
-        success = await self._send_message(
-            platform=identity.platform,
-            bot_id=service.bot_id,
-            platform_id=target_id,
-            content=content,
-        )
+        try:
+            success = await self._send_message(
+                platform=identity.platform,
+                bot_id=service.bot_id,
+                platform_id=target_id,
+                content=content,
+            )
+        except Exception as exc:  # noqa: BLE001 - 任何发送异常都要落 failed，不能留 pending
+            logger.exception(
+                "主动消息发送异常: identity_id=%s, stage=%d",
+                identity.id,
+                stage.stage,
+            )
+            await self._proactive_repo.mark_failed(
+                record.id, f"发送异常: {exc}"
+            )
+            return
 
         # 更新记录状态
         if success:
@@ -861,12 +880,22 @@ class ProactiveScheduler:
             await self._proactive_repo.mark_failed(record.id, "内容生成为空")
             return True
 
-        success = await self._send_message(
-            platform=identity.platform,
-            bot_id=service.bot_id,
-            platform_id=target_id,
-            content=content,
-        )
+        success = False
+        try:
+            success = await self._send_message(
+                platform=identity.platform,
+                bot_id=service.bot_id,
+                platform_id=target_id,
+                content=content,
+            )
+        except Exception as exc:  # noqa: BLE001 - 异常同样要落 failed
+            logger.exception(
+                "事件跟进发送异常: identity_id=%s", identity.id
+            )
+            await self._proactive_repo.mark_failed(
+                record.id, f"发送异常: {exc}"
+            )
+            return True
         if success:
             await self._proactive_repo.mark_sent(record.id, content)
             await self._memory_repo.mark_event_followed_up(
@@ -1067,14 +1096,14 @@ class ProactiveScheduler:
         if "::" in user_openid:
             group_id, member_openid = user_openid.split("::", 1)
             ok = await client.send_proactive(
-                identity_id=member_openid,
+                user_id=member_openid,
                 content=content,
                 is_group=True,
                 group_id=group_id,
             )
         else:
             ok = await client.send_proactive(
-                identity_id=user_openid, content=content
+                user_id=user_openid, content=content
             )
         if not ok:
             # 透传适配器记录的 QQ 真实错误码/消息（无则留空，由调用方兜底文案）
@@ -1096,7 +1125,7 @@ class ProactiveScheduler:
                 f"WeChat Bot 客户端未找到（未连接或已下线）: {bot_id}"
             )
             return False
-        ok = await client.send_proactive(identity_id=identity_id, content=content)
+        ok = await client.send_proactive(user_id=identity_id, content=content)
         if not ok:
             self._last_send_detail = getattr(client, "last_send_error", "") or ""
         return ok

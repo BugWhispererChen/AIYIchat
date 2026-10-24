@@ -127,6 +127,31 @@ class QuotaRepository:
 
         return True, ""
 
+    async def charge(
+        self, account_id: str, content_type: str, amount: int
+    ) -> tuple[bool, str]:
+        """按实际用量记账，允许超过上限。
+
+        用于 LLM 调用后的结算：预检可能低估真实消耗，若这里继续用 deduct 的
+        `used + amount <= limit` 条件，超额请求会扣费失败且 used 不增长，
+        用户随后每一轮都能通过预检并获得免费额度。记账成功后 used 允许大于
+        limit，下一次预检会自然拒绝。
+        """
+        if amount <= 0:
+            return True, ""
+        quota_field = f"{content_type}_quota"
+        now = datetime.now(timezone.utc)
+        result = await self._collection().update_one(
+            {"account_id": account_id},
+            {
+                "$inc": {f"{quota_field}.used": amount},
+                "$set": {"updated_at": now},
+            },
+        )
+        if result.matched_count == 0:
+            return False, "额度记录不存在"
+        return True, ""
+
     async def refund(
         self, account_id: str, content_type: str, amount: int
     ) -> bool:

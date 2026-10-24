@@ -186,6 +186,43 @@ class TestSchedulerHelpers:
 class TestSendDispatch:
     """平台分发。"""
 
+    class _StrictQQClient:
+        """签名与真实 QQ 适配器一致：传错关键字会直接 TypeError。"""
+
+        async def send_proactive(
+            self,
+            user_id: str,
+            content: str,
+            is_group: bool = False,
+            group_id: str = "",
+        ) -> bool:
+            assert user_id and content
+            return True
+
+    class _StrictWeChatClient:
+        async def send_proactive(self, user_id: str, content: str) -> bool:
+            assert user_id and content
+            return True
+
+    def test_send_uses_adapter_user_id_keyword(self) -> None:
+        """回归：调度器必须用 user_id，而不是历史误用的 identity_id。"""
+
+        async def body():
+            sched = ProactiveScheduler()
+            sched._qq_manager = SimpleNamespace(
+                get_client=lambda bid: self._StrictQQClient()
+            )
+            assert await sched._send_message("qq", "b-1", "u-1", "hi") is True
+            assert await sched._send_message(
+                "qq", "b-1", "group-1::member-1", "hi"
+            ) is True
+            sched._wechat_manager = SimpleNamespace(
+                get_client=lambda bid: self._StrictWeChatClient()
+            )
+            assert await sched._send_message("wechat", "b-1", "u-1", "hi") is True
+
+        _run(body())
+
     def test_send_message_qq(self) -> None:
         async def body():
             sched = ProactiveScheduler()
@@ -578,9 +615,13 @@ class TestScanAndSend:
             try:
                 svc = SimpleNamespace(id="svc-1")
                 sched._service_repo.list_all_active = AsyncMock(return_value=[svc])
+                sched._proactive_repo.mark_stale_pending_failed = AsyncMock(
+                    return_value=0
+                )
                 sched._process_service = AsyncMock()
                 await sched._scan_and_send()
                 sched._process_service.assert_awaited()
+                sched._proactive_repo.mark_stale_pending_failed.assert_awaited_once()
 
                 # 无活跃服务
                 sched._service_repo.list_all_active = AsyncMock(return_value=[])

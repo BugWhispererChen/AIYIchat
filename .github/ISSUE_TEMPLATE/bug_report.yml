@@ -45,9 +45,12 @@ body:
     id: logs
     attributes:
       label: 日志片段
-      description: 容器日志中的相关错误（docker compose logs --tail=50 app）
+      description: >-
+        容器日志中的相关错误（docker compose logs --tail=50 app）。
+        公开仓库，贴之前请先抹掉服务器 IP/域名、密钥与用户名等可识别信息。
       render: shell
       placeholder: |
+        （请先脱敏：IP/域名 → example.com，凭据 → ***）
         app-1  | 2026-10-13 10:00:00 [ERROR] app.chat_import.parser: ...
     validations:
       required: false

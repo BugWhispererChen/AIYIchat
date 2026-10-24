@@ -740,6 +740,55 @@ class TestChatStreamPayloadCleaning:
 
         asyncio.run(flow())
 
+    def test_sse_frames_carry_gate_events_in_order(self) -> None:
+        """开闸门后引擎 yield StreamEvent：控制帧必须原样、按序到达浏览器。
+
+        分帧只发生在网关，引擎单测看不到；`test_stream_frames.py` 验的是 `stream_frames`
+        的纯函数输出与前端 JS 契约，两者都碰不到 HTTP 响应里真实的帧序列。这里补的正是
+        从路由出口到 `data:` 帧这一段——空气泡该没有帧、换行该被转义成字面 ``\\n``。
+        """
+        import app.conversation.engine as engine_module
+        from app.conversation.stream_gate import StreamEvent
+
+        class _GatedEngine:
+            def __init__(self, bot_id: str = "") -> None:
+                self.bot_id = bot_id
+
+            async def handle_message_stream(self, **kwargs: Any) -> AsyncIterator[Any]:
+                yield StreamEvent(kind="reset")
+                yield StreamEvent(kind="msg", text="第一句")
+                yield StreamEvent(kind="msg", text="")
+                yield StreamEvent(kind="msg", text="第二句\n带换行")
+
+        async def flow() -> None:
+            app = await _setup_app("t_stream_gate_events")
+            original = engine_module.ConversationEngine
+            engine_module.ConversationEngine = _GatedEngine  # type: ignore[misc]
+            try:
+                async with _client(app) as client:
+                    await _register(client, "gated")
+                    await _approve("gated")
+                    token = await _login(client, "gated")
+                    resp = await client.post(
+                        "/api/conversations/chat/stream",
+                        json={"text": "再说一次"},
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    assert resp.status_code == 200, resp.text
+                    payloads = [
+                        line.removeprefix("data: ")
+                        for line in resp.text.splitlines()
+                        if line.startswith("data:")
+                    ]
+                    assert payloads == [
+                        "[RESET]", "[MSG]", "第一句", "[MSG]", "第二句\\n带换行", "[DONE]",
+                    ], payloads
+            finally:
+                engine_module.ConversationEngine = original  # type: ignore[misc]
+                mongo._db = None
+
+        asyncio.run(flow())
+
     def test_error_frame_keeps_internals_out(self) -> None:
         """生成中断时只给稳定话术：异常原文可能带连接串、主机与集合名。"""
         import app.conversation.engine as engine_module

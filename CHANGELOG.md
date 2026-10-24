@@ -5,6 +5,13 @@
 ## [Unreleased]
 
 ### 新增
+- **SSE 网关的闸门路径端到端用例** `tools/test/test_api_auth.py::TestChatStreamPayloadCleaning::test_sse_frames_carry_gate_events_in_order`：
+  引擎开闸门后 yield 的是 `StreamEvent`，而 `[MSG]`/`[RESET]` 控制帧只在网关生成分帧——
+  此前的覆盖是"引擎单测看得到事件、`test_stream_frames.py` 看得到分帧函数，但两者之间没人验"。
+  新用例从真实 HTTP 响应里按序列出 `data:` 载荷，钉住 `[RESET] → [MSG] → 正文 → [MSG] → 正文 → [DONE]`，
+  并确认空气泡不产生帧、正文换行按协议转义成字面 `\n`。
+- **issue 模板加了日志脱敏提示**：`bug_report.yml` 的「日志片段」一项原本只教怎么取日志，
+  而这是公开仓库；现补一句"贴之前先抹掉服务器 IP/域名、密钥与用户名"，placeholder 首行同样提醒。
 - **C 端归属校验静态护栏 `tools/test/test_cend_ownership_guards.py`**：凡是收资源 ID
   （`bot_id`/`service_id`/`session_id`/`conversation_id` 等）的 C 端处理函数，必须能看出
   它做了归属判定——要么在函数体内直接比较（`!= principal...`、`_require_owned*`、

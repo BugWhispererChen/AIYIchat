@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 新增
+- **全仓静态护栏 `tools/test/test_no_dangerous_calls.py`**：提交审查是按 diff 走的，而开源
+  初始提交里带进来、此后再没被改过的代码永远不会出现在 diff 中。把一次性全仓扫描
+  （反序列化、eval/exec、`os.system`/`shell=True`、`yaml.load` 非 SafeLoader、Mongo `$where`、
+  外部词表未 `re.escape` 就拼进正则）钉成 CI 契约，扫描结论不会随时间失效。
+  本轮扫描结果：这些形态当前一个都没有；词表类正则以 `re.escape` 或模块内常量表实现。
+
 ### 安全
 - **CI 供应链**：`actions/checkout`、`actions/setup-python` 从 tag 引用改为固定 commit SHA，
   并显式声明 `permissions: contents: read`。tag 可被重新指向，上游一旦失陷或被强推，

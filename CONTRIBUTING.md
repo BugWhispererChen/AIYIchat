@@ -55,7 +55,17 @@ cd aiyichat
 
 # 3. 敏感信息终检（提交前必须执行）
 git grep -n -I --cached -E "sk-[A-Za-z0-9]{16,}|LTAI[A-Za-z0-9]{8,}|password.*[:=].*['\"][^'\"]{6,}|\.env$|\.db$|private_key"
+
+# 4. 依赖漏洞审计（出 Windows/Linux 部署包前必做）
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt   # pip-audit 已在清单里声明
+.venv/Scripts/python.exe -m pip_audit -r requirements.txt          # 声明依赖（按最新版解析）
+.venv/Scripts/python.exe -m pip_audit --path .venv/Lib/site-packages  # 实装版本 = 打包真正带进去的东西
 ```
+
+> `--path` 那条**不能只看结论**：目录写错时它同样输出 "No known vulnerabilities found"。
+> 先确认它看到了包：`(Get-ChildItem .venv/Lib/site-packages -Directory -Filter *.dist-info).Count`。
+> 两条命令的口径不同：镜像按未上界的 requirements 现装（通常干净），
+> 而 Windows 安装包用的是本机 venv 的实装版本——旧版本只会在第二条里暴露。
 
 ## Commit Message 规范
 

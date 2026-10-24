@@ -184,6 +184,9 @@ class ResponseProcessor:
             if desc.strip()
         ]
 
+_MAX_DISPLAY_HOLD = 200
+
+
 class DisplayStreamCleaner:
     """把增量文本切成"可以安全下发的前缀"，避免半截标签先显示出来。
 
@@ -202,6 +205,11 @@ class DisplayStreamCleaner:
     def push(self, delta: str) -> list[str]:
         self._pending += delta
         cut = self._safe_boundary(self._pending)
+        # 扣住量必须有上限：模型如果吐出一个永远不闭合的 `[`，无上限就等于整条回复
+        # 都不下发（屏幕空白），比原先"标签露出来"更糟。超过上限就照常下发，
+        # 最坏情况退化成改动前的表现。200 足够容纳一条完整的 [IMG:…] 描述。
+        if len(self._pending) - cut > _MAX_DISPLAY_HOLD:
+            cut = len(self._pending) - _MAX_DISPLAY_HOLD
         if cut <= 0:
             return []
         emit = self._pending[:cut]

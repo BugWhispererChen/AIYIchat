@@ -225,3 +225,23 @@ def test_duplicate_key_in_create_falls_back_to_existing_conversation() -> None:
 
     asyncio.run(case())
 
+def test_unclosed_bracket_cannot_stall_the_stream() -> None:
+    """模型吐出永不闭合的 `[` 时，屏幕不能整条空白：扣住量有上限。"""
+    from app.conversation.response_processor import (
+        _MAX_DISPLAY_HOLD,
+        DisplayStreamCleaner,
+        ResponseProcessor,
+    )
+
+    cleaner = DisplayStreamCleaner(ResponseProcessor())
+    emitted: list[str] = []
+    # 一个开括号后面跟超长正文，全程没有任何闭括号
+    payload = "[没有闭合" + "字" * (_MAX_DISPLAY_HOLD * 3)
+    for char in payload:
+        emitted += cleaner.push(char)
+    joined = "".join(emitted)
+    assert len(joined) > _MAX_DISPLAY_HOLD, (
+        f"扣住量失控：只下发了 {len(joined)} 字"
+    )
+    assert len("".join(cleaner.flush())) <= _MAX_DISPLAY_HOLD
+

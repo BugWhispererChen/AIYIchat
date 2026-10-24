@@ -2698,15 +2698,15 @@ class ConversationEngine:
             from app.services.imagegen_service import ImageGenService
 
             imagegen = ImageGenService()
-            for task in image_tasks:
+            for image_task in image_tasks:
                 if not await self._deduct_image_quota(
-                    service.account_id, task.prompt
+                    service.account_id, image_task.prompt
                 ):
                     break
                 charged = True
                 try:
                     img_bytes = await asyncio.wait_for(
-                        imagegen.generate_for_task(task), timeout=120
+                        imagegen.generate_for_task(image_task), timeout=120
                     )
                     from app.db.repositories.message_repo import MessageRepository
                     from app.services.media_storage import save_image_from_bytes
@@ -2743,12 +2743,12 @@ class ConversationEngine:
         except Exception as e:
             logger.warning("流式表情包任务组装失败: %s", e)
             return
-        for task in sticker_tasks:
+        for sticker_task in sticker_tasks:
             try:
                 from app.db.repositories.media_repo import MediaRepository
                 from app.db.repositories.message_repo import MessageRepository
 
-                media_id = task.media_url.rsplit("/", 1)[-1]
+                media_id = sticker_task.media_url.rsplit("/", 1)[-1]
                 media_doc = await MediaRepository().find_by_id(media_id)
                 if not media_doc or not media_doc.get("data"):
                     logger.warning(
@@ -2760,12 +2760,12 @@ class ConversationEngine:
                     role="assistant",
                     content="(发送了一个表情包)",
                     content_type="image",
-                    media_url=task.media_url,
+                    media_url=sticker_task.media_url,
                 )
                 yield StreamEvent(
                     kind="media",
                     media_kind="sticker",
-                    media_url=task.media_url,
+                    media_url=sticker_task.media_url,
                 )
             except asyncio.CancelledError:
                 raise

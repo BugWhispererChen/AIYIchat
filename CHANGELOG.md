@@ -49,6 +49,13 @@
   合成或发送失败退还；图片生成开关关闭时不再先扣额度。
 - **隐私留存**：角色克隆导入的原始聊天记录 JSON 解析后立即删除（成功与失败路径都删），
   并顺带清扫 30 分钟以上的历史残留文件。
+- **配置键静默失效**：`chat_presence_penalty`、`summary_max_length`、`topic_history_max`、
+  `topic_stall_*`、六个 `memory_*` 阈值、`proactive_llm_temperature`、`sticker_max_dimension`
+  在运行配置与重载白名单里都有，却没登记进 `AppSettingsDocument`——pydantic 读回即丢弃，
+  这些键只能改 `.env` 重启，写进库也不生效（与 `web_max_*` 同类）。补进文档的同时把
+  DB → 运行时的加载改走新的 `to_stored_dict`（只下发库里真实存在的键）：否则新登记的键会
+  用代码默认值悄悄覆盖老实例 `.env` 里已配好的值。`.env.example` 一并补上这 14 个键与注释。
+  测试服实测：库里原本就存着 `memory_inject_limit=12` 却一直在跑默认 10，修复后按 12 生效。
 - **单条消息删除**：后台删单条消息只删消息行、不回收它引用的图片媒体，也不校验
   `msg_id` 是否属于 URL 里的会话（可跨会话删任意一条）。现在先做归属校验，
   查不到或不归属一律 404，删除时一并回收媒体。

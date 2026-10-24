@@ -13,7 +13,11 @@ from starlette.responses import Response
 from app.admin.auth import require_admin
 from app.admin.routes.common import _account_repo, _profile_repo, _render
 from app.chat_import.analyzer import create_task, get_task, run_analysis, save_task
-from app.chat_import.parser import parse_json_file, save_uploaded_file
+from app.chat_import.parser import (
+    delete_uploaded_file,
+    parse_json_file,
+    save_uploaded_file,
+)
 from app.models.profile import (
     ProfileDialogueStrategy,
     ProfilePersona,
@@ -90,10 +94,13 @@ async def chat_import_upload(
     try:
         messages, parse_result = parse_json_file(file_path)
     except ValueError as e:
+        delete_uploaded_file(file_path)
         return _render(request, "chat_import.html", {
             "active_page": "profiles",
             "error": str(e),
         })
+    # 分析只用内存里的 messages，原文件当场删除：完整聊天原文不该长期留在盘上
+    delete_uploaded_file(file_path)
 
     # 创建分析任务（落库持久化，重启后仍可查进度）
     task = await create_task(task_id, str(file_path))

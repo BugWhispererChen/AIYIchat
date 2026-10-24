@@ -90,17 +90,18 @@ async def collect(db) -> dict[str, list[str]]:
         if doc.get("bot_id") not in bot_ids:
             orphans["wechat_context_tokens"].append(str(doc["_id"]))
 
-    # 媒体：未被任何现存引用指向的二进制（体积大头，最后删）
+    # 媒体：未被任何现存引用指向的二进制（体积大头，最后删）。
+    # 判定要同时看 _id 与 public_id：迁移后 URL 只写 public_id，
+    # 只按 ObjectId 反查会把"仍被引用、只是不再用 ObjectId 引用"的媒体全部误判为孤儿。
     referenced = await _referenced_media_ids(db)
-    media_ids = {
-        str(doc["public_id"])
-        async for doc in db.media.find({"public_id": {"$exists": True}}, {"public_id": 1})
-    }
-    legacy_ids = {
-        str(doc["_id"]) async for doc in db.media.find({}, {"_id": 1})
-    }
-    all_ids = media_ids | legacy_ids
-    orphans["media"] = sorted(all_ids - referenced)
+    orphan_media: list[str] = []
+    async for doc in db.media.find({}, {"_id": 1, "public_id": 1}):
+        ids = {str(doc["_id"])}
+        if doc.get("public_id"):
+            ids.add(str(doc["public_id"]))
+        if not (ids & referenced):
+            orphan_media.append(str(doc.get("public_id") or doc["_id"]))
+    orphans["media"] = sorted(orphan_media)
     return orphans
 
 

@@ -6,6 +6,7 @@
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,8 +30,12 @@ def _import_tz() -> timezone:
 
 
 def ensure_storage_dir() -> None:
-    """确保落盘存储目录存在。"""
+    """确保落盘目录存在，并顺手清掉历史残留的导入文件。
+
+    正常路径在解析完就删原文件；这里兜的是"进程在删除前崩溃"与旧版本留下的文件。
+    """
     CHAT_IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    sweep_leftover_files()
 
 
 def save_uploaded_file(file_content: bytes, task_id: str) -> Path:
@@ -48,6 +53,39 @@ def save_uploaded_file(file_content: bytes, task_id: str) -> Path:
     file_path.write_bytes(file_content)
     logger.info("聊天记录文件已保存: %s (%d bytes)", file_path, len(file_content))
     return file_path
+
+
+def delete_uploaded_file(file_path: Path) -> None:
+    """解析结束后立即删除落盘的原始聊天记录。
+
+    分析只需要内存里的 messages 列表；原文件留在盘上（Windows 安装包不会像容器那样
+    随重建消失）等于长期保存对方与角色的完整聊天原文。
+    """
+    try:
+        Path(file_path).unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("聊天记录临时文件删除失败: %s", e)
+
+
+def sweep_leftover_files(max_age_minutes: int = 30) -> int:
+    """清理落盘目录里残留的导入文件（进程在解析前后崩溃时会留下）。
+
+    只删超过 `max_age_minutes` 的：并发导入正在进行时不能误删别人刚写的文件。
+    """
+    if not CHAT_IMPORTS_DIR.exists():
+        return 0
+    cutoff = time.time() - max(1, max_age_minutes) * 60
+    removed = 0
+    for path in CHAT_IMPORTS_DIR.glob("*.json"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("已清理残留的聊天记录导入文件 %d 个", removed)
+    return removed
 
 
 def parse_json_file(file_path: Path) -> tuple[list[ChatMessage], ParseResult]:

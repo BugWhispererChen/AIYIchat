@@ -147,3 +147,51 @@ class TestSplitIntoChunks:
         chunks = analyzer._split_into_chunks(self._messages(3), "张三")
         assert len(chunks) == 1
         assert "消息0" in chunks[0]
+
+class TestUploadedFileLifecycle:
+    """上传的原始聊天记录解析完就该消失：盘上不该长期留完整聊天原文。"""
+
+    def test_delete_uploaded_file_is_idempotent(self, tmp_path) -> None:
+        from app.chat_import import parser as parser_module
+
+        target = tmp_path / "abc123.json"
+        target.write_text("{}", encoding="utf-8")
+        parser_module.delete_uploaded_file(target)
+        assert not target.exists()
+        # 已不存在时不报错（重复调用、并发删除都要能吞掉）
+        parser_module.delete_uploaded_file(target)
+
+    def test_sweep_removes_only_stale_files(self, tmp_path, monkeypatch) -> None:
+        import os
+        import time as time_mod
+
+        from app.chat_import import parser as parser_module
+
+        monkeypatch.setattr(parser_module, "CHAT_IMPORTS_DIR", tmp_path)
+        fresh = tmp_path / "fresh.json"
+        fresh.write_text("{}", encoding="utf-8")
+        stale = tmp_path / "stale.json"
+        stale.write_text("{}", encoding="utf-8")
+        old = time_mod.time() - 3600
+        os.utime(stale, (old, old))
+
+        assert parser_module.sweep_leftover_files(max_age_minutes=30) == 1
+        assert fresh.exists()
+        assert not stale.exists()
+
+    def test_save_uploaded_file_sweeps_stale(self, tmp_path, monkeypatch) -> None:
+        """落盘入口顺带清扫历史残留，不需要额外的启动钩子。"""
+        import os
+        import time as time_mod
+
+        from app.chat_import import parser as parser_module
+
+        monkeypatch.setattr(parser_module, "CHAT_IMPORTS_DIR", tmp_path)
+        stale = tmp_path / "stale.json"
+        stale.write_text("{}", encoding="utf-8")
+        old = time_mod.time() - 7200
+        os.utime(stale, (old, old))
+
+        saved = parser_module.save_uploaded_file(b"[]", "task-1")
+        assert saved.exists()
+        assert not stale.exists()

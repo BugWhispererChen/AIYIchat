@@ -4,6 +4,46 @@
 
 ## [Unreleased]
 
+### 安全
+- **管理后台默认口令 fail-closed**：`ADMIN_PASSWORD` 为空或仍是随源码公开的模板值时，
+  登录页提示「后台登录已停用」、提交返回 503，`require_admin` 同口径拒绝；改密禁止改回
+  默认值、PBKDF2 计算移出事件循环、改密后作废全部后台会话（旧令牌不该比新口令活得更久）。
+  启动时若库里仍是默认值而 `.env` 已配强口令，用 `.env` 覆盖并落哈希，避免 fail-closed
+  变成永久锁门。一键部署脚本改口为 `ADMIN_PASSWORD`（原来提示的 `MONGO_ROOT_PASSWORD`
+  这个键并不存在）并拦下默认值；Windows 安装包不再把固定口令写进 `.env.default`。
+- **凭据日志脱敏**：微信扫码/二维码/图片/文件四处整包响应打印改走 `brief_json`
+  （成功响应里带着 `bot_token`），QQ 上传失败响应同修；媒体能力令牌 `public_id` 在日志与
+  标准输出改打掩码值。凭据日志 AST 护栏新增「整包响应变量」规则并补命中/豁免用例。
+- **健康检查与文档暴露**：`/api/health` 匿名只返回总状态与各分项状态，延迟、磁盘余量、
+  任务槽位与异常原文需有效后台会话；`APP_ENV=production` 时不再注册 `/docs`、`/redoc`
+  与 `/openapi.json`。
+- **网页加固**：全站补 X-Frame-Options / X-Content-Type-Options / Referrer-Policy / HSTS 与
+  三条 CSP 指令；后台二维码区域把上游接口 `message` 拼进 `innerHTML` 改为按纯文本渲染；
+  新增 `/web/terms` 与 `/web/privacy` 正文页（注册页此前要求同意两份读不到的文件）；
+  新增 `.dockerignore`，避免 build context 把 `.venv`/`.env`/`certs` 打进镜像。
+- **限流补齐**：`/api/auth/captcha` 此前完全不限流（每次都要生成图片并在内存挂答案），
+  现按单 IP 10 分钟 30 次限流；`messages?limit` clamp 到 1..200，流式请求体文本上限 4000。
+
+### 修复
+- **媒体迁移链路打通**：定妆照 seed 不再把迁移好的 `public_id` URL 倒回 ObjectId
+  （seed 每次启动都跑，倒回后普通访问者又看不到定妆照）；`backfill_media_public_id`
+  改为可续跑并随 Docker 镜像与部署包分发；测试服已备份后执行，302 条媒体补 ID、
+  278 处引用改写、复核 0 残留。
+- **级联删除补齐**：消息与注入快照按「字符串 + ObjectId」两种历史形态匹配（存量
+  603 条字符串 + 89 条 ObjectId，只按字符串匹配就看不见也删不掉）；新增
+  `ConversationRepository.delete_cascade_by_ids`（消息 + 快照 + 媒体 + 对话），后台删对话、
+  删服务与身份级联都走它；`IdentityRepository.delete_cascade` 一并清网页凭据/会话/主动记录；
+  清记忆同时删注入快照；账号注销补删微信上下文 token 与私有角色定妆照媒体；
+  `_ensure_indexes` 补齐热点查询与级联扫描缺的索引。
+- **无效 ObjectId 不再炸 500**：仓库层统一转成「查无此记录」，
+  `GET /api/conversations/missing/messages` 由 500 变 404。
+- **额度口径**：语音额度按条扣（原来按字符扣，与后台「剩余 N 次」的展示对不上）、
+  合成或发送失败退还；图片生成开关关闭时不再先扣额度。
+- **隐私留存**：角色克隆导入的原始聊天记录 JSON 解析后立即删除（成功与失败路径都删），
+  并顺带清扫 30 分钟以上的历史残留文件。
+- **并发**：`find_or_create` 的「先查再插」按 (identity, profile, service) 加锁 + 双检，
+  避免同一会话并发首轮建出两条活跃会话（多实例部署仍需改成部分唯一索引 + upsert）。
+
 ### 新增
 - **评测尺子补 `temporal_consistency`（作息的第一把尺子）**：角色作息 `life_routine` 上线时只有
   单测、虚拟时钟重放和容器内取证，缺"开关对照意义上的数字"。`tools/eval/run_eval.py` 现在按用例

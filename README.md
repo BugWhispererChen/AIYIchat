@@ -181,7 +181,9 @@ cd aiyichat
 
 # 1. 准备配置
 cp .env.example .env
-# 编辑 .env：填入百炼 API Key（文本 + 多媒体共用）与管理后台密码
+# 编辑 .env：填入百炼 API Key（文本 + 多媒体共用）与管理后台密码 ADMIN_PASSWORD
+# ADMIN_PASSWORD 留空或仍是模板占位值（your-admin-password / admin123）时，
+# 后台登录会直接返回 503 提示配置——这两个值随源码公开，照抄等于把后台白送
 
 # 2. 构建并启动
 docker compose up -d --build

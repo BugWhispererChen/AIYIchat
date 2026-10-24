@@ -53,3 +53,8 @@ private_key*.enc
 *.db
 # 构建日志（含本地绝对路径）
 *.log
+# 运行时产物与本地凭据（防"哪天手滑 commit"）
+/.env
+/.env.*
+!/.env.example
+aiyichat/data/entity_graph/

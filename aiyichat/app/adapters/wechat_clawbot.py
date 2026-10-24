@@ -583,7 +583,7 @@ class WeChatClient(ChannelAdapter):
             conv_id = ""
 
         # 6. 回复分发（result 非 None 才允许语音回复，引擎异常时降级为文字）
-        # 语音触发：身份发语音直接触发；或动态窗口内（身份发过语音后的随机
+        # 语音触发：对方发语音直接触发；或动态窗口内（对方发过语音后的随机
         # 固定窗口期）文字消息也以语音回复，窗口按会话独立且不续期
         user_sent_voice = (content_type == "voice")
         in_voice_window = (
@@ -598,7 +598,7 @@ class WeChatClient(ChannelAdapter):
             and (user_sent_voice or in_voice_window)
         )
         if is_voice_reply and user_sent_voice:
-            # 仅身份发语音触发时开启窗口（固定窗口，窗口内不续期）
+            # 仅对方发语音触发时开启窗口（固定窗口，窗口内不续期）
             voice_window.touch(
                 conv_id,
                 settings.voice_window_min_minutes,

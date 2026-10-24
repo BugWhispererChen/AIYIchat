@@ -401,7 +401,7 @@ class TestMessageTimeAwareness:
     # ── 清单 4：长期中断 20 天 ───────────────────────
 
     def test_long_idle_twenty_days(self):
-        """上一条身份消息在 20 天前 → idle 表达为“20 天”。"""
+        """上一条对方消息在 20 天前 → idle 表达为“20 天”。"""
         history = [
             self._msg("m1", "user", "好久不见", self.NOW_UTC - timedelta(days=20)),
         ]
@@ -451,10 +451,10 @@ class TestMessageTimeAwareness:
         assert first.index("【时间基准】") < first.index("【角色设定】")
         assert "8月26日" not in first
 
-    # ── 清单 7：idle 只认身份消息（主动关怀不重置空闲计时）──────
+    # ── 清单 7：idle 只认对方消息（主动关怀不重置空闲计时）──────
 
     def test_idle_only_counts_identity_messages(self):
-        """历史末尾是 AI 主动关怀消息 → idle 仍按更早的身份消息计算。"""
+        """历史末尾是 AI 主动关怀消息 → idle 仍按更早的对方消息计算。"""
         history = [
             self._msg("m1", "user", "在吗", self.NOW_UTC - timedelta(hours=2)),
             self._msg("m2", "assistant", "在的", self.NOW_UTC - timedelta(hours=1)),

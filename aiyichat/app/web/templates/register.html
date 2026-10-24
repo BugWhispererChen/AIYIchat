@@ -15,9 +15,9 @@
         <section class="auth-aside">
             <span class="kicker">AIYIchat · 注册</span>
             <h1 class="auth-wordmark">注册新账号</h1>
-            <p class="auth-lede">爱易聊 · AI 角色陪伴。一个身份对应一份记忆与额度。</p>
+            <p class="auth-lede">爱易聊 · AI 角色陪伴。一个账号一份额度，记忆按聊天服务归属。</p>
             <ul class="auth-points">
-                <li>{{ icon('users') }}<span>身份与账号相互独立</span></li>
+                <li>{{ icon('users') }}<span>一个账号可关联 QQ / 微信 / 网页渠道身份</span></li>
                 <li>{{ icon('shield') }}<span>内容安全与未成年人保护</span></li>
                 <li>{{ icon('clock') }}<span>额度有有效期，可在账号中心查看</span></li>
             </ul>
@@ -29,7 +29,7 @@
                 {{ icon('moon', 'icon-moon') }}
             </button>
 
-            <h1>创建网页身份</h1>
+            <h1>创建网页账号</h1>
 
             {% if not register_enabled %}
             <div class="alert alert-warning">管理员尚未开放自助注册，可先留意页面提示或联系站点运营者。</div>
@@ -81,7 +81,7 @@
                 <div class="consent-group">
                     <label class="consent-item">
                         <input type="checkbox" id="terms-accepted" name="terms_accepted" required>
-                        <span>我已阅读并同意<a href="/web/terms" target="_blank" rel="noopener">《身份协议》</a></span>
+                        <span>我已阅读并同意<a href="/web/terms" target="_blank" rel="noopener">《用户协议》</a></span>
                     </label>
                     <label class="consent-item">
                         <input type="checkbox" id="privacy-accepted" name="privacy_accepted" required>
@@ -100,7 +100,7 @@
                 <div class="ui-alert"><span>
                     <strong>备案与责任声明：</strong>网页注册与对话能力由本站部署者自行开启并运营，
                     部署者须依法完成 ICP 备案及生成式人工智能相关备案、安全评估（如适用），
-                    并对本站的内容合规、身份个人信息保护与未成年人保护措施承担全部责任。
+                    并对本站的内容合规、用户个人信息保护与未成年人保护措施承担全部责任。
                 </span></div>
 
                 <button type="submit" class="btn-submit" id="submit-btn">注册</button>

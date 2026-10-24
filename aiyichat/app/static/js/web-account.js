@@ -276,7 +276,7 @@
             '扮演 ' + svc.profile_name +
             ' · 对话 ' + num(svc.conversation_count) + ' 条 / 消息 ' + num(svc.message_count) + ' 条' +
             ' · 记忆 ' + num(svc.memory_facts) + ' 条' +
-            (svc.shared ? ' · 与其他身份共享上下文' : '')));
+            (svc.shared ? ' · 与其他渠道身份共享上下文' : '')));
         row.appendChild(grow);
 
         if (memory && (memory.facts || []).length) {

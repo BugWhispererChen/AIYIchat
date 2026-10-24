@@ -383,7 +383,7 @@ class ConversationEngine:
             )
 
         # 3. 确定当前角色 Profile（校验可见性）
-        # 归属基准取服务所属账号而非 Bot 所属账号：C 端网页身份各自独立账号、
+        # 归属基准取服务所属账号而非 Bot 所属账号：C 端每个网页账号各自对应独立账号、
         # 共用同一系统 Bot，按 bot.account_id 判定会让对方自建私有角色永远不可见。
         profile = await self._resolve_profile(
             service.profile_id, service.account_id
@@ -820,7 +820,7 @@ class ConversationEngine:
         逐 token 产出；为独立实现，不影响 QQ/微信整段回复主链路。
         流式产出原始增量；完成后持久化清洗后的文本并触发异步记忆任务。
 
-        `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页身份可对多个角色
+        `service_id` 用于同一 Bot 下存在多个服务的场景（C 端网页账号可对多个角色
         各建一个服务）：显式指定时按 ID 定位并校验归属，缺省则沿用 (对方, Bot) 查找。
         `identity_id` 用于跨渠道续聊：网页选中 QQ/微信服务时，调用方已完成账号级
         归属校验，这里改用服务自己的身份，从而命中该身份既有的会话与记忆。

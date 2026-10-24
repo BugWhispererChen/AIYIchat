@@ -35,7 +35,7 @@
 
     function toLogin() { window.WebAuth.toLogin(); }
 
-    /* 气泡一律走 textContent：模型输出与身份输入都不能被当作 HTML 解析 */
+    /* 气泡一律走 textContent：模型输出与对方输入都不能被当作 HTML 解析 */
     function dropEmpty() {
         var hint = document.getElementById('transcript-empty');
         if (hint) hint.remove();
@@ -201,7 +201,7 @@
         return data;
     }
 
-    /* 服务（对话服务）列表：只有一个时锁死选择器，多个时供身份切换角色 */
+    /* 服务（对话服务）列表：只有一个时锁死选择器，多个时供账号切换角色 */
     async function loadServices() {
         var result = await window.WebAuth.call('/api/web/services');
         if (!result.ok) {

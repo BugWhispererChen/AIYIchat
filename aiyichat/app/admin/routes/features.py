@@ -65,7 +65,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         key="time_idle_hint_enabled",
         label="对话间隔语义提示",
         desc="告知角色“距对方上一条消息已过去多久”（如 3 天 2 小时），无需模型自己做日期减法；"
-              "仅统计真实身份消息，主动关怀不重置空闲计时。",
+              "仅统计对方真实发送的消息，主动关怀不重置空闲计时。",
         dependency="需先开启「对话时间感知」总开关",
         cost="free",
     ),
@@ -173,7 +173,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         key="sticker_enabled",
         label="表情包发送",
         desc="AI 根据对话语境自主发送表情包（[表情:描述] 标签 + 语义检索），"
-        "理解身份发表的表情包含义，并支持以图回图斗图。",
+        "理解对方发表的表情包含义，并支持以图回图斗图。",
         dependency="需表情库非空（随包预置资源自动入库，可在「表情包管理」页上传补充）；"
         "开启语义检索时匹配更精准",
         cost="free",
@@ -211,7 +211,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="tts_expression_enabled",
         label="语音情感表现力",
-        desc="根据身份情绪与角色心情动态生成语音指令/情感标签/音调修饰，让语音回复更拟人化；"
+        desc="根据对方情绪与角色心情动态生成语音指令/情感标签/音调修饰，让语音回复更拟人化；"
         "关闭后语音无任何表现力修饰。",
         dependency="需先在「AI 模型配置」开启 TTS 语音合成",
         cost="free",
@@ -219,7 +219,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="voice_dynamic_enabled",
         label="语音动态触发窗口",
-        desc="身份发语音触发语音回复后，该会话在随机时长的固定窗口内，"
+        desc="对方发语音触发语音回复后，该会话在随机时长的固定窗口内，"
         "文字消息也以语音回复；窗口到期自动回落为仅语音触发。"
         "窗口时长在下方「语音动态触发参数」中配置。",
         dependency="需先在「AI 模型配置」开启 TTS 语音合成",
@@ -228,9 +228,9 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="web_auth_enabled",
         label="C 端网页登录",
-        desc="开启后网页身份可用「用户名 + 密码」登录，并以会话令牌访问流式对话接口；"
+        desc="开启后网页账号可用「用户名 + 密码」登录，并以会话令牌访问流式对话接口；"
         "关闭时 /api/auth/* 与 /web/* 一律 403，QQ / 微信链路完全不受影响。",
-        dependency="可选：在「网页身份」页指定默认载体渠道（未指定时账号按需自建）",
+        dependency="可选：在「网页账号」页指定默认载体渠道（未指定时账号按需自建）",
         cost="free",
     ),
     FeatureToggle(
@@ -244,7 +244,7 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
     FeatureToggle(
         key="web_register_require_review",
         label="注册需人工审核",
-        desc="新身份注册后处于待审核状态，管理员在「网页身份」页通过后方可登录；"
+        desc="新账号注册后处于待审核状态，管理员在「网页账号」页通过后方可登录；"
         "被拒绝的用户名 24 小时内不可重新注册。",
         dependency="需先开启「C 端自助注册」",
         cost="free",

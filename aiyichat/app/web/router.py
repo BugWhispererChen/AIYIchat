@@ -84,7 +84,7 @@ _DISABLED_HTML = """<!DOCTYPE html>
     <div class="notice-card">
         <p class="wordmark">爱易聊</p>
         <hr>
-        <h2>网页身份功能未开放</h2>
+        <h2>网页账号功能未开放</h2>
         <p>本实例未开启网页注册与登录，请通过 QQ / 微信机器人与 AI 角色对话。</p>
     </div>
 </body>
@@ -103,7 +103,7 @@ def _disabled_page() -> Response:
     return HTMLResponse(content=_DISABLED_HTML, status_code=status.HTTP_403_FORBIDDEN)
 
 
-# 《身份协议》《隐私政策》正文：注册页的勾选框必须有可读的落点，
+# 《用户协议》《隐私政策》正文：注册页的勾选框必须有可读的落点，
 # 否则"要求同意一份读不到的文件"在合规上等于没取得同意。
 # 版本号复用凭据模型里的常量，保证"同意的版本"与"落库记录的版本"是同一个值。
 _LEGAL_SECTIONS_TERMS = [
@@ -118,7 +118,7 @@ _LEGAL_SECTIONS_TERMS = [
         "bullets": [
             "你注册的账号名与昵称仅用于在本实例里识别你的会话与你的角色配置。",
             "不得冒用真实人名人、机构或他人身份注册，也不得使用侵犯第三方权利的昵称。",
-            "一个账号可以创建多个虚拟身份与对话服务，它们同属这一个账号，删除账号会一并清除。",
+            "一个账号可以创建多个渠道身份与对话服务，它们同属这一个账号，删除账号会一并清除。",
         ],
     },
     {
@@ -156,7 +156,7 @@ _LEGAL_SECTIONS_PRIVACY = [
     {
         "heading": "二、存了什么、存在哪",
         "bullets": [
-            "账号与身份：账号标识、身份标识与所属平台、注册与最近活跃时间。",
+            "账号与渠道身份：账号标识、身份标识与所属平台、注册与最近活跃时间。",
             "登录凭据：用户名与经 PBKDF2-HMAC-SHA256 加盐哈希后的口令；不保存明文口令。",
             "对话数据：消息正文、时间标签、你上传或生成的图片与语音文件。",
             "记忆与上下文：长期记忆条目、摘要、注入模型的上下文快照、反思得到的洞见。",
@@ -216,14 +216,14 @@ def _legal_doc(title: str, version: str, sections: list) -> dict:
 
 @web_router.get("/web/terms", response_class=HTMLResponse)
 async def terms_page(request: Request) -> Response:
-    """《身份协议》正文：注册页勾选框指向此处。
+    """《用户协议》正文：注册页勾选框指向此处。
 
     不随 `web_auth_enabled` 关闭：即便暂时不开放注册，已注册用户与监管询问仍需能读到条款。
     """
     return _render(
         request,
         "legal.html",
-        {"doc": _legal_doc("身份协议", TERMS_VERSION, _LEGAL_SECTIONS_TERMS)},
+        {"doc": _legal_doc("用户协议", TERMS_VERSION, _LEGAL_SECTIONS_TERMS)},
     )
 
 

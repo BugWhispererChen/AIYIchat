@@ -40,7 +40,7 @@
         var token = localStorage.getItem(TOKEN_KEY);
         if (token) {
             try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeader() }); }
-            catch (e) { /* 注销失败也要清本地令牌，否则身份会被过期令牌反复打回 */ }
+            catch (e) { /* 注销失败也要清本地令牌，否则账号会被过期令牌反复打回 */ }
         }
         localStorage.removeItem(TOKEN_KEY);
         toLogin();

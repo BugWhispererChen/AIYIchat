@@ -10,7 +10,7 @@ profiles_router = APIRouter()
 _service = ProfileService()
 
 # 本组端点是内部运维/集成用的全量角色接口（可见与可改范围不受账号约束），
-# 因此整体置于管理员鉴权之下；C 端网页身份的自助角色管理走 /api/web/profiles。
+# 因此整体置于管理员鉴权之下；C 端网页账号的自助角色管理走 /api/web/profiles。
 _admin = Depends(require_admin)
 
 

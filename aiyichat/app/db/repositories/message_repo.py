@@ -14,7 +14,7 @@ from app.models.message import MessageInDB
 _BEIJING_OFFSET_HOURS = 8
 
 # 时间相同时以 _id 兜底排序：存量数据中同轮 user/assistant 的 created_at 可能精确相等，
-# ObjectId 按插入顺序单调递增，可保证身份消息排在回复之前
+# ObjectId 按插入顺序单调递增，可保证对方消息排在回复之前
 _ORDER_ASC = [("created_at", 1), ("_id", 1)]
 _ORDER_DESC = [("created_at", -1), ("_id", -1)]
 
@@ -41,7 +41,7 @@ class MessageRepository:
     ) -> MessageInDB:
         """创建新消息。
 
-        created_at 由调用方传入消息真实发生时刻（如身份消息的接收时间），
+        created_at 由调用方传入消息真实发生时刻（如对方消息的接收时间），
         缺省取当前时间；updated_at 始终为写入时间。
         """
         now = datetime.now(timezone.utc)
@@ -254,7 +254,7 @@ class MessageRepository:
         return result
 
     async def emotion_distribution(self, days: int = 7) -> list[dict]:
-        """统计近 N 天身份消息的情绪分布，返回 [{emotion, count}]（降序）。"""
+        """统计近 N 天对方消息的情绪分布，返回 [{emotion, count}]（降序）。"""
         from datetime import timedelta
 
         since = datetime.now(timezone.utc) - timedelta(days=days)

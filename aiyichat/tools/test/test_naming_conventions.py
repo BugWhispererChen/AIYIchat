@@ -1,9 +1,10 @@
-"""命名边界守卫：守住「用户→身份」改名后的两条红线。
+"""命名边界守卫：守住「用户→身份」改名后的三类红线。
 
 一是**外部协议锁死**的 user 必须原样保留（改了会直接断功能，且部分是已入库的存量值）；
-二是**项目自有旧符号**必须改净（漏改会让文档与代码不一致，误导后来者）。
+二是**项目自有旧符号**必须改净（漏改会让文档与代码不一致，误导后来者）；
+三是**前端可见文案**的术语口径必须统一（见 TestVisibleCopyTerminology）。
 
-这两类约束靠人记是记不住的：本次改名中就出现过适配层 `[身份发送了一个表情包]`
+这三类约束靠人记是记不住的：本次改名中就出现过适配层 `[身份发送了一个表情包]`
 与引擎判定 `[对方发送了一个表情包]` 分叉、以及提示词要求 LLM 输出 `relation_to_user`
 而解析端读 `relation_to_identity` 的静默丢数据。本测试把这些面固化下来。
 """
@@ -167,7 +168,7 @@ class TestTemplateConsistency:
         assert not hits, "模板残留改名前的字段名:\n" + "\n".join(hits)
 
     def test_status_badge_uses_semantic_tone_class(self) -> None:
-        """网页身份的状态徽标必须走设计系统的语义档，不得回退到旧命名。
+        """网页账号的状态徽标必须走设计系统的语义档，不得回退到旧命名。
 
         旧断言盯的是 `badge-role-user`：它当年是后台通用蓝色徽标，与"用户"语义无关，
         立此断言是为了防止身份改名那次清理把它误当成术语改掉。
@@ -200,3 +201,65 @@ class TestStickerTranscriptionSingleSource:
         from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX
 
         assert STICKER_TRANSCRIBE_PREFIX.startswith("[")
+
+
+class TestVisibleCopyTerminology:
+    """前端可见文案的术语红线：网页账号 / 对方 / 用户协议。
+
+    2026-10-19 改名后，界面层又把 WebCredential 叫回「网页身份」，并在新文案里
+    写出「身份与账号相互独立」这类与模型矛盾的说法。这组断言把当时的错误措辞
+    固化为禁用词，避免下次改文案时重新漂移。
+    """
+
+    BANNED: list[str] = [
+        "网页身份",
+        "身份协议",
+        "身份个人信息保护",
+        "身份与账号相互独立",
+        "一个身份对应一份记忆与额度",
+        "用户名称",
+        "关心身份",
+        "与身份的关系",
+        "当身份沉默",
+        "身份消息",
+        "身份发语音",
+        "身份发过语音",
+        "身份仅发表情包",
+        "理解身份发表",
+        "真实身份消息",
+        "根据身份情绪",
+        "登录身份",
+        "与其他身份",
+        "其他身份的数据",
+        "身份自建",
+    ]
+
+    @staticmethod
+    def _visible_files() -> list[Path]:
+        return [
+            *APP.rglob("*.py"),
+            *APP.rglob("*.html"),
+            *(APP / "static" / "js").rglob("*.js"),
+        ]
+
+    def test_no_banned_copy(self) -> None:
+        hits: list[str] = []
+        for p in self._visible_files():
+            text = p.read_text(encoding="utf-8")
+            for bad in self.BANNED:
+                if bad in text:
+                    hits.append(f"{p.relative_to(APP)}: {bad}")
+        assert not hits, "前端可见文案仍含旧术语:\n" + "\n".join(hits)
+
+    def test_positive_copy(self) -> None:
+        register = (APP / "web" / "templates" / "register.html").read_text(encoding="utf-8")
+        assert "《用户协议》" in register
+        assert "一个账号一份额度" in register
+        login = (APP / "web" / "templates" / "login.html").read_text(encoding="utf-8")
+        assert "网页账号登录" in login
+        page = (APP / "admin" / "templates" / "web_credentials.html").read_text(encoding="utf-8")
+        assert "网页账号管理" in page
+        detail = (APP / "admin" / "templates" / "account_detail.html").read_text(encoding="utf-8")
+        assert "身份名称" in detail
+        router = (APP / "web" / "router.py").read_text(encoding="utf-8")
+        assert '_legal_doc("用户协议"' in router

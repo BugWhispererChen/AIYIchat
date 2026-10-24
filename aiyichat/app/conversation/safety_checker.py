@@ -116,7 +116,7 @@ class SafetyChecker:
         优先级：危机 > 违禁 > 放行（生命安全优先于内容合规）。
 
         Args:
-            text: 身份消息文本
+            text: 对方消息文本
 
         Returns:
             SafetyVerdict（action=PASS 时 reply 为空）

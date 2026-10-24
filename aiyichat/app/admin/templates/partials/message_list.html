@@ -7,7 +7,7 @@
         <button type="submit" class="msg-delete-btn" title="删除消息">&times;</button>
     </form>
     <div class="ui-cluster">
-        {{ badge('身份' if msg.role == 'user' else 'AI', 'ink' if msg.role == 'user' else 'amber') }}
+        {{ badge('对方' if msg.role == 'user' else 'AI', 'ink' if msg.role == 'user' else 'amber') }}
         {% if msg.emotion_tag %}{{ badge(msg.emotion_tag, 'warn') }}{% endif %}
         {% if msg.content_type and msg.content_type != 'text' %}{{ badge(msg.content_type, 'line') }}{% endif %}
     </div>

@@ -514,7 +514,7 @@ class TestChatStreamAuthorization:
         _with_fake_engine(flow)
 
     def test_credential_derived_from_token(self) -> None:
-        """网页身份不传 platform_id：引擎收到的是令牌本人的身份。"""
+        """网页账号不传 platform_id：引擎收到的是令牌本人的身份。"""
 
         async def flow() -> None:
             app = await _setup_app("t_stream_ok")

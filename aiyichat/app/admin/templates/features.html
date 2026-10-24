@@ -86,7 +86,7 @@
                 <input class="ui-input" type="number" name="sticker_casual_probability" min="0" max="1" step="0.01" value="{{ sticker_casual_probability }}">
             </label>
             <label class="ui-field">
-                <span class="ui-label">以图回图概率（0~1，身份仅发表情包时按此概率回复）</span>
+                <span class="ui-label">以图回图概率（0~1，对方仅发表情包时按此概率回复）</span>
                 <input class="ui-input" type="number" name="sticker_reply_probability" min="0" max="1" step="0.01" value="{{ sticker_reply_probability }}">
             </label>
         </div>
@@ -211,7 +211,7 @@
             </label>
         </div>
         <p class="ui-note">
-            提示：身份发语音触发语音回复后，系统在「最短~最长」之间随机抽取一个固定窗口时长；
+            提示：对方发语音触发语音回复后，系统在「最短~最长」之间随机抽取一个固定窗口时长；
             窗口内文字消息也以语音回复，窗口到期自动回落，且窗口内不续期。
             若最短值大于最长值，保存时会自动交换。
         </p>

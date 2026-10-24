@@ -1,4 +1,4 @@
-"""C 端网页身份账号中心 API：资料、密码、登录设备、额度、数据与隐私、注销。
+"""C 端网页账号账号中心 API：资料、密码、登录设备、额度、数据与隐私、注销。
 
 安全边界：
 - 全部端点走 `require_web_account`，归属（account_id / identity_id / credential_id）
@@ -176,7 +176,7 @@ async def revoke_other_sessions(request: Request) -> JSONResponse:
         )
     except (AuthError, RateLimited) as exc:
         return _error(exc)
-    logger.info("网页身份 %s 主动下线其他会话 %d 个", principal.credential.username, revoked)
+    logger.info("网页账号 %s 主动下线其他会话 %d 个", principal.credential.username, revoked)
     return JSONResponse(status_code=200, content={"revoked": revoked})
 
 
@@ -246,7 +246,7 @@ async def export_data(request: Request) -> Response:
     except RateLimited as exc:
         return _error(exc)
     except Exception:  # noqa: BLE001 - 导出失败不能把半截 JSON 发出去
-        logger.exception("网页身份导出失败: username=%s", principal.credential.username)
+        logger.exception("网页账号导出失败: username=%s", principal.credential.username)
         return _service_unavailable("导出失败，请稍后重试或联系管理员")
     payload["truncated"] = truncated
     filename = f"aiyichat-account-{principal.credential.username}.json"
@@ -276,7 +276,7 @@ async def clear_conversations(request: Request, payload: ConfirmPayload) -> JSON
 
 @web_account_router.post("/data/memories/{service_id}/clear")
 async def clear_memory(request: Request, service_id: str, payload: ConfirmPayload) -> JSONResponse:
-    """清空指定服务的长期记忆；该服务与其他身份共享上下文时拒绝。"""
+    """清空指定服务的长期记忆；该服务与其他渠道身份共享上下文时拒绝。"""
     try:
         principal = await _principal(request)
         _limit("account_data", principal, request, _RATE_DATA)

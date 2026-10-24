@@ -190,7 +190,7 @@ class TestWebPrincipalSkipped:
         self.scheduler = ProactiveScheduler()
 
     def test_web_user_never_receives_proactive_message(self, monkeypatch) -> None:
-        """网页身份由 C 端会话被动应答，主动关怀必须跳过（防止向无真实平台通道的身份发送）。
+        """网页渠道身份由 C 端会话被动应答，主动关怀必须跳过（防止向无真实平台通道的身份发送）。
 
         回归动机：注册身份以 User(platform="web", platform_id=<用户名>) 入库，
         其 platform_id 是小写用户名（非 UUID、非 openid），不会被前置的

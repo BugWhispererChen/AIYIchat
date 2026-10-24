@@ -1,6 +1,6 @@
-"""C 端网页身份凭据的数据库模型。
+"""C 端网页账号凭据的数据库模型。
 
-凭据独立成集合（不放进 `users`）：`user` 对象会被 prompt 组装与记忆提取全量消费，
+凭据独立成集合（不放进 `identities`）：身份对象会被 prompt 组装与记忆提取全量消费，
 密码哈希不应进入 LLM 上下文。
 """
 
@@ -10,12 +10,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 身份状态：pending 待审核 / active 可用 / rejected 审核拒绝 / disabled 管理员封禁
+# 账号状态：pending 待审核 / active 可用 / rejected 审核拒绝 / disabled 管理员封禁
 CredentialStatus = Literal["pending", "active", "rejected", "disabled"]
 
 # 当前合规文本版本：条款或隐私政策改版时递增，注册留痕按版本记录
-TERMS_VERSION = "v1.0"
-PRIVACY_VERSION = "v1.0"
+TERMS_VERSION = "v1.1"
+PRIVACY_VERSION = "v1.1"
 
 
 def normalize_username(username: str) -> str:
@@ -34,12 +34,12 @@ class WebConsent(BaseModel):
     terms_accepted_at: Optional[datetime] = None
     privacy_version: str = PRIVACY_VERSION
     privacy_accepted_at: Optional[datetime] = None
-    age_confirmed: bool = False  # 身份勾选"我已满 14 周岁"
+    age_confirmed: bool = False  # 账号勾选"我已满 14 周岁"
     age_confirmed_at: Optional[datetime] = None
 
 
 class WebCredentialCreate(BaseModel):
-    """创建网页身份。"""
+    """创建网页账号。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     identity_id: str = ""  # 关联 identities.id；注册先占用户名，四件套建齐后回填
@@ -56,7 +56,7 @@ class WebCredentialCreate(BaseModel):
 
 
 class WebCredentialInDB(WebCredentialCreate):
-    """数据库中的网页身份记录。"""
+    """数据库中的网页账号记录。"""
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -65,7 +65,7 @@ class WebCredentialInDB(WebCredentialCreate):
 
     @classmethod
     def from_mongo(cls, doc: dict) -> Self:
-        """从 MongoDB 文档构造网页身份对象。"""
+        """从 MongoDB 文档构造网页账号对象。"""
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])

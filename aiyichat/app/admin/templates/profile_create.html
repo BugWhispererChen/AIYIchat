@@ -24,9 +24,9 @@
                    placeholder="例如：林小满">
         </label>
         <label class="ui-field">
-            <span class="ui-label">角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：身份背景、性格、说话风格、与身份的关系等)</small></span>
+            <span class="ui-label">角色概述 <small class="field-hint">(必填，越详细生成的角色越贴合预期：人设背景、性格、说话风格、与对方的关系等)</small></span>
             <textarea class="ui-textarea" name="description" rows="6" required minlength="10"
-                      placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心身份">{{ description or '' }}</textarea>
+                      placeholder="例如：24岁的咖啡店店长，温柔细腻，说话喜欢带语气词，擅长倾听和安慰人，像邻家姐姐一样关心对方">{{ description or '' }}</textarea>
         </label>
         {% set vb = verbosity | default('standard', true) %}
         <fieldset class="ui-field">

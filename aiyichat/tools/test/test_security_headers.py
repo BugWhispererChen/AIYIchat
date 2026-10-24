@@ -79,7 +79,7 @@ def test_admin_templates_do_not_inject_upstream_text_into_html() -> None:
     assert not hits, "模板把上游文案拼进了 innerHTML：\n" + "\n".join(hits)
 
 def test_legal_pages_render_with_version() -> None:
-    """《身份协议》《隐私政策》必须真能打开，且版本号与凭据里记录的同意版本同源。"""
+    """《用户协议》《隐私政策》必须真能打开，且版本号与凭据里记录的同意版本同源。"""
     from app.models.web_credential import PRIVACY_VERSION, TERMS_VERSION
 
     async def case() -> None:
@@ -87,7 +87,7 @@ def test_legal_pages_render_with_version() -> None:
         try:
             async with _client() as client:
                 for path, title, version in (
-                    ("/web/terms", "身份协议", TERMS_VERSION),
+                    ("/web/terms", "用户协议", TERMS_VERSION),
                     ("/web/privacy", "隐私政策", PRIVACY_VERSION),
                 ):
                     resp = await client.get(path)

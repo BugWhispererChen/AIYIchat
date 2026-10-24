@@ -154,7 +154,7 @@ class _RuntimeSettings:
     default_timezone_offset: int = 8
     # 时间感知子开关（各自独立生效，互不依赖；总开关关闭时全部不注入）
     time_anchor_enabled: bool = True  # 日期锚点：system prompt 开头声明"今天是几号"
-    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条身份消息已过去多久
+    time_idle_hint_enabled: bool = True  # 间隔语义：告知距上一条对方消息已过去多久
     time_day_separator_enabled: bool = True  # 跨天分隔符：自然日变化处插入独立 system 消息
     message_time_tag_year_enabled: bool = True  # 跨年标签带年份（[2025-12-31 23:45]）
     memory_inject_time_suffix: bool = True  # 记忆注入追加"（记录于 N 天前）"后缀
@@ -188,7 +188,7 @@ class _RuntimeSettings:
     tts_config_id: str = "dashscope-default"
     # TTS 表现力：情感指令/情感标签/音调联动（关闭时语音无任何表现力修饰）
     tts_expression_enabled: bool = True
-    # 语音动态触发窗口：身份发语音触发语音回复后，该会话在随机时长的
+    # 语音动态触发窗口：对方发语音触发语音回复后，该会话在随机时长的
     # 固定窗口内文字消息也以语音回复（按会话独立，窗口内不续期）
     voice_dynamic_enabled: bool = True
     voice_window_min_minutes: int = 5
@@ -313,11 +313,11 @@ class _RuntimeSettings:
     sticker_seed_enabled: bool = True  # 启动时自动 seed 随包预置的表情包资源
     sticker_max_per_turn: int = 1  # 每轮回复最多发送的表情包数量
     sticker_similarity_threshold: float = 0.28  # 语义检索相似度门槛（低于视为未命中）
-    sticker_reply_probability: float = 0.5  # 身份仅发表情包时以图回图的概率（0~1）
+    sticker_reply_probability: float = 0.5  # 对方仅发表情包时以图回图的概率（0~1）
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
     sticker_max_dimension: int = 500  # 表情包尺寸阈值（宽或高中较大者，像素）
 
-    # C 端网页身份（自助注册 / 登录 / 会话）
+    # C 端网页账号（自助注册 / 登录 / 会话）
     # 默认值必须与 AppSettingsDocument 中的同名字段一致，详见该类的说明注释
     web_auth_enabled: bool = False  # 网页鉴权总开关（关闭时网页注册/登录/会话接口全部拒绝）
     web_register_enabled: bool = False  # 自助注册开关

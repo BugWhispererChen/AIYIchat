@@ -113,7 +113,7 @@ async def update_profile(
     """更新昵称 / 自我描述 / 时区：只允许这三个字段进入 IdentityUpdate。
 
     用户名与归属账号不可改；platform/platform_id 是引擎路由依据，接受客户端入参会
-    让网页身份被改绑到别人的 openid 上。
+    让网页账号被改绑到别人的 openid 上。
     """
     clean_nickname = _clean_text(
         nickname, _MAX_NICKNAME,
@@ -135,7 +135,7 @@ async def update_profile(
     credential = await WebCredentialRepository().find_by_identity_id(identity.id)
     if credential is None:
         raise AuthError("identity_not_found", "账号数据异常，请重新登录", 401)
-    logger.info("网页身份 %s 更新账号资料（昵称=%s，时区=%s）", credential.username,
+    logger.info("网页账号 %s 更新账号资料（昵称=%s，时区=%s）", credential.username,
                 clean_nickname, tz or "系统默认")
     return profile_payload(credential, identity)
 
@@ -387,7 +387,7 @@ async def clear_conversations(identity: IdentityInDB) -> dict[str, int]:
     conv_deleted = await conv_repo.delete_by_ids(conv_ids)
     media_deleted = await MediaRepository().delete_by_ids(media_ids)
     logger.info(
-        "网页身份 %s 清空对话记录：会话 %d / 消息 %d / 快照 %d / 媒体 %d",
+        "网页账号 %s 清空对话记录：会话 %d / 消息 %d / 快照 %d / 媒体 %d",
         identity.nickname or identity.id, conv_deleted, msg_deleted, snap_deleted, media_deleted,
     )
     return {
@@ -402,7 +402,7 @@ async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str
     """清空某个服务的长期记忆（含其注入快照）；共享组含他人服务时拒绝。"""
     if not await _group_is_exclusive(service, identity.id):
         raise AuthError(
-            "shared_context", "该服务与其他身份共享上下文，请联系管理员处理", 409
+            "shared_context", "该服务与其他渠道身份共享上下文，请联系管理员处理", 409
         )
     key = service.context_key
     memory = await ServiceMemoryRepository().find_by_service(key)
@@ -410,7 +410,7 @@ async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str
     deleted = await ServiceMemoryRepository().delete_by_service(key)
     snapshots = await InjectionSnapshotRepository().delete_by_service_ids([key])
     logger.info(
-        "网页身份 %s 清空服务「%s」的记忆：事实 %d，快照 %d",
+        "网页账号 %s 清空服务「%s」的记忆：事实 %d，快照 %d",
         identity.nickname or identity.id, service.name, facts, snapshots,
     )
     return {"service_id": service.id, "facts": facts, "deleted": bool(deleted), "snapshots": snapshots}
@@ -552,7 +552,7 @@ async def delete_account(
 ) -> dict[str, Any]:
     """立即硬删除账号：凭据 → 周边记录 → 账号级联。
 
-    安全前置：账号下若还挂着其他身份（QQ / 微信或管理员补建的网页身份）或其他身份的服务，
+    安全前置：账号下若还挂着其他身份（QQ / 微信或管理员补建的网页账号）或其他身份的服务，
     一律拒绝——级联删除按 account_id 清扫，会把它们的数据一起抹掉。
 
     Raises:
@@ -570,7 +570,7 @@ async def delete_account(
     if any(svc.identity_id != identity.id for svc in services):
         raise AuthError(
             "linked_identity_exists",
-            "该账号还关联了其他身份的服务，请联系管理员处理后再注销",
+            "该账号还关联了其他渠道身份的服务，请联系管理员处理后再注销",
             409,
         )
 
@@ -592,7 +592,7 @@ async def delete_account(
         raise AuthError("delete_failed", "注销未完成，请联系管理员确认", 500) from exc
 
     logger.info(
-        "网页身份 %s 自助注销完成: account_id=%s stats=%s",
+        "网页账号 %s 自助注销完成: account_id=%s stats=%s",
         credential.username, account_id, stats,
     )
     return stats
@@ -607,6 +607,6 @@ async def find_owned_service(identity: IdentityInDB, service_id: str) -> Service
 
 
 def normalize_confirm_username(raw: str, expected: str) -> None:
-    """注销二次确认：输入的规范化用户名必须与登录身份一致。"""
+    """注销二次确认：输入的规范化用户名必须与登录账号一致。"""
     if normalize_username(raw or "") != expected:
         raise AuthError("username_mismatch", "输入的用户名与当前账号不一致", 400)

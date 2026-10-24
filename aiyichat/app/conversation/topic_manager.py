@@ -19,7 +19,7 @@ class TopicManager:
         """检测当前消息是否包含话题切换信号。
 
         Args:
-            current_msg: 当前身份消息
+            current_msg: 当前对方消息
             current_topic: 当前记录的话题
 
         Returns:
@@ -35,12 +35,12 @@ class TopicManager:
     ) -> bool:
         """检测话题是否停滞（连续多轮身份输入围绕同一话题，未引入新方向）。
 
-        原理：计算相邻身份消息的文本相似度，若连续 N 轮相似度均高于阈值
+        原理：计算相邻对方消息的文本相似度，若连续 N 轮相似度均高于阈值
         （即身份一直在围绕同一话题反复讨论，没有引入新话题方向），判定为话题停滞。
         此时 AI 应主动引导换话题，避免对话陷入循环。
 
         Args:
-            recent_user_msgs: 最近的身份消息列表（按时间升序）
+            recent_user_msgs: 最近的对方消息列表（按时间升序）
             threshold: 连续 N 轮同话题判定为停滞
             similarity: 身份输入相似度阈值（高于此值视为同话题）
 
@@ -50,7 +50,7 @@ class TopicManager:
         if len(recent_identity_msgs) < threshold:
             return False
 
-        # 取最近 threshold 条身份消息
+        # 取最近 threshold 条对方消息
         window = recent_identity_msgs[-threshold:]
 
         # 计算相邻消息的相似度，若所有相邻对都高度相似，则话题停滞

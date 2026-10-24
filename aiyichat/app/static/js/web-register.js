@@ -112,7 +112,7 @@
         }
         if (!document.getElementById('terms-accepted').checked
             || !document.getElementById('privacy-accepted').checked) {
-            showAlert('请先阅读并勾选《身份协议》与《隐私政策》。');
+            showAlert('请先阅读并勾选《用户协议》与《隐私政策》。');
             return;
         }
 

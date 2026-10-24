@@ -90,7 +90,7 @@ chmod +x deploy.sh
 | **记忆治理与反思层**（默认关闭，可在后台「功能实验室」热调） |||
 | `MEMORY_HYGIENE_ENABLED` | 写入时指称归一、点状时效事实标记与过期剔除 | `false` |
 | `MEMORY_REFLECTION_ENABLED` | 从多条记忆事实归纳可溯源的高阶洞见 | `false` |
-| **C 端网页身份**（默认全部关闭，QQ / 微信链路不受影响） |||
+| **C 端网页账号**（默认全部关闭，QQ / 微信链路不受影响） |||
 | `WEB_AUTH_ENABLED` | 网页登录总开关；关闭时 `/api/auth/*` 与 `/web/*` 一律 403 | `false` |
 | `WEB_REGISTER_ENABLED` | 开放自助注册（需先打开总开关） | `false` |
 | `WEB_REGISTER_REQUIRE_REVIEW` | 注册需管理员审核后才可登录 | `true` |
@@ -109,7 +109,7 @@ chmod +x deploy.sh
 > 默认直连部署按 TCP 对端地址限流。只有反向代理已用 `$remote_addr` **覆写**
 > `X-Forwarded-For`（而非追加）时，才可设置 `TRUST_PROXY_HEADERS=true`；
 > 否则客户端可自造头绕过限流。
-> 这些项同样支持在管理后台「网页身份」页热调；**一旦在后台保存过，数据库值会覆盖 `.env`**。
+> 这些项同样支持在管理后台「网页账号」页热调；**一旦在后台保存过，数据库值会覆盖 `.env`**。
 
 > 模型名称、接口地址、API Key 分组等 AI 模型配置**不在 `.env` 里维护**：首次启动时按
 > `DASHSCOPE_API_KEY` 自动生成 5 组默认配置（文本/文生图/语音生成/向量/图片修改），

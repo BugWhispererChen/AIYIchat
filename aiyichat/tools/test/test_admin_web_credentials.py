@@ -1,4 +1,4 @@
-"""Admin 网页身份治理路由测试（mongomock + ASGI 内存客户端）。
+"""Admin 网页账号治理路由测试（mongomock + ASGI 内存客户端）。
 
 覆盖 `/admin/web-credentials` 列表、审核（通过/拒绝）、禁用/启用、重置密码、额度调整与能力配置保存。
 """

@@ -68,7 +68,7 @@ async def _require_account_service_http(
 async def _conversation_readable(
     conv: ConversationInDB, principal: WebPrincipal
 ) -> bool:
-    """会话是否对当前网页身份可读：本人会话，或同账号任一服务的会话。
+    """会话是否对当前网页渠道身份可读：本人会话，或同账号任一服务的会话。
 
     共享组会话的 `service_id` 存的是组 key，按组内服务反查归属账号。
     """
@@ -96,7 +96,7 @@ async def list_conversations(
     """
     principal = await _require_current_identity_or_401(request)
     if identity_id is not None and identity_id != principal.identity_id:
-        raise HTTPException(status_code=403, detail="无权访问其他身份的数据")
+        raise HTTPException(status_code=403, detail="无权访问该数据")
     if service_id is not None:
         await _require_account_service_http(principal, service_id)
     identity_id = principal.identity_id
@@ -195,11 +195,11 @@ async def chat_stream(req: StreamChatRequest, request: Request):
     # 显式传入却不匹配 → 视为冒充尝试：拒绝并留审计日志（比静默忽略更能暴露攻击）
     if req.platform_id and normalize_username(req.platform_id) != principal.username:
         logger.warning(
-            "越权尝试：登录身份 %s 试图以 platform_id=%s 冒充他人会话",
+            "越权尝试：登录账号 %s 试图以 platform_id=%s 冒充他人会话",
             principal.username,
             req.platform_id,
         )
-        raise HTTPException(status_code=403, detail="platform_id 与登录身份不匹配")
+        raise HTTPException(status_code=403, detail="登录状态异常，请重新登录")
 
     # 显式选择服务时按账号归属校验：可跨身份，但必须同账号
     svc: Optional[ServiceInDB] = None
@@ -210,7 +210,7 @@ async def chat_stream(req: StreamChatRequest, request: Request):
         allowed_bot_ids.add(svc.bot_id)
     if req.bot_id and req.bot_id not in allowed_bot_ids:
         logger.warning(
-            "越权尝试：登录身份 %s 试图指定未授权的 bot_id=%s",
+            "越权尝试：登录账号 %s 试图指定未授权的 bot_id=%s",
             principal.username,
             req.bot_id,
         )

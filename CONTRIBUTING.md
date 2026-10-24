@@ -27,6 +27,8 @@ cp aiyichat/.env.example aiyichat/.env
 - **规则口径唯一**：ruff / mypy / pytest 的参数一律写在 `aiyichat/pyproject.toml`，
   不要在命令行里临时加参数（命令行参数与 CI 会分叉）。该文件只固化既有口径，
   收紧规则需要单独一轮
+- **术语口径**：界面文案与注释遵循 [aiyichat/TERMINOLOGY.md](aiyichat/TERMINOLOGY.md)；禁用短语由
+  `aiyichat/tools/test/test_naming_conventions.py::TestVisibleCopyTerminology` 守卫
 
 ## CI
 

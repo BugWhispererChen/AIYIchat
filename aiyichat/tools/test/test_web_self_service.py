@@ -1,7 +1,7 @@
-"""C 端网页身份自助管理（角色 / 服务）的接口与越权回归测试。
+"""C 端网页账号自助管理（角色 / 服务）的接口与越权回归测试。
 
 覆盖要点：
-- 未登录拒绝；登录身份只能操作自己账号名下的私有角色与服务；
+- 未登录拒绝；登录账号只能操作自己账号名下的私有角色与服务；
 - 归属字段由服务端写入，客户端伪造 account_id/visibility/bot_id 无效；
 - 配额上限、能力关闭、内容安全三条治理闸门；
 - 服务删除/停用后的"至少保留一个可聊天服务"保护；
@@ -463,7 +463,7 @@ class TestWebServiceSelfService:
         _run(flow())
 
     def test_login_identity_keeps_last_active_service(self) -> None:
-        """账号内另有渠道服务时，也不能让当前登录身份失去最后一个活跃服务。"""
+        """账号内另有渠道服务时，也不能让当前登录账号失去最后一个活跃服务。"""
 
         async def flow() -> None:
             app = await _setup_app("svc_login_last")
@@ -491,7 +491,7 @@ class TestWebServiceSelfService:
                             profile_id=target.profile_id,
                         )
                     )
-                    # 账号还有活跃 QQ 服务，但登录身份只剩这一个网页服务 → 两种操作都必须拒绝
+                    # 账号还有活跃 QQ 服务，但登录账号只剩这一个网页服务 → 两种操作都必须拒绝
                     resp = await c.put(
                         f"/api/web/services/{target.id}",
                         json={"is_active": False},

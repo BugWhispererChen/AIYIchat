@@ -154,7 +154,7 @@ async def _login(client: AsyncClient, username: str, password: str = PASSWORD) -
 
 
 async def _identity_of(username: str) -> Any:
-    """取该网页身份关联的 identity（测试里直接操作底层数据用）。"""
+    """取该网页渠道身份关联的 identity（测试里直接操作底层数据用）。"""
     credential = await WebCredentialRepository().find_by_username(username)
     assert credential is not None and credential.identity_id
     identity = await IdentityRepository().find_by_id(credential.identity_id)

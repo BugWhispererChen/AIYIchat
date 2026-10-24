@@ -1,4 +1,4 @@
-"""C 端网页身份自助角色管理 API。
+"""C 端网页账号自助角色管理 API。
 
 安全边界：
 - 全部端点先经 `require_current_identity` 解析会话身份，客户端不能指定归属账号；
@@ -57,7 +57,7 @@ _HIDDEN_PUBLIC_FIELDS = (
 
 
 class WebProfilePayload(BaseModel):
-    """网页身份自建/编辑角色的请求体。
+    """网页账号自建/编辑角色的请求体。
 
     不含 slug、visibility、account_id、声音与定妆照等字段：这些一律由服务端
     判定或由管理员在后台维护，接受客户端入参会打开越权与伪造面。
@@ -193,7 +193,7 @@ async def _require_owned_profile(
         return None, _bad("not_found", "角色不存在", 404)
     if profile.visibility != "private" or profile.account_id != principal.account_id:
         logger.warning(
-            "越权尝试：登录身份 %s 试图操作非本人角色 profile=%s",
+            "越权尝试：登录账号 %s 试图操作非本人角色 profile=%s",
             principal.username,
             profile_id,
         )
@@ -281,7 +281,7 @@ async def create_web_profile(request: Request, payload: WebProfilePayload) -> JS
     slug = await _find_unique_slug(principal.username)
     profile = await _profile_repo.create(_build_create(payload, principal.account_id, slug))
     logger.info(
-        "网页身份 %s 创建私有角色 %s（slug=%s，当前 %d/%d）",
+        "网页账号 %s 创建私有角色 %s（slug=%s，当前 %d/%d）",
         principal.username,
         profile.name,
         profile.slug,
@@ -383,6 +383,6 @@ async def delete_web_profile(request: Request, profile_id: str) -> JSONResponse:
     if not await _profile_repo.hard_delete(profile.slug):
         return _bad("not_found", "角色不存在", 404)
     logger.info(
-        "网页身份 %s 删除私有角色 %s（slug=%s）", principal.username, profile.name, profile.slug
+        "网页账号 %s 删除私有角色 %s（slug=%s）", principal.username, profile.name, profile.slug
     )
     return JSONResponse(status_code=200, content={"id": profile.id, "deleted": True})

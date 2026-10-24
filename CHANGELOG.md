@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 修复
+- **术语口径修正**：网页登录凭据在界面上统一为「网页账号」（原「网页身份」与 Identity 撞名），
+  叙述句中的对话方统一为「对方」，注册页法律文书恢复《用户协议》并修正「用户个人信息保护」；
+  同时改正「身份与账号相互独立」「一个身份对应一份记忆与额度」两处与数据模型矛盾的文案。
+  `TERMS_VERSION` / `PRIVACY_VERSION` 递增到 `v1.1`。术语表见 `aiyichat/TERMINOLOGY.md`，
+  禁用短语由 `test_naming_conventions.py::TestVisibleCopyTerminology` 守卫。
+
 ### 新增
 - **SSE 网关的闸门路径端到端用例** `tools/test/test_api_auth.py::TestChatStreamPayloadCleaning::test_sse_frames_carry_gate_events_in_order`：
   引擎开闸门后 yield 的是 `StreamEvent`，而 `[MSG]`/`[RESET]` 控制帧只在网关生成分帧——

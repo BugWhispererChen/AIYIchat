@@ -1,4 +1,4 @@
-"""C 端网页身份的注册、登录与治理编排。
+"""C 端网页账号的注册、登录与治理编排。
 
 设计要点（对应执行计划第二节与第五节 P2/P3）：
 - 注册必须原子建齐 Account→Quota→User→Service 四件套：流式链路没有自动绑定分支，
@@ -170,7 +170,7 @@ def build_consent(terms_accepted: bool, privacy_accepted: bool, age_confirmed: b
     if not age_confirmed:
         raise AuthError("age_not_confirmed", "年满 14 周岁方可注册，暂不支持未成年人注册", 400)
     if not terms_accepted or not privacy_accepted:
-        raise AuthError("consent_required", "请先阅读并同意身份协议与隐私政策", 400)
+        raise AuthError("consent_required", "请先阅读并同意用户协议与隐私政策", 400)
     now = _utcnow()
     return WebConsent(
         terms_version=TERMS_VERSION,
@@ -322,7 +322,7 @@ async def register(
     """自助注册：校验 → 占用户名 → 建四件套 → 落 pending（或免审直达 active）。
 
     Returns:
-        已落库的网页身份（status 由 `web_register_require_review` 决定）
+        已落库的网页账号（status 由 `web_register_require_review` 决定）
     Raises:
         AuthError: 校验不通过、用户名冲突、处于拒绝冷却期、或依赖配置缺失
     """
@@ -365,7 +365,7 @@ async def register(
         profile_slug = await resolve_default_profile_id()
 
         account = await AccountRepository().create(
-            AccountCreate(name=f"web:{name}", remark="C 端网页身份自助注册")
+            AccountCreate(name=f"web:{name}", remark="C 端网页账号自助注册")
         )
         draft.account_id = account.id
         bot_id = await ensure_account_web_bot(account.id, name="网页助手")
@@ -414,7 +414,7 @@ async def register(
 async def login(*, username: str, password: str, ip: str = "", user_agent: str = "") -> LoginResult:
     """登录：校验凭据与状态 → 签发会话 → 并发上限控制 → 滑动过期起点。
 
-    失败计数与锁定按身份维度进行；无论用户名是否存在都返回同一提示，避免枚举账号。
+    失败计数与锁定按网页账号维度进行；无论用户名是否存在都返回同一提示，避免枚举账号。
     """
     ensure_web_enabled()
     name = normalize_username(username)
@@ -465,7 +465,7 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
 async def resolve_session(token: str) -> SessionResult:
     """由会话令牌解析出凭据、关联身份与会话记录。
 
-    令牌缺失/过期/被 TTL 回收、身份非 active、身份已被删除或 identity_id 未回填，
+    令牌缺失/过期/被 TTL 回收、账号非 active、身份已被删除或 identity_id 未回填，
     一律抛 AuthError(401)，由依赖层转成 401/403。
     """
     ensure_web_enabled()
@@ -531,7 +531,7 @@ async def change_password(
 
     revoked = await WebSessionRepository().delete_others(credential_id, keep_session_id)
     logger.info(
-        "网页身份 %s 自助修改密码，已下线其他会话 %d 个", credential.username, revoked
+        "网页账号 %s 自助修改密码，已下线其他会话 %d 个", credential.username, revoked
     )
     return revoked
 

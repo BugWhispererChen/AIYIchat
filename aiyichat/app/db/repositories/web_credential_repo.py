@@ -10,7 +10,7 @@ from app.models.web_credential import CredentialStatus, WebCredentialCreate, Web
 
 
 class WebCredentialRepository:
-    """管理网页身份凭据的增删改查与登录失败计数。"""
+    """管理网页账号凭据的增删改查与登录失败计数。"""
 
     def _collection(self):
         """获取 MongoDB 集合。"""
@@ -70,7 +70,7 @@ class WebCredentialRepository:
         review_note: str = "",
         review: bool = False,
     ) -> bool:
-        """更新身份状态。
+        """更新账号状态。
 
         `review=True` 时同时记录审核人与审核时间（审核通过/拒绝路径），
         拒绝冷却期依赖 `reviewed_at` 判定；纯封禁/启用等治理操作不覆盖既有审核留痕。

@@ -370,7 +370,7 @@ class QQWebSocketClient:
             f"{self._label} [回复] {response_text[:80]}..."
         )
 
-        # 语音触发：身份发语音直接触发；或动态窗口内（身份发过语音后的随机
+        # 语音触发：对方发语音直接触发；或动态窗口内（对方发过语音后的随机
         # 固定窗口期）文字消息也以语音回复，窗口按会话独立且不续期
         user_sent_voice = bool(voice_wav_url or voice_asr_text)
         in_voice_window = (
@@ -385,7 +385,7 @@ class QQWebSocketClient:
             and (user_sent_voice or in_voice_window)
         )
         if is_voice_reply and user_sent_voice:
-            # 仅身份发语音触发时开启窗口（固定窗口，窗口内不续期）
+            # 仅对方发语音触发时开启窗口（固定窗口，窗口内不续期）
             voice_window.touch(
                 conv_id,
                 settings.voice_window_min_minutes,
@@ -615,7 +615,7 @@ class QQWebSocketClient:
         """
         主动发送消息给身份（使用互动召回 is_wakeup 能力）。
 
-        用于定时关怀、主动触达等场景。不需要前置的身份消息。
+        用于定时关怀、主动触达等场景。不需要前置的对方消息。
         限制：身份对话后30天内，按周期下发（当天/1-3天/3-7天/7-30天各1条）。
 
         Args:

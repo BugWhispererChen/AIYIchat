@@ -134,7 +134,7 @@ async def web_quota(account_id: str, login_identity_id: str) -> dict:
     """统一的渠道/服务配额口径。
 
     渠道数：账号下可管理的渠道（含账号级 Web 渠道）。
-    服务数：挂在可管理渠道上的服务 + 登录身份名下的服务，按 service id 去重。
+    服务数：挂在可管理渠道上的服务 + 登录账号名下的服务，按 service id 去重。
     管理员专用渠道身份上的服务不计入，保留「管理员渠道不占网页名额」的语义。
     """
     bots = await BotConfigRepository().list_by_account(account_id)
@@ -396,8 +396,8 @@ async def delete_managed_bot(
 ) -> int:
     """删除 C 端渠道：级联删服务，保护最后一个活跃服务。
 
-    `login_identity_id` 是当前网页登录身份：账号下的渠道服务可能挂在别的身份上，
-    仅按账号统计会让登录身份失去最后一个活跃服务后被 no_service 锁死。
+    `login_identity_id` 是当前网页登录账号：账号下的渠道服务可能挂在别的身份上，
+    仅按账号统计会让登录账号失去最后一个活跃服务后被 no_service 锁死。
     """
     bot = await get_managed_bot(account_id, bot_id)
     repo = ServiceRepository()
@@ -424,11 +424,11 @@ async def delete_managed_bot(
         if deleting_login_active and not own_active_after:
             raise ChannelError(
                 "last_active_service",
-                "当前登录身份至少需要保留一个启用中的服务才能继续聊天",
+                "当前账号至少需要保留一个启用中的服务才能继续聊天",
                 409,
             )
 
-    # 网页渠道使用登录身份，不能重置；只有 QQ / 微信渠道的专用身份才清理绑定
+    # 网页渠道使用登录账号，不能重置；只有 QQ / 微信渠道的专用身份才清理绑定
     identity_ids = (
         {svc.identity_id for svc in services} if bot.platform != "web" else set()
     )

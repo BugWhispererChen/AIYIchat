@@ -536,7 +536,7 @@ class TestGapTopicIntegration:
             async def get_context(
                 conversation_id: str, summary: str, emotion_intensity: float,
             ) -> tuple[list[MessageInDB], str]:
-                """每轮重读真实消息，第二轮间隔必须来自首轮已保存的身份消息。"""
+                """每轮重读真实消息，第二轮间隔必须来自首轮已保存的对方消息。"""
                 return await recorder.message_repo.get_recent(conversation_id), summary
 
             engine.context_manager.get_context.side_effect = get_context
@@ -607,7 +607,7 @@ class TestGapTopicIntegration:
 
 
 class TestRecentProactiveContext:
-    """主动消息仅在最后身份消息之后、当前接收时间之前参与长间隔上下文。"""
+    """主动消息仅在最后对方消息之后、当前接收时间之前参与长间隔上下文。"""
 
     @pytest.mark.parametrize("mode", ["session", "reunion"])
     @pytest.mark.parametrize("naive", [False, True], ids=["aware", "mongo-naive"])
@@ -894,7 +894,7 @@ def _make_history(*assistant_texts: str):
     history = []
     for t in assistant_texts:
         history.append(SimpleNamespace(
-            role="user", content="身份消息", emotion_tag=None,
+            role="user", content="对方消息", emotion_tag=None,
         ))
         history.append(SimpleNamespace(
             role="assistant", content=t, emotion_tag=None,

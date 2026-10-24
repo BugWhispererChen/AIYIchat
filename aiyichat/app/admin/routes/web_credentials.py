@@ -1,4 +1,4 @@
-"""Admin 网页身份治理路由。
+"""Admin 网页账号治理路由。
 
 C 端自助注册身份的审核（通过/拒绝）、封禁（禁用/启用）、密码重置与额度调整。
 业务规则全部走 `app/services/auth_service.py`，本层只做表单解析与页面跳转，
@@ -39,7 +39,7 @@ def _list_redirect(filter_status: str = "pending", q: str = "", **params: str) -
 async def _build_rows(credentials: list[WebCredentialInDB]) -> list[dict[str, Any]]:
     """为每条身份补齐身份与额度信息，供表格展示。
 
-    网页身份与账号是 1:1，故按身份关联的 identity 反查其账号额度即可。
+    网页账号与所属账号是 1:1，故按身份关联的 identity 反查其账号额度即可。
     """
     rows: list[dict[str, Any]] = []
     identities = IdentityRepository()
@@ -64,7 +64,7 @@ async def web_credentials_page(
     q: str = "",
     _session: str = Depends(require_admin),
 ):
-    """网页身份列表：默认展示待审核，支持状态筛选与用户名搜索。"""
+    """网页账号列表：默认展示待审核，支持状态筛选与用户名搜索。"""
     from app.config import settings
 
     repo = WebCredentialRepository()
@@ -119,7 +119,7 @@ async def save_settings(
     request: Request,
     _session: str = Depends(require_admin),
 ):
-    """保存网页身份能力配置并热重载。
+    """保存网页账号能力配置并热重载。
 
     开关默认关闭是硬约束：`web_auth_enabled` / `web_register_enabled` 未勾选即以 False 落库，
     因此这两个字段必须显式读取复选框状态，不能沿用"缺字段即跳过"的通用写法。
@@ -227,7 +227,7 @@ async def adjust_quota(
     image_limit: int = Form(0),
     _session: str = Depends(require_admin),
 ):
-    """调整该网页身份所属账号的额度上限（保持已用量与有效期不变）。"""
+    """调整该网页账号所属账号的额度上限（保持已用量与有效期不变）。"""
     repo = WebCredentialRepository()
     ident = await repo.find_by_id(credential_id)
     if ident is None or not ident.identity_id:

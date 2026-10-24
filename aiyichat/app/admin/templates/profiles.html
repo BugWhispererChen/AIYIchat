@@ -17,7 +17,7 @@
                placeholder="搜索角色名称、来源或分类..." aria-label="搜索角色">
         <select class="ui-select" name="vis" title="按可见范围筛选">
             <option value="">全部可见范围</option>
-            <option value="private" {% if vis == 'private' %}selected{% endif %}>仅私有（含身份自建）</option>
+            <option value="private" {% if vis == 'private' %}selected{% endif %}>仅私有（含网页账号自建）</option>
             <option value="public" {% if vis == 'public' %}selected{% endif %}>仅公共</option>
         </select>
         <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>

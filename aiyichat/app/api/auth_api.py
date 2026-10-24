@@ -38,7 +38,7 @@ _XFF_HEADER = "x-forwarded-for"
 
 @dataclass
 class WebPrincipal:
-    """由会话令牌解析出的当前网页身份（后续接口只认这个对象）。"""
+    """由会话令牌解析出的当前网页账号会话主体（后续接口只认这个对象）。"""
 
     credential: WebCredentialInDB
     identity_id: str
@@ -132,7 +132,7 @@ async def require_web_account(request: Request) -> WebAccountPrincipal:
 
 
 async def _resolve_service(identity: IdentityInDB) -> ServiceInDB:
-    """反查该网页身份的对话服务。
+    """反查该网页渠道身份的对话服务。
 
     优先级：账号自己的 web Bot → 系统载体 Bot（存量部署）→ 名下任一活跃服务。
     """
@@ -164,14 +164,14 @@ async def require_account_service(
 ) -> ServiceInDB:
     """按账号归属取回服务，供 C 端跨身份读聊使用。
 
-    归属口径是 account_id：同账号的网页身份可以使用任一服务（含 QQ/微信渠道）。
+    归属口径是 account_id：同账号的网页渠道身份可以使用任一服务（含 QQ/微信渠道）。
     跨身份访问记审计日志，便于追溯网页侧读取渠道身份数据的操作。
     """
     svc = await ServiceRepository().find_by_id(service_id)
     if svc is None or svc.account_id != principal.account_id:
         if svc is not None:
             logger.warning(
-                "越权尝试：登录身份 %s 试图使用非本账号服务 service=%s（归属账号 %s）",
+                "越权尝试：登录账号 %s 试图使用非本账号服务 service=%s（归属账号 %s）",
                 principal.username,
                 service_id,
                 svc.account_id,
@@ -179,7 +179,7 @@ async def require_account_service(
         raise AuthError("not_found", "服务不存在", 404)
     if svc.identity_id != principal.identity_id:
         logger.warning(
-            "跨身份访问：登录身份 %s 使用同账号服务 %s（归属身份 %s）",
+            "跨身份访问：登录账号 %s 使用同账号服务 %s（归属身份 %s）",
             principal.username,
             svc.id,
             svc.identity_id,
@@ -315,7 +315,7 @@ async def logout(request: Request) -> JSONResponse:
 
 @auth_router.get("/me")
 async def me(request: Request) -> JSONResponse:
-    """当前登录身份信息：网页聊天页据此渲染身份与额度余量。"""
+    """当前登录账号信息：网页聊天页据此渲染账号资料与额度余量。"""
     try:
         identity = await require_current_identity(request)
     except AuthError as exc:

@@ -1,4 +1,4 @@
-"""C 端网页身份自助对话服务管理 API。
+"""C 端网页账号自助对话服务管理 API。
 
 服务是"身份 × 渠道 Bot × 角色"的对话装配单元，决定聊天时扮演谁、记忆与额度归属。
 
@@ -9,7 +9,7 @@
   到系统载体渠道）；
 - 角色必须对该账号可见（公共角色或本人私有角色）且处于启用状态；
 - 数量受 `settings.web_max_services` 约束，渠道与服务共用同一上限；
-- 始终保留至少一个启用中的服务，且当前登录身份不能失去最后一个活跃服务，
+- 始终保留至少一个启用中的服务，且当前登录账号不能失去最后一个活跃服务，
   否则账号会失去聊天能力。
 """
 
@@ -100,7 +100,7 @@ async def _visible_profile_or_error(
     if profile.visibility == "private" and profile.account_id != principal.account_id:
         # 与"不存在"同响应：他人的私有角色不可枚举
         logger.warning(
-            "越权尝试：登录身份 %s 试图绑定非本人角色 profile=%s",
+            "越权尝试：登录账号 %s 试图绑定非本人角色 profile=%s",
             principal.username,
             profile_ref,
         )
@@ -198,14 +198,14 @@ async def _require_owned_service(
     if svc is None or svc.account_id != principal.account_id:
         if svc is not None:
             logger.warning(
-                "越权尝试：登录身份 %s 试图操作非本账号服务 service=%s",
+                "越权尝试：登录账号 %s 试图操作非本账号服务 service=%s",
                 principal.username,
                 service_id,
             )
         return None, _bad("not_found", "服务不存在", 404)
     if svc.identity_id != principal.identity_id:
         logger.warning(
-            "跨身份编辑：登录身份 %s 操作同账号服务 %s（归属身份 %s）",
+            "跨身份编辑：登录账号 %s 操作同账号服务 %s（归属身份 %s）",
             principal.username,
             svc.id,
             svc.identity_id,
@@ -219,9 +219,9 @@ async def _last_active_guard(
     """停用/删除活跃服务前的双重保护。
 
     - 账号维度：账号至少要保留一个启用中的服务（既有产品规则）；
-    - 登录身份维度：当前身份也必须保留一个启用中的服务，否则
+    - 登录账号维度：当前网页账号也必须保留一个启用中的服务，否则
       `require_current_identity` 会因 no_service 拒绝后续所有核心接口，
-      用户会被自己的操作锁死（账号下的渠道服务挂在别的身份上，不能兜底）。
+      用户会被自己的操作锁死（账号下的其他渠道身份的服务不能兜底）。
     """
     siblings = await _service_repo.list_by_account(principal.account_id)
     account_active_others = [
@@ -239,7 +239,7 @@ async def _last_active_guard(
         if not own_active_others:
             return _bad(
                 "last_active_service",
-                "当前登录身份至少需要保留一个启用中的服务才能继续聊天",
+                "当前账号至少需要保留一个启用中的服务才能继续聊天",
                 409,
             )
     return None
@@ -353,7 +353,7 @@ async def create_web_service(
         )
     )
     logger.info(
-        "网页身份 %s 创建服务 %s（角色=%s，当前 %d/%d）",
+        "网页账号 %s 创建服务 %s（角色=%s，当前 %d/%d）",
         principal.username,
         svc.name,
         profile.name,
@@ -410,7 +410,7 @@ async def update_web_service(
             return _bad("invalid_timezone", tz_err)
         update.timezone = tz
     if payload.is_active is not None and payload.is_active != svc.is_active:
-        # 停用前确认账号与当前登录身份都还有活跃服务（见 _last_active_guard）
+        # 停用前确认账号与当前网页账号都还有活跃服务（见 _last_active_guard）
         if not payload.is_active:
             guard = await _last_active_guard(principal, svc)
             if guard is not None:
@@ -459,5 +459,5 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
 
     if not await _service_repo.delete(svc.id):
         return _bad("not_found", "服务不存在", 404)
-    logger.info("网页身份 %s 删除服务 %s", principal.username, svc.name)
+    logger.info("网页账号 %s 删除服务 %s", principal.username, svc.name)
     return JSONResponse(status_code=200, content={"id": svc.id, "deleted": True})

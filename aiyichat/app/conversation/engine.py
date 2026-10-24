@@ -31,7 +31,7 @@ from app.conversation.reply_jitter import (
     prefix_repeat_ratio,
     shingle_coverage,
 )
-from app.conversation.response_processor import ResponseProcessor
+from app.conversation.response_processor import DisplayStreamCleaner, ResponseProcessor
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.conversation.sticker_task import STICKER_TRANSCRIBE_PREFIX, StickerTask
 from app.conversation.human_rhythm import (
@@ -1109,28 +1109,40 @@ class ConversationEngine:
                     usage_sink=usage_sink,
                     presence_penalty=settings.chat_presence_penalty,
                 )
+                # 屏幕侧清洗与落库口径一致：[IMG:] / [表情:] / 动作标签不能流到浏览器，
+                # 但 chunks 仍收原文——图片与表情包任务要靠这些标签在最后提取。
+                display = DisplayStreamCleaner(self.response_processor)
                 if gate is None:
                     async for delta in ResponseProcessor.strip_time_tags_stream(stream):
                         chunks.append(delta)
-                        yield delta
+                        for piece in display.push(delta):
+                            yield piece
+                    for piece in display.flush():
+                        yield piece
                 else:
                     guard_on = bool(settings.stream_jitter_guard_enabled)
                     recent_assistant = self._recent_assistant_texts(history)
                     repeat_suspect = False
                     async for delta in ResponseProcessor.strip_time_tags_stream(stream):
                         chunks.append(delta)
-                        for seg in gate.feed(delta):
-                            yield await release(seg)
-                            # 边放行边判：真复读的特征是逐字照抄旧回复开头，
-                            # 等全文再判已经全显示在屏幕上了
-                            if guard_on and self._looks_like_stream_repeat(
-                                gate.released_text, recent_assistant
-                            ):
-                                repeat_suspect = True
+                        for piece in display.push(delta):
+                            for seg in gate.feed(piece):
+                                yield await release(seg)
+                                # 边放行边判：真复读的特征是逐字照抄旧回复开头，
+                                # 等全文再判已经全显示在屏幕上了
+                                if guard_on and self._looks_like_stream_repeat(
+                                    gate.released_text, recent_assistant
+                                ):
+                                    repeat_suspect = True
+                                    break
+                            if repeat_suspect:
                                 break
                         if repeat_suspect:
                             break
                     if not repeat_suspect:
+                        for piece in display.flush():
+                            for seg in gate.feed(piece):
+                                yield await release(seg)
                         for seg in gate.flush():
                             yield await release(seg)
                         # 前缀/覆盖都没命中时的全文兜底判定（改写幅度更大的复述）

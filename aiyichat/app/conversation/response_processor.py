@@ -151,6 +151,23 @@ class ResponseProcessor:
         cleaned = re.sub(r'([，。！？、])\s*\1+', r'\1', cleaned)
         return cleaned
 
+    def clean_display(self, text: str) -> str:
+        """只去掉不该出现在聊天气泡里的标签，不做空白归一与首尾 strip。
+
+        与 `process()` 的差别是为"边流边发"准备的：`process()` 末尾会压空行并 strip，
+        逐段调用会把进行中的空格与换行吃掉，所以下发路径用这个更轻的清洗。
+        """
+
+        def _replace_tag(match: re.Match[str]) -> str:
+            inner = self._extract_inner(match.group(0))
+            return EMOTION_EMOJI_MAP.get(inner, "")
+
+        cleaned = self._ACTION_TAG_RE.sub(_replace_tag, text)
+        cleaned = self._IMG_TAG_RE.sub("", cleaned)
+        cleaned = self._STICKER_TAG_RE.sub("", cleaned)
+        return cleaned
+
+
     def _extract_image_tags(self, text: str) -> list[tuple[str, bool]]:
         """从 LLM 回复中提取 [IMG:xxx] / [IMG:self:xxx] 描述列表。"""
         return [
@@ -166,3 +183,59 @@ class ResponseProcessor:
             for desc in self._STICKER_TAG_RE.findall(text)
             if desc.strip()
         ]
+
+class DisplayStreamCleaner:
+    """把增量文本切成"可以安全下发的前缀"，避免半截标签先显示出来。
+
+    标签可能横跨多个增量（`[IM` 然后 `G:sunset]`），逐块原样下发就等于把内部标记
+    推给浏览器；而整段等齐再发又毁掉流式体验。这里只扣住"最后一个尚未闭合的开括号
+    之后的部分"，其余照常下发。
+    """
+
+    _OPENERS = ("[", "（", "(" , "*")
+    _CLOSERS = ("]", "）", ")", "*")
+
+    def __init__(self, processor: ResponseProcessor) -> None:
+        self._processor = processor
+        self._pending = ""
+
+    def push(self, delta: str) -> list[str]:
+        self._pending += delta
+        cut = self._safe_boundary(self._pending)
+        if cut <= 0:
+            return []
+        emit = self._pending[:cut]
+        self._pending = self._pending[cut:]
+        text = self._processor.clean_display(emit)
+        return [text] if text else []
+
+    def flush(self) -> list[str]:
+        """收尾：把最后一段（含仍未闭合的开括号）发出去。"""
+        if not self._pending:
+            return []
+        emit = self._pending
+        self._pending = ""
+        text = self._processor.clean_display(emit)
+        return [text] if text else []
+
+    @classmethod
+    def _safe_boundary(cls, text: str) -> int:
+        """从右往左找第一个"后面没有闭括号"的开括号，它之后的内容还不能下发。
+
+        `*` 自身既是开也是闭，右扫会被它自己满足，所以另按奇偶数判定：
+        落单的 `*` 说明动作标签还没写完，同样扣住。
+        """
+        boundary = len(text)
+        closer_seen = False
+        for index in range(len(text) - 1, -1, -1):
+            char = text[index]
+            if char in cls._CLOSERS and char != "*":
+                closer_seen = True
+            elif char in cls._OPENERS and not closer_seen:
+                boundary = min(boundary, index)
+                break
+        stars = text.count("*")
+        if stars % 2 == 1:
+            boundary = min(boundary, text.rfind("*"))
+        return boundary
+

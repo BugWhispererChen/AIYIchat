@@ -102,3 +102,37 @@ def test_legal_pages_render_with_version() -> None:
 
     asyncio.run(case())
 
+def test_display_stream_cleaner_holds_partial_tags() -> None:
+    """增量下发不能把半截内部标签推给浏览器，且拼起来等于整段清洗结果。"""
+    from app.conversation.response_processor import (
+        DisplayStreamCleaner,
+        ResponseProcessor,
+    )
+
+    processor = ResponseProcessor()
+    full = "（微笑）好的，看[IMG:realistic photo, sunset]这片海[表情:开心]"
+    cleaner = DisplayStreamCleaner(processor)
+    pieces: list[str] = []
+    for char in full:  # 最坏情况：一个字一个增量
+        pieces += cleaner.push(char)
+    pieces += cleaner.flush()
+    joined = "".join(pieces)
+
+    assert "[IMG:" not in joined and "[表情:" not in joined, joined
+    assert "realistic photo" not in joined, joined
+    assert "微笑" not in joined.replace("😊", ""), joined
+    assert joined == processor.clean_display(full), (joined, processor.clean_display(full))
+    assert "好的" in joined and "这片海" in joined
+
+
+def test_display_stream_cleaner_emits_promptly() -> None:
+    """没有未闭合标签时必须立刻下发，不能把流式体验憋成整段。"""
+    from app.conversation.response_processor import DisplayStreamCleaner, ResponseProcessor
+
+    cleaner = DisplayStreamCleaner(ResponseProcessor())
+    assert cleaner.push("今天过得怎么样") == ["今天过得怎么样"]
+    # 标签闭合后其内容一并下发（动作标签转 emoji 或删除）
+    emitted = "".join(cleaner.push("（点头）嗯"))
+    cleaner.flush()
+    assert "点头" not in emitted, emitted
+

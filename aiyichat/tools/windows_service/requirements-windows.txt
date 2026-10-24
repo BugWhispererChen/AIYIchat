@@ -1,0 +1,9 @@
+# Windows 服务面板与安装程序的构建依赖（只在打包机上安装，不进运行时依赖，
+# 也不需要装进 CI 的 requirements-dev：CI 只跑 ruff/mypy/pytest，不产 exe）。
+# 用法：py -m pip install -r tools/windows_service/requirements-windows.txt
+# 然后按 dev_workflow 的顺序先 build_app.py 再 build_installer.py。
+#
+# 注意：PyInstaller 产物里包含 customtkinter 的主题 JSON 与字体，缺它 exe 起不了界面；
+# 这两项此前只写在 build_app.py 的注释里，装了什么全凭打包机当时恰好有什么。
+pyinstaller>=6.0
+customtkinter>=5.2

@@ -1,0 +1,41 @@
+爱易聊 Windows 安装包随附的第三方组件与许可说明
+================================================
+
+本安装程序（AIYIchat_Setup_*.exe）在你自己机器上部署与运行不受这些许可的额外限制，
+但如果你把安装包再分发给别人，就必须同时满足下面各组件的许可条件。
+
+1. ffmpeg（随包可执行文件 ffmpeg/bin/ffmpeg.exe）
+   - 许可：GNU GPL v3 或 LGPL v2.1/v3，取决于具体构建时启用了哪些组件
+     （启用 GPL 组件如 libx264/x265 时整体按 GPL v3 发布）。
+   - 本包只复制 ffmpeg.exe 一个可执行文件，不复制其源码。按 GPL/LGPL 要求，
+     我们在此提供获取源码的书面途径：官方源码仓库 https://github.com/FFmpeg/FFmpeg
+     ，以及 https://ffmpeg.org/download.html 提供的各发布版本源码包；
+     如需我们所用具体构建的源码，可联系本项目的发行说明中记录的版本号对应 tag。
+   - 若你重新分发本安装包，请一并保留这份说明，或提供等效的源码获取途径。
+
+2. MongoDB Community Server（随包目录 mongodbin）
+   - 许可：Server Side Public License v1.1（SSPL）。SSPL 不是 OSI 认定的开源许可，
+     对"把数据库本身作为服务对外提供"有额外条款；个人与内部部署用途照常使用。
+   - 源码与完整许可：https://github.com/mongodb/mongo 与
+     https://www.mongodb.com/legal/licensing
+   - 本包只带免安装的 mongod 可执行文件，不自动注册对外监听的公网端口。
+
+3. PyInstaller（构建工具，不在运行时分发其源码）
+   - 许可：GPL v2 及 PyInstaller 例外条款（boot-linking exception）：用 PyInstaller
+     冻结出来的应用不因链接其运行时而被要求以 GPL 开源。
+   - 说明：https://pyinstaller.org/
+
+4. CustomTkinter（界面库，已冻结进 AIYIchatService.exe）
+   - 许可：MIT。https://github.com/TomSchimansky/CustomTkinter
+
+5. Python 运行库与项目自身依赖
+   - 随 exe 打包的第三方 Python 包各自遵循其原始许可（多为 MIT/BSD/Apache-2.0），
+     完整清单与许可原文可用 `pip download` 或在 https://pypi.org 上按
+     requirements.txt 中的包名与版本查阅。
+
+6. 阿里云百炼等大模型服务
+   - 网络服务，不随包分发；调用时的数据流向见应用内的《隐私政策》页面
+     与部署者自己的配置（API Key 由部署者持有）。
+
+本文件由 tools/windows_service/build_app.py 在打包时写入产物目录，
+请连同安装包一起分发。

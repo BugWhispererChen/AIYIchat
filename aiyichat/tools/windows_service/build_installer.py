@@ -6,7 +6,7 @@
 3. 调用 ISCC 编译 installer.iss，产出 dist/AIYIchat_Setup_<版本>.exe
 
 依赖：
-- pip install pyinstaller customtkinter
+- pip install -r tools/windows_service/requirements-windows.txt
 - Inno Setup 6（缺失时提示：winget install JRSoftware.InnoSetup）
 """
 

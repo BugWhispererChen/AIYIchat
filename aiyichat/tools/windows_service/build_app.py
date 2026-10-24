@@ -4,7 +4,7 @@
 + 配置模板），供 installer.iss 制作安装包，也可直接绿色运行。
 
 使用方法：
-    pip install pyinstaller customtkinter
+    pip install -r tools/windows_service/requirements-windows.txt
     python build_app.py
 """
 
@@ -35,6 +35,22 @@ _COLLECT_MODULES = [
     "Crypto", "cryptography", "anyio", "sniffio",
     "pystray", "psutil",
 ]
+
+
+def _copy_third_party_notices(dist_dir: str) -> None:
+    """把第三方许可说明复制进产物目录。
+
+    安装包分发 ffmpeg（GPL/LGPL 视构建配置）与 MongoDB Community（SSPL），
+    只有二进制而没有许可说明 = 再分发时违反这两份许可；installer.iss 的 [Files]
+    段按 AppSourceDir 通配递归收录，因此放进产物目录即随安装包一起交付。
+    """
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets",
+                       "THIRD_PARTY_NOTICES.txt")
+    if not os.path.exists(src):
+        print("[WARN] 第三方许可说明不存在，安装包将不含 LICENSE/NOTICE")
+        return
+    shutil.copy2(src, os.path.join(dist_dir, "THIRD_PARTY_NOTICES.txt"))
+    print(f"  第三方许可说明已复制: {dist_dir}")
 
 
 def _copy_ffmpeg(dist_dir: str) -> None:
@@ -157,6 +173,7 @@ def main() -> None:
                         dirs_exist_ok=True)
         print("  certs 已复制")
     _copy_ffmpeg(dist_dir)
+    _copy_third_party_notices(dist_dir)
     _write_windows_env(dist_dir, project_root)
 
     print("\n[3/3] 打包完成")

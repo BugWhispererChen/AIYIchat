@@ -140,6 +140,8 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "profile_routine_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
+        # 反向代理头信任开关
+        "trust_proxy_headers",
     }
     int_fields = {
         "context_window_size",
@@ -170,6 +172,13 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "human_typing_ms_per_char", "human_gap_min_ms", "human_gap_max_ms",
         "human_startup_min_ms", "human_startup_max_ms",
         "reply_jitter_window", "reply_jitter_retry_max",
+        # 后台登录防爆破阈值（不显式转换会以 str 入库，热重载时靠 pydantic 兜底）
+        "admin_login_rate_limit", "admin_login_max_fail", "admin_login_lockout_minutes",
+        # C 端会话与限流阈值、自助创建上限
+        "web_session_hours", "web_session_max_concurrent",
+        "web_login_max_fail", "web_login_lockout_minutes",
+        "web_rate_limit_register", "web_rate_limit_login",
+        "web_max_profiles", "web_max_services",
     }
     float_fields = {
         "reflection_temperature", "reflection_timeout_seconds",

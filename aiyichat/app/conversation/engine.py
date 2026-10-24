@@ -695,6 +695,13 @@ class ConversationEngine:
         )
         
         # 5c. 图片生成方向：扣减 image_quota（每张1额度，额度不足则移除）
+        # 开关关掉时适配器会丢弃图片任务，这里必须先跳过，否则额度扣了、图不会生成
+        if image_specs and not settings.imagegen_enabled:
+            logger.info(
+                "图片生成已关闭，丢弃 %d 个图片提示且不扣额度: account=%s",
+                len(image_specs), service.account_id,
+            )
+            image_specs = []
         if image_specs:
             approved: list[tuple[str, bool]] = []
             for spec in image_specs:

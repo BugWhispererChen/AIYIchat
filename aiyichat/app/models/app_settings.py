@@ -336,6 +336,10 @@ class AppSettingsDocument(BaseModel):
     web_login_lockout_minutes: int = 15  # 达到失败上限后的锁定时长（分钟）
     web_rate_limit_register: int = 5  # 单 IP 注册请求频率上限（10 分钟滑动窗口）
     web_rate_limit_login: int = 20  # 单 IP 登录请求频率上限（10 分钟滑动窗口）
+    # C 端自助创建的额度上限（0=关闭该自助功能）：后台表单可写，
+    # 必须在这里声明字段，否则存进 app_settings 后读回即丢、页面显示回默认值
+    web_max_profiles: int = 5  # 单账号私有角色数量上限
+    web_max_services: int = 3  # 单账号对话服务数量上限
     # 仅当反向代理已用 $remote_addr 覆写 X-Forwarded-For 时开启
     trust_proxy_headers: bool = False
 

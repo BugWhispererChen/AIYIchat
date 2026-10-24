@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.admin.auth import (
     admin_lock_remaining,
+    admin_password_is_configured,
     create_session,
     destroy_session,
     register_admin_failure,
@@ -57,11 +58,19 @@ def _render(request: Request, name: str, ctx: dict | None = None, **kwargs):
 # ── 认证相关 ──────────────────────────────────────────────
 
 
+_UNCONFIGURED_ADMIN_HINT = (
+    "后台登录已停用：ADMIN_PASSWORD 为空或仍是随源码公开的模板值。"
+    "请在 .env 设置一个新口令后重启服务。"
+)
+
+
 @admin_router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     # 修改密码成功后跳转登录页时携带 msg=password_changed，给出成功提示
     msg = "密码已修改，请使用新密码重新登录" if request.query_params.get("msg") == "password_changed" else None
-    return _render(request, "login.html", {"success": msg})
+    # 口令没配好时直接说清楚，否则运维只会看到"用户名或密码错误"来回试
+    error = None if admin_password_is_configured() else _UNCONFIGURED_ADMIN_HINT
+    return _render(request, "login.html", {"success": msg, "error": error})
 
 
 @admin_router.post("/login")
@@ -70,6 +79,11 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...),
 ):
+    if not admin_password_is_configured():
+        return _render(
+            request, "login.html", {"error": _UNCONFIGURED_ADMIN_HINT}, status_code=503
+        )
+
     # IP 限流先于凭据校验：挡住单源爆破，也避免为每个请求做 60 万次 PBKDF2
     try:
         check_rate_limit(

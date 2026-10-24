@@ -53,7 +53,9 @@ def _write_windows_env(dist_dir: str, project_root: str) -> None:
     """基于 .env.example 生成 Windows 版默认配置 .env.default。
 
     差异：MongoDB 指向 localhost、HTTPS 端口默认 8443（避开需管理员的 443）、
-    管理后台默认密码 admin123。安装包首次安装时将其复制为 .env（已存在则不覆盖）。
+    管理后台口令留空。安装包首次安装时将其复制为 .env（已存在则不覆盖），
+    面板首次启动会用随机强口令填空并只在日志里显示一次（见 launcher._ensure_admin_password）——
+    随源码分发的固定口令等于把后台白送给读过 README 的人，因此绝不能再写回默认值。
     """
     src = os.path.join(project_root, ".env.example")
     with open(src, encoding="utf-8") as f:
@@ -64,7 +66,7 @@ def _write_windows_env(dist_dir: str, project_root: str) -> None:
         "MONGODB_URI=mongodb://mongo:27017",
         "MONGODB_URI=mongodb://localhost:27017",
     ).replace(
-        "ADMIN_PASSWORD=your-admin-password", "ADMIN_PASSWORD=admin123",
+        "ADMIN_PASSWORD=your-admin-password", "ADMIN_PASSWORD=",
     )
     dst = os.path.join(dist_dir, ".env.default")
     with open(dst, "w", encoding="utf-8") as f:

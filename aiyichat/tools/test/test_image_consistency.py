@@ -11,6 +11,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.image_task import ImageTask
@@ -81,6 +83,19 @@ class TestBuildImageTasks:
 class TestEngineImageFlow:
     """handle_message 图片链路：标签提取、额度扣减、ImageTask 组装。"""
 
+    @pytest.fixture(autouse=True)
+    def _enable_imagegen(self):
+        """图片链路的用例必须在"图片生成已开启"的前置下跑。
+
+        `imagegen_enabled` 代码默认是 False，而关闭时 Engine 会直接丢弃图片提示且不扣额度
+        （关了还扣额度等于让用户为永远发不出的图付费）。整库跑测时前面用例会把它改回
+        False，所以这里逐用例钉住前置条件，不依赖运行顺序。
+        """
+        old = settings.imagegen_enabled
+        settings.imagegen_enabled = True
+        yield
+        settings.imagegen_enabled = old
+
     def _profile(self, ref_url: str = ""):
         return _make_engine_profile(
             reference_image_url=ref_url,
@@ -135,6 +150,33 @@ class TestEngineImageFlow:
         )
         assert result.image_tasks == []
         assert result.text == "好的"
+
+
+class TestImagegenDisabled:
+    """图片生成开关关掉时：丢弃图片提示，且不扣图片额度。
+
+    适配器会丢弃图片任务，Engine 先扣额度就等于用户为一张永远发不出的图付费。
+    """
+
+    def test_no_quota_deducted_and_no_task(self) -> None:
+        old = settings.imagegen_enabled
+        settings.imagegen_enabled = False
+        try:
+            engine = _build_engine(
+                profile=_make_engine_profile(
+                    reference_image_url="/api/media/ref1",
+                    persona=SimpleNamespace(appearance="a young woman"),
+                )
+            )
+            result, _ = _run(
+                engine, "发张自拍看看",
+                reply="给你拍一张[IMG:realistic photo, selfie at home]",
+            )
+        finally:
+            settings.imagegen_enabled = old
+        assert result.image_tasks == []
+        deduct_calls = [c[0] for c in engine.quota_repo.deduct.await_args_list]
+        assert ("acc-1", "image", 1) not in deduct_calls
 
 
 class TestProviderRouting:

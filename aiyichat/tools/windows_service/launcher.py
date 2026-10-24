@@ -53,6 +53,12 @@ _FFMPEG_BIN = BASE_DIR / "ffmpeg" / "bin"
 if _FFMPEG_BIN.is_dir():
     os.environ["PATH"] = str(_FFMPEG_BIN) + os.pathsep + os.environ.get("PATH", "")
 
+# 后台口令的可用性判定与随机口令生成，与应用侧共用同一份实现（app 目录已随包附带）
+from app.utils.password_hashing import (  # noqa: E402
+    generate_admin_password,
+    is_insecure_admin_password,
+)
+
 _CERT_DIR = BASE_DIR / "certs"
 _CERT_KEY = _CERT_DIR / "selfsigned.key"
 _CERT_CRT = _CERT_DIR / "selfsigned.crt"
@@ -76,6 +82,37 @@ def _read_env_var(name: str, default: str) -> str:
         except OSError:
             pass
     return default
+
+
+def _write_env_var(name: str, value: str) -> None:
+    """就地改写 .env 中的某个键（不存在则追加）；保留其余行原样。"""
+    env_file = BASE_DIR / ".env"
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.strip().startswith(name + "="):
+            lines[index] = f"{name}={value}"
+            replaced = True
+            break
+    if not replaced:
+        lines.append(f"{name}={value}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _ensure_admin_password() -> str | None:
+    """首次启动时把 .env 里的模板口令换成随机强口令，返回新口令（无需更换时返回 None）。
+
+    安装包的 .env.default 随源码分发，`admin123` 这类值后台是直接拒绝登录的
+    （见 app.admin.auth 的 fail-closed 校验），所以必须在起服务前改写掉。
+    新口令只写进 .env 并在面板日志里打印这一次，之后重启不会再显示。
+    """
+    if not (BASE_DIR / ".env").exists():
+        return None
+    if not is_insecure_admin_password(_read_env_var("ADMIN_PASSWORD", "")):
+        return None
+    password = generate_admin_password()
+    _write_env_var("ADMIN_PASSWORD", password)
+    return password
 
 
 def _get_https_port() -> int:
@@ -489,6 +526,14 @@ class ServicePanelApp(ctk.CTk):
         self.url_label.configure(
             text=f"https://localhost:{_get_https_port()}/admin/login"
         )
+        initial_password = _ensure_admin_password()
+        if initial_password:
+            # 只在生成的这一次显示：后台对模板口令是拒绝登录的，不提示用户就进不去
+            self.append_log(
+                f"[面板] 已生成后台管理员初始口令：{initial_password}"
+                f"（用户名 {_read_env_var('ADMIN_USERNAME', 'admin')}）"
+            )
+            self.append_log("[面板] 该口令仅本次显示，请妥善保存并尽快登录后修改")
         threading.Thread(target=self._run_server, daemon=True).start()
 
     def _run_server(self) -> None:

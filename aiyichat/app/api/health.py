@@ -4,6 +4,10 @@
 - healthy: 所有检查通过
 - degraded: 非关键检查失败（如 LLM 慢但可用）
 - unhealthy: 关键检查失败（如 MongoDB 断开）
+
+匿名访问只给"总状态 + 各项状态"；延迟、磁盘余量、任务槽位与异常原文属于运维细节，
+且异常文本常带连接串/主机名（本仓库为公开仓库，日志与响应都可能被截图流转），
+只在对后台会话有效时返回。
 """
 
 import logging
@@ -11,7 +15,7 @@ import shutil
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Cookie
 
 from app.db.mongo import get_database
 
@@ -162,14 +166,16 @@ def _check_background_tasks() -> dict[str, Any]:
 
 
 @health_router.get("/health")
-async def health_check():
+async def health_check(admin_session: str = Cookie(default="")):
     """深度健康检查端点。
 
     Returns:
         - status: healthy / degraded / unhealthy
-        - checks: 各项检查的详细结果
+        - checks: 各项检查的详细结果（匿名只给状态；详情需有效后台会话）
         - timestamp: 检查时间戳
     """
+    from app.admin.auth import is_admin_session
+
     checks = {
         "mongodb": await _check_mongodb(),
         "llm": await _check_llm(),
@@ -186,6 +192,14 @@ async def health_check():
         overall_status = "degraded"
     else:
         overall_status = "healthy"
+
+    if not is_admin_session(admin_session):
+        # compose 的 healthcheck 只看 HTTP 状态码，容器健康判定不受精简影响
+        return {
+            "status": overall_status,
+            "checks": {name: {"status": c["status"]} for name, c in checks.items()},
+            "timestamp": time.time(),
+        }
 
     return {
         "status": overall_status,

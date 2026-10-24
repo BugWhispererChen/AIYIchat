@@ -32,6 +32,23 @@ function Set-EnvPort {
     }
 }
 
+# 拦截随源码公开的默认值：这些口令/占位符一旦放行，后台等于白送给读过 README 的人，
+# 模型调用也会全部失败。服务侧对默认口令是 fail-closed 的，此处提前失败更友好。
+function Validate-Env {
+    $adminPassword = Get-EnvPort -Key "ADMIN_PASSWORD"
+    if (-not $adminPassword -or @("your-admin-password", "admin123") -contains $adminPassword) {
+        Write-Host "错误：.env 的 ADMIN_PASSWORD 为空或仍是模板默认值，管理后台将拒绝登录。" -ForegroundColor Red
+        Write-Host "请设置一个新口令（建议 12 位以上）后重新运行本脚本。" -ForegroundColor Yellow
+        Write-Host "可用这条命令生成强口令：[guid]::NewGuid().ToString(""N"")" -ForegroundColor Yellow
+        exit 1
+    }
+    if ((Get-EnvPort -Key "DASHSCOPE_API_KEY") -eq "sk-your-api-key-here") {
+        Write-Host "错误：.env 的 DASHSCOPE_API_KEY 仍是占位值，所有模型调用都会失败。" -ForegroundColor Red
+        Write-Host "请填入阿里云百炼的真实 API Key 后重新运行本脚本" -ForegroundColor Yellow
+        exit 1
+    }
+}
+
 # 检查 Docker
 try {
     docker --version | Out-Null
@@ -54,11 +71,13 @@ Write-Host "[1/5] Docker 环境检查通过" -ForegroundColor Green
 if (-not (Test-Path .env)) {
     Write-Host "[2/5] 未找到 .env 文件，从 .env.example 复制..." -ForegroundColor Yellow
     Copy-Item .env.example .env
-    Write-Host "请编辑 .env 文件配置必要参数（特别是 MONGO_ROOT_PASSWORD 和 DASHSCOPE_API_KEY），然后重新运行本脚本" -ForegroundColor Yellow
+    Write-Host "请编辑 .env 文件配置必要参数（特别是 ADMIN_PASSWORD 后台登录口令、" -ForegroundColor Yellow
+    Write-Host "ADMIN_USERNAME 与 DASHSCOPE_API_KEY 模型服务密钥），然后重新运行本脚本" -ForegroundColor Yellow
     exit 0
 } else {
     Write-Host "[2/5] .env 文件已存在" -ForegroundColor Green
 }
+Validate-Env
 
 # 同步端口配置到 .env：命令行参数优先，否则沿用 .env 已有值，再否则使用默认值
 if ($HttpsPort -ne "") {

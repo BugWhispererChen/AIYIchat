@@ -122,10 +122,61 @@ def _build_parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return parents
 
 
+def _json_body_names(tree: ast.AST) -> set[str]:
+    """找出"整个响应体"变量：由 `json.loads(...)` / `resp.json()` 赋值而来的名字。
+
+    护栏原本只盯 `json.dumps` 和敏感字段名，漏掉了最常见的一种写法——把解析好的
+    响应 dict 整包传给 logger（微信 `扫码状态` 就是这么漏出 bot_token 的）。
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        value = node.value
+        if not isinstance(value, ast.Call):
+            continue
+        func = value.func
+        is_json = (isinstance(func, ast.Attribute) and func.attr in {"loads", "json"}) or (
+            isinstance(func, ast.Name) and func.id == "loads"
+        )
+        if not is_json:
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
+
+
+def _whole_body_uses(
+    arg: ast.AST, body_names: set[str], parents: dict[ast.AST, ast.AST]
+) -> list[ast.Name]:
+    """挑出"整包对象直接出镜"的引用。
+
+    只认定这几种上下文：logger 的实参本身、`%` 元组的一项、f-string 插值、`%`/`+` 拼接。
+    `list(data.keys())`、`data.get("ret")` 这类取键名/取单字段的写法不在其中——它们是
+    本模块认可的合规形态，误报会把人推向"给护栏加豁免"的歧路。
+    """
+    hits: list[ast.Name] = []
+    for sub in ast.walk(arg):
+        if not isinstance(sub, ast.Name) or sub.id not in body_names:
+            continue
+        if sub is arg:  # logger.info("%s", data)
+            hits.append(sub)
+            continue
+        parent = parents.get(sub)
+        tuple_item = isinstance(parent, ast.Tuple)  # logger.info("%s %s", (a, data))
+        formatted = isinstance(parent, (ast.FormattedValue, ast.JoinedStr))  # f"{data}"
+        joined = isinstance(parent, ast.BinOp)  # "resp=" + str(data) / "%s" % data
+        if tuple_item or formatted or joined:
+            hits.append(sub)
+    return hits
+
+
 def _violations(path: Path) -> list[str]:
     """返回单个文件里的违规描述列表。"""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     parents = _build_parents(tree)
+    body_names = _json_body_names(tree)
     found: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not _is_logger_call(node):
@@ -142,6 +193,14 @@ def _violations(path: Path) -> list[str]:
                         f"{path.name}:{sub.lineno} 日志参数里出现 json.dumps，"
                         f"请改为 list(data.keys()) 或 brief_json"
                     )
+            # 规则三：整包响应 dict 原样进日志（凭据字段就藏在里面）
+            for sub in _whole_body_uses(arg, body_names, parents):
+                if _masked_ancestors(tree, parents, sub):
+                    continue
+                found.append(
+                    f"{path.name}:{sub.lineno} 日志直接打印整个响应体 `{sub.id}`，"
+                    f'请改用 brief_json({sub.id}, ("ret", "errmsg"))'
+                )
             # 规则二：敏感取值未被掩码函数包住
             for ref, name in _sensitive_refs(arg):
                 lowered = name.lower()
@@ -163,16 +222,61 @@ def test_no_raw_credential_in_logging(path: Path) -> None:
     assert not violations, "凭据日志静态护栏命中：\n" + "\n".join(violations)
 
 
+def _scan_source(tmp_path: Path, source: str) -> list[str]:
+    """把一段源码写成临时 .py 供护栏扫描（用于验证规则本身没有失效）。"""
+    probe = tmp_path / "probe.py"
+    probe.write_text(source, encoding="utf-8")
+    return _violations(probe)
+
+
+def test_whole_response_dump_rule_fires(tmp_path: Path) -> None:
+    """新增的"整包响应"规则必须真的能命中，且不误伤合规写法。"""
+    bad = _scan_source(
+        tmp_path,
+        "import json\n"
+        "def f(resp, logger):\n"
+        '    data = json.loads(resp)\n'
+        '    logger.info("扫码状态: %s", data)\n',
+    )
+    assert any("整个响应体" in v for v in bad), bad
+
+    f_string = _scan_source(
+        tmp_path,
+        "import json\n"
+        "def f(resp, logger):\n"
+        '    data = json.loads(resp)\n'
+        '    logger.info(f"扫码状态: {data}")\n',
+    )
+    assert any("整个响应体" in v for v in f_string), f_string
+
+    good = _scan_source(
+        tmp_path,
+        "import json\n"
+        "def f(resp, logger):\n"
+        '    data = json.loads(resp)\n'
+        '    logger.info("keys: %s", list(data.keys()))\n'
+        '    logger.info("状态: %s", brief_json(data, ("ret", "errmsg")))\n'
+        '    logger.info("错误: %s", data.get("errmsg"))\n',
+    )
+    assert good == [], good
+
+
 def test_known_leak_points_are_closed() -> None:
     """本轮修掉的点位不许悄悄改回去（连同其历史文案一起钉死）。"""
-    cases = {
-        "adapters/qq_websocket.py": "Token response:",
-        "adapters/wechat_clawbot.py": "响应=%s",
-        "db/mongo.py": ", settings.mongodb_uri)",
+    cases = [
+        ("adapters/qq_websocket.py", "Token response:"),
+        ("adapters/wechat_clawbot.py", "响应=%s"),
+        ("db/mongo.py", ", settings.mongodb_uri)"),
         # 后台详情页曾把明文 App Secret 渲染进 HTML
-        "admin/templates/account_detail.html": 'name="app_secret" value="{{ bot.app_secret }}"',
-    }
-    for rel, banned in cases.items():
+        (
+            "admin/templates/account_detail.html",
+            'name="app_secret" value="{{ bot.app_secret }}"',
+        ),
+        # 扫码成功响应里带着 bot_token，整包打印等于把它写进日志
+        ("adapters/wechat_clawbot.py", '扫码状态: %s", self._label, data'),
+        ("adapters/qq_websocket.py", '上传返回无 file_info: %s", self._label, upload_data'),
+    ]
+    for rel, banned in cases:
         source = (_APP_DIR / rel).read_text(encoding="utf-8")
         assert banned not in source, f"{rel} 里又出现了凭据打印文案 `{banned}`"
 

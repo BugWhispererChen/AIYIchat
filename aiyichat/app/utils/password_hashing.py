@@ -8,10 +8,40 @@ import base64
 import hashlib
 import hmac
 import secrets
+import string
 
 _PBKDF2_PREFIX = "pbkdf2"
 _PBKDF2_ITERATIONS = 600_000
 _PBKDF2_SALT_BYTES = 16
+
+# 模板与旧安装包里出现过的口令：它们随源码公开，命中即等同于"没有配置口令"。
+_INSECURE_ADMIN_PASSWORDS = frozenset({"admin123", "your-admin-password"})
+
+_ADMIN_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "!@#$%^&*"
+
+
+def is_insecure_admin_password(value: str) -> bool:
+    """判断后台口令是否可用：空值与公开模板值都算不可用。"""
+    return not value or value.strip() in _INSECURE_ADMIN_PASSWORDS
+
+
+def generate_admin_password(length: int = 18) -> str:
+    """生成一次性初始后台口令：四类字符齐全，供无人值守的首次部署使用。"""
+    required = (
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.digits),
+        secrets.choice("!@#$%^&*"),
+    )
+    rest = length - len(required)
+    while True:
+        chars = list(required) + [
+            secrets.choice(_ADMIN_PASSWORD_ALPHABET) for _ in range(max(0, rest))
+        ]
+        secrets.SystemRandom().shuffle(chars)
+        candidate = "".join(chars)
+        if len(candidate) >= 12:
+            return candidate
 
 
 def hash_password(password: str) -> str:

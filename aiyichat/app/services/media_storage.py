@@ -8,6 +8,7 @@ import uuid
 import httpx
 
 from app.db.repositories.media_repo import MediaRepository
+from app.utils.redaction import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,8 @@ async def save_image_from_url(url: str) -> str:
     data, ct = await asyncio.to_thread(_compress_image, raw_data, ct)
 
     doc_id = await _media_repo.create(data=data, content_type=ct)
-    logger.info("Image saved to DB: id=%s, size=%d", doc_id, len(data))
+    # public_id 是 URL 里的能力令牌（见 MediaRepository.create），日志只打掩码值
+    logger.info("Image saved to DB: id=%s, size=%d", mask_secret(doc_id), len(data))
     return f"/api/media/{doc_id}"
 
 
@@ -78,7 +80,7 @@ async def save_image_from_bytes(data: bytes, content_type: str = "image/png") ->
     """二进制图片 → 压缩 → 存入 MongoDB → 返回 /api/media/{id}。"""
     data, ct = await asyncio.to_thread(_compress_image, data, content_type)
     doc_id = await _media_repo.create(data=data, content_type=ct)
-    logger.info("Image saved to DB: id=%s, size=%d", doc_id, len(data))
+    logger.info("Image saved to DB: id=%s, size=%d", mask_secret(doc_id), len(data))
     return f"/api/media/{doc_id}"
 
 
@@ -113,7 +115,10 @@ async def save_audio_from_bytes(data: bytes, content_type: str = "audio/mpeg") -
     doc_id = await _media_repo.create(
         data=data, content_type=content_type, filename=filename
     )
-    logger.info("Audio saved to DB: id=%s, size=%d, type=%s", doc_id, len(data), content_type)
+    logger.info(
+        "Audio saved to DB: id=%s, size=%d, type=%s",
+        mask_secret(doc_id), len(data), content_type,
+    )
     return f"/api/media/{doc_id}"
 
 

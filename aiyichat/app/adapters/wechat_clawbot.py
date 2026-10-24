@@ -191,7 +191,11 @@ class WeChatClient(ChannelAdapter):
                 logger.error("%s 二维码响应解析失败: %s", self._label, e)
                 raise RuntimeError("获取二维码失败: 无法解析响应")
 
-            logger.info("%s QRCode response: %s", self._label, data)
+            logger.info(
+                "%s QRCode response: %s",
+                self._label,
+                brief_json(data, ("ret", "errcode", "msg", "errmsg")),
+            )
 
             ret_code = data.get("ret", data.get("errcode", 0))
             if ret_code != 0:
@@ -247,7 +251,12 @@ class WeChatClient(ChannelAdapter):
                     )
                     return None
 
-                logger.info("%s 扫码状态: %s", self._label, data)
+                # 成功响应里带着 bot_token：只输出键名与错误码，绝不整包落日志
+                logger.info(
+                    "%s 扫码状态: %s",
+                    self._label,
+                    brief_json(data, ("ret", "errcode", "msg", "errmsg")),
+                )
 
                 ret_code = data.get("ret", data.get("errcode", 0))
                 if ret_code != 0:
@@ -1039,7 +1048,9 @@ class WeChatClient(ChannelAdapter):
                 ret = data.get("ret")
                 if ret is not None and ret != 0:
                     logger.error(
-                        "%s 发送图片失败: %s", self._label, data
+                        "%s 发送图片失败: %s",
+                        self._label,
+                        brief_json(data, ("ret", "errcode", "msg", "errmsg")),
                     )
                 else:
                     logger.info(
@@ -1102,7 +1113,9 @@ class WeChatClient(ChannelAdapter):
                 ret = data.get("ret")
                 if ret is not None and ret != 0:
                     logger.error(
-                        "%s 发送文件失败: %s", self._label, data
+                        "%s 发送文件失败: %s",
+                        self._label,
+                        brief_json(data, ("ret", "errcode", "msg", "errmsg")),
                     )
                 else:
                     logger.info(
@@ -1365,13 +1378,15 @@ class WeChatClient(ChannelAdapter):
         account_id: str = "",
     ) -> None:
         """异步生成语音并发送，失败时降级为文字回复。"""
+        # 语音额度按"条"计（与后台"剩余 N 次"的展示口径一致），不按文本长度
+        quota_charged = False
         try:
             # 1. 前置扣减语音额度，不足则降级文字
             if account_id:
                 from app.db.repositories.quota_repo import QuotaRepository
 
                 ok, reason = await QuotaRepository().deduct(
-                    account_id, "voice", len(text)
+                    account_id, "voice", 1
                 )
                 if not ok:
                     logger.info(
@@ -1380,6 +1395,7 @@ class WeChatClient(ChannelAdapter):
                     )
                     await self.send_text(to_user_id, text)
                     return
+                quota_charged = True
 
             # 2. TTS 合成 + 以 MP3 文件形式发送
             from app.services.tts_service import TTSService
@@ -1400,6 +1416,11 @@ class WeChatClient(ChannelAdapter):
 
         except Exception as e:
             logger.error("%s TTS 发送失败，降级为文字: %s", self._label, e)
+            if quota_charged and account_id:
+                # 合成或发送没成功就不该收这条语音的额度（对方收到的是文字兜底）
+                from app.db.repositories.quota_repo import QuotaRepository
+
+                await QuotaRepository().refund(account_id, "voice", 1)
             try:
                 await self.send_text(to_user_id, text)
             except Exception as e2:

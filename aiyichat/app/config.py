@@ -1,9 +1,12 @@
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+if TYPE_CHECKING:
+    from app.db.repositories.app_settings_repo import AppSettingsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -704,6 +707,35 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
 settings = _RuntimeSettings()
 
 
+async def _reconcile_admin_password(repo: "AppSettingsRepository") -> None:
+    """库里仍是模板默认口令时，用 .env 里的新口令覆盖它。
+
+    后台口令是"数据库优先"：旧部署一旦把 `admin123` 种进 app_settings，之后运维在
+    .env 改的 ADMIN_PASSWORD 就永远不生效。配上 fail-closed 的登录校验后，这种残留
+    会从"弱口令"变成"永久锁门"，所以只在库里是默认值时才覆盖——库里已是后台改过的
+    口令就绝不碰。覆盖时直接落哈希，避免明文在库里过夜。
+    """
+    import asyncio
+
+    from app.utils.password_hashing import (
+        hash_password,
+        is_insecure_admin_password,
+    )
+
+    doc = await repo.get_document()
+    if doc is None or not is_insecure_admin_password(doc.admin_password or ""):
+        return
+    env_value = str(_bootstrap_settings_to_dict().get("admin_password") or "").strip()
+    if is_insecure_admin_password(env_value):
+        logger.warning(
+            "后台管理员口令仍为默认值（.env 与数据库一致）：管理登录已停用，"
+            "请设置 ADMIN_PASSWORD 后重启"
+        )
+        return
+    await repo.upsert({"admin_password": await asyncio.to_thread(hash_password, env_value)})
+    logger.warning("检测到数据库中的默认后台口令，已用 .env 的 ADMIN_PASSWORD 覆盖")
+
+
 async def load_settings_from_db() -> set[str]:
     """
     从 MongoDB 加载运行时配置。
@@ -721,6 +753,8 @@ async def load_settings_from_db() -> set[str]:
     migrated = await repo.migrate_model_configs_if_needed()
     if migrated:
         logger.info("App settings model_configs 已补齐默认分组")
+
+    await _reconcile_admin_password(repo)
 
     doc = await repo.get_document()
     if doc is None:

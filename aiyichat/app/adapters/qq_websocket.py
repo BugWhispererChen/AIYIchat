@@ -36,6 +36,7 @@ from app.conversation.sticker_task import (
     StickerTask,
 )
 from app.services.voice_window import voice_window
+from app.utils.redaction import brief_json, mask_secret
 
 if TYPE_CHECKING:
     from app.services.asr_service import ASRService
@@ -289,7 +290,11 @@ class QQWebSocketClient:
             try:
                 from app.services.media_storage import save_image_from_url
                 local_media_url = await save_image_from_url(image_url)
-                print(f"{self._label} [图片已保存] {local_media_url}")
+                # 掩码输出：/api/media/<id> 的 id 是能力令牌，拿到完整 URL 就能读原图
+                print(
+                    f"{self._label} [图片已保存] "
+                    f"/api/media/{mask_secret(local_media_url.rsplit('/', 1)[-1])}"
+                )
                 # 下载原图用于尺寸预判
                 import httpx
                 async with httpx.AsyncClient(timeout=10.0) as client:
@@ -732,13 +737,16 @@ class QQWebSocketClient:
         account_id: str = "",
     ) -> None:
         """异步生成语音并发送，失败时降级为文字回复。"""
+        # 语音额度按"条"计：后台展示的是"剩余 N 次"，按 len(text) 扣会让一条长语音
+        # 把几十次额度一次吃光，口径与展示完全对不上
+        quota_charged = False
         try:
             # 1. 前置扣减语音额度，不足则降级文字
             if account_id:
                 from app.db.repositories.quota_repo import QuotaRepository
 
                 ok, reason = await QuotaRepository().deduct(
-                    account_id, "voice", len(text)
+                    account_id, "voice", 1
                 )
                 if not ok:
                     logger.info(
@@ -749,6 +757,7 @@ class QQWebSocketClient:
                         user_id, text, msg_id, is_group, group_id
                     )
                     return
+                quota_charged = True
 
             # 2. TTS 合成 + 格式转换 + 发送
             from app.services.audio_utils import wav_to_silk
@@ -776,6 +785,12 @@ class QQWebSocketClient:
 
         except Exception as e:
             logger.error("%s TTS 发送失败，降级为文字: %s", self._label, e)
+            if quota_charged and account_id:
+                # 合成/上传/发送任一步炸了都退回额度：对方最终收到的是文字，
+                # 让用户为一条没发出去的语音付费说不过去
+                from app.db.repositories.quota_repo import QuotaRepository
+
+                await QuotaRepository().refund(account_id, "voice", 1)
             try:
                 await self._send_reply(
                     user_id, text, msg_id, is_group, group_id
@@ -859,7 +874,7 @@ class QQWebSocketClient:
             media_doc = await MediaRepository().find_by_id(media_id)
             if not media_doc or not media_doc.get("data"):
                 logger.warning(
-                    "%s 表情包媒体不存在: %s", self._label, task.media_url
+                    "%s 表情包媒体不存在: id=%s", self._label, mask_secret(media_id)
                 )
                 return
             data: bytes = media_doc["data"]
@@ -958,7 +973,7 @@ class QQWebSocketClient:
             if not file_info:
                 logger.error(
                     "%s 上传返回无 file_info: %s",
-                    self._label, upload_data,
+                    self._label, brief_json(upload_data, ("code", "message")),
                 )
                 return
 

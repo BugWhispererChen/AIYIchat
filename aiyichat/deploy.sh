@@ -36,6 +36,31 @@ sync_env_port() {
     fi
 }
 
+# 读取 .env 中某个键的值（不存在返回空串）
+get_env_value() {
+    grep "^$1=" .env 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'
+}
+
+# 拦截随源码公开的默认值：这些口令/占位符一旦放行，后台等于白送给读过 README 的人，
+# 模型调用也会全部失败。服务侧对默认口令是 fail-closed 的，此处提前失败更友好。
+validate_env() {
+    local admin_pw
+    admin_pw=$(get_env_value ADMIN_PASSWORD)
+    case "$admin_pw" in
+        ""|your-admin-password|admin123)
+            echo "错误：.env 的 ADMIN_PASSWORD 为空或仍是模板默认值，管理后台将拒绝登录。"
+            echo "请设置一个新口令（建议 12 位以上）后重新运行本脚本。"
+            echo "可用这条命令生成一个强口令：openssl rand -base64 18"
+            exit 1
+            ;;
+    esac
+    if [ "$(get_env_value DASHSCOPE_API_KEY)" = "sk-your-api-key-here" ]; then
+        echo "错误：.env 的 DASHSCOPE_API_KEY 仍是占位值，所有模型调用都会失败。"
+        echo "请填入阿里云百炼的真实 API Key 后重新运行本脚本"
+        exit 1
+    fi
+}
+
 echo "========================================"
 echo "  AIYIchat 一键部署脚本"
 echo "========================================"
@@ -74,11 +99,13 @@ fi
 if [ ! -f .env ]; then
     echo "[2/5] 未找到 .env 文件，从 .env.example 复制..."
     cp .env.example .env
-    echo "请编辑 .env 文件配置必要参数（特别是 MONGO_ROOT_PASSWORD 和 DASHSCOPE_API_KEY），然后重新运行本脚本"
+    echo "请编辑 .env 文件配置必要参数（特别是 ADMIN_PASSWORD 后台登录口令、"
+    echo "ADMIN_USERNAME 与 DASHSCOPE_API_KEY 模型服务密钥），然后重新运行本脚本"
     exit 0
 else
     echo "[2/5] .env 文件已存在"
 fi
+validate_env
 
 # 同步端口配置到 .env：命令行参数优先，否则沿用 .env 已有值，再否则使用默认值
 if [ -n "$HTTPS_PORT" ]; then

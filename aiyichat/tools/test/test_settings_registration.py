@@ -124,6 +124,45 @@ class TestProactivePageKeysReachDb:
         )
 
 
+class TestWebChannelPageKeysReachDb:
+    """C 端渠道管理页 upsert 的键同样必须三处登记。
+
+    `web_max_profiles` / `web_max_services` 就是在这里漏登记的：表单写进 DB、
+    `to_flat_dict` 读回来时没有这个字段，页面刷新即回退默认值，重启也回默认——
+    看起来"保存成功"其实完全调不动，所以整页的键一起钉住。
+    """
+
+    KEYS = (
+        "web_auth_enabled", "web_register_enabled", "web_register_require_review",
+        "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+        "web_free_quota_template_id", "web_session_hours",
+        "web_session_max_concurrent", "web_login_max_fail",
+        "web_login_lockout_minutes", "web_rate_limit_register",
+        "web_rate_limit_login", "web_max_profiles", "web_max_services",
+        # 同一页一并提交的后台防爆破阈值
+        "admin_login_rate_limit", "admin_login_max_fail",
+        "admin_login_lockout_minutes", "trust_proxy_headers",
+    )
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_key_in_all_layers(self, key: str) -> None:
+        assert hasattr(settings, key), f"{key} 在 Settings 上不存在"
+        assert key in _document_fields(), f"{key} 未登记进 AppSettingsDocument"
+        assert key in set(_Settings._fields()), f"{key} 不在重载白名单"
+        assert key in AppSettingsDocument().to_flat_dict, f"{key} 不会被读回运行时"
+
+    @pytest.mark.parametrize("key", sorted(KEYS))
+    def test_default_matches(self, key: str) -> None:
+        doc_default = AppSettingsDocument.model_fields[key].default
+        code_default = getattr(_Settings, key)
+        assert type(doc_default) is type(code_default), (
+            f"{key} 默认值类型不一致：{type(doc_default)} vs {type(code_default)}"
+        )
+        assert doc_default == code_default, (
+            f"{key} 默认值漂移：DB 文档 {doc_default!r} vs 代码 {code_default!r}"
+        )
+
+
 class _FakeSettings:
     """后台表单读写用的最小配置替身：只带节奏相关键。"""
 

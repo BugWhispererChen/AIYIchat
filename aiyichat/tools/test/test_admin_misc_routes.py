@@ -345,6 +345,164 @@ class TestPasswordChange:
         _run(flow())
 
 
+class TestInsecureDefaultPasswordBlocked:
+    """默认口令 fail-closed：模板值随源码公开，放行等于把后台白送。"""
+
+    def test_login_is_blocked_on_template_password(self) -> None:
+        async def flow() -> None:
+            from app.admin import auth
+
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            try:
+                for template_value in ("", "admin123", "your-admin-password"):
+                    settings.admin_password = template_value
+                    assert await auth.verify_credentials("admin", template_value) is False
+                    async with _client(app) as client:
+                        # 登录页给出配置提示，而不是一个"看起来能试"的表单
+                        resp = await client.get("/admin/login")
+                        assert resp.status_code == 200
+                        assert "后台登录已停用" in resp.text
+                        # 提交直接 503（不做凭据比对，也不进限流/锁定计数）
+                        resp = await client.post(
+                            "/admin/login",
+                            data={"username": "admin", "password": "anything"},
+                        )
+                        assert resp.status_code == 503, template_value
+                        # 受保护页面同样不可用
+                        resp = await client.get("/admin/accounts")
+                        assert resp.status_code == 503
+            finally:
+                settings.admin_password = old_pw
+                auth._sessions.clear()
+                await _teardown_app(app)
+
+        _run(flow())
+
+    def test_change_password_rejects_default_and_clears_all_sessions(self) -> None:
+        async def flow() -> None:
+            from app.admin import auth
+
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            settings.admin_password = "old-password-2"
+            try:
+                async with _client(app) as client:
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "old-password-2"},
+                    )
+                    assert resp.status_code == 303
+                    token = resp.cookies.get("admin_session")
+                    cookies = {"admin_session": token}
+
+                    # 另一个浏览器上的"旧会话"
+                    resp = await client.post(
+                        "/admin/login",
+                        data={"username": "admin", "password": "old-password-2"},
+                    )
+                    other_token = resp.cookies.get("admin_session")
+                    assert other_token and other_token != token
+                    # 明文口令登录时已透明迁移为哈希，后续断言以迁移后的值为基准
+                    stored_before = settings.admin_password
+                    assert stored_before.startswith("pbkdf2$")
+
+                    # 想把口令改回模板默认值：拒绝
+                    resp = await client.post("/admin/password", cookies=cookies, data={
+                        "current_password": "old-password-2",
+                        "new_password": "admin123",
+                        "confirm_password": "admin123",
+                    })
+                    assert resp.status_code == 200 and "默认口令" in resp.text
+                    assert settings.admin_password == stored_before
+
+                    # 成功改密：全部后台会话一起作废，不只是当前这条
+                    resp = await client.post("/admin/password", cookies=cookies, data={
+                        "current_password": "old-password-2",
+                        "new_password": "new-password-2",
+                        "confirm_password": "new-password-2",
+                    })
+                    assert resp.status_code == 303
+                    assert auth._sessions == {}
+                    for tk in (token, other_token):
+                        r = await client.get("/admin/accounts", cookies={"admin_session": tk})
+                        assert r.status_code in (303, 401)
+            finally:
+                settings.admin_password = old_pw
+                auth._sessions.clear()
+                await _teardown_app(app)
+
+        _run(flow())
+
+    def test_env_password_wins_over_stale_db_default(self) -> None:
+        """库里残留模板默认值时，用 .env 的强口令覆盖，否则 fail-closed 会变成永久锁门。"""
+        from app.config import _reconcile_admin_password
+        from app.db.repositories.app_settings_repo import AppSettingsRepository
+
+        async def flow() -> None:
+            app = await _setup_app()
+            repo = AppSettingsRepository()
+            old_pw = settings.admin_password
+            try:
+                await repo.upsert({"admin_password": "admin123"})
+                # .env 也是默认值：保持原样（此时登录被挡住，提示去配置）
+                with patch(
+                    "app.config._bootstrap_settings_to_dict",
+                    return_value={"admin_password": "admin123"},
+                ):
+                    await _reconcile_admin_password(repo)
+                doc = await repo.get_document()
+                assert doc is not None and doc.admin_password == "admin123"
+
+                # .env 给了强口令：覆盖为哈希并写回库
+                with patch(
+                    "app.config._bootstrap_settings_to_dict",
+                    return_value={"admin_password": "a-strong-new-password"},
+                ):
+                    await _reconcile_admin_password(repo)
+                doc = await repo.get_document()
+                assert doc is not None and doc.admin_password.startswith("pbkdf2$")
+
+                # 库里已是正常口令：绝不覆盖
+                await repo.upsert({"admin_password": "already-changed-password"})
+                with patch(
+                    "app.config._bootstrap_settings_to_dict",
+                    return_value={"admin_password": "another-password"},
+                ):
+                    await _reconcile_admin_password(repo)
+                doc = await repo.get_document()
+                assert doc is not None and doc.admin_password == "already-changed-password"
+            finally:
+                settings.admin_password = old_pw
+                await _teardown_app(app)
+
+        _run(flow())
+
+    def test_generated_password_is_usable(self) -> None:
+        from app.admin.auth import hash_password
+        from app.utils.password_hashing import (
+            generate_admin_password,
+            is_insecure_admin_password,
+            verify_password,
+        )
+
+        assert is_insecure_admin_password("")
+        assert is_insecure_admin_password("  admin123  ")
+        assert is_insecure_admin_password("your-admin-password")
+        assert not is_insecure_admin_password("some-unknown-pw")
+
+        password = generate_admin_password()
+        assert len(password) >= 12
+        assert not is_insecure_admin_password(password)
+        assert any(c.islower() for c in password)
+        assert any(c.isupper() for c in password)
+        assert any(c.isdigit() for c in password)
+        assert any(not c.isalnum() for c in password)
+        # 生成的口令能直接被后台的验密逻辑接受
+        assert verify_password(password, hash_password(password))
+        assert generate_admin_password() != password
+
+
 class TestDashboardAndSettings:
     """仪表盘、AI模型配置与热重载。"""
     def test_dashboard_multimedia_reload_metrics(self) -> None:
@@ -747,6 +905,44 @@ class TestAdminProfiles:
 
 class TestPublicApi:
     """公共 API：health / profiles / conversations / media。"""
+
+    def test_health_detail_requires_admin_session(self) -> None:
+        """匿名只给总状态；延迟、磁盘余量、任务槽位与异常原文留给后台会话。"""
+        import time as time_mod
+
+        from app.admin import auth
+
+        async def flow() -> None:
+            app = await _setup_app(override_auth=False)
+            old_pw = settings.admin_password
+            settings.admin_password = "health-pw"
+            try:
+                async with _client(app) as client:
+                    resp = await client.get("/api/health")
+                    assert resp.status_code == 200
+                    body = resp.json()
+                    assert set(body["checks"]) == {
+                        "mongodb", "llm", "embedding", "disk", "background_tasks"
+                    }
+                    for name, item in body["checks"].items():
+                        assert set(item) == {"status"}, name
+
+                    token = "health-admin-session"
+                    auth._sessions[token] = time_mod.time() + 60
+                    resp = await client.get(
+                        "/api/health", cookies={"admin_session": token}
+                    )
+                    assert resp.status_code == 200
+                    checks = resp.json()["checks"]
+                    assert set(checks["mongodb"]) != {"status"}
+                    assert set(checks["disk"]) != {"status"}
+                    assert set(checks["background_tasks"]) != {"status"}
+            finally:
+                auth._sessions.clear()
+                settings.admin_password = old_pw
+                await _teardown_app(app)
+
+        _run(flow())
 
     def test_health_and_profiles_api(self) -> None:
         async def flow() -> None:

@@ -119,8 +119,10 @@ class TestWebPagesRender:
                     assert 'name="terms_accepted"' in html
                     assert 'name="privacy_accepted"' in html
                     assert 'name="age_confirmed"' in html
-                    assert "我已阅读并同意《身份协议》" in html
-                    assert "我已阅读并同意《隐私政策》" in html
+                    # 勾选文案必须能落到可读的正文页：只要求"同意"却给不出文件等于没取得同意
+                    assert "我已阅读并同意" in html
+                    assert 'href="/web/terms"' in html and "《身份协议》" in html
+                    assert 'href="/web/privacy"' in html and "《隐私政策》" in html
                     assert "我已满 14 周岁" in html
                     # 未成年人保护与部署者责任声明
                     assert "未满 14 周岁不得注册" in html

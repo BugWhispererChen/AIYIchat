@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>{{ doc.title }} - 爱易聊</title>
+<style>
+    :root {
+        color-scheme: light dark;
+        --paper: #f7f5f1;
+        --ink: #2a2622;
+        --ink-soft: #6b6258;
+        --hairline: #e6e1d6;
+        --amber: #e08a2b;
+        --font-body: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --paper: #1a1714;
+            --ink: #f0e9df;
+            --ink-soft: #b9ada0;
+            --hairline: #3a342c;
+        }
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        padding: 32px 20px 72px;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--font-body);
+        line-height: 1.75;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .meta { color: var(--ink-soft); font-size: 13px; margin-bottom: 28px; }
+    h2 {
+        font-size: 16px;
+        margin: 28px 0 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--hairline);
+    }
+    p, li { font-size: 14px; color: var(--ink); }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    .note {
+        margin-top: 32px;
+        padding: 14px 16px;
+        border-left: 3px solid var(--amber);
+        background: rgba(224, 138, 43, 0.08);
+        font-size: 13px;
+        color: var(--ink-soft);
+    }
+    a { color: var(--amber); }
+</style>
+</head>
+<body>
+<main>
+    <h1>{{ doc.title }}</h1>
+    <p class="meta">
+        版本 {{ doc.version }}
+        {% if doc.updated_at %} · 更新 {{ doc.updated_at }}{% endif %}
+    </p>
+
+    {% for section in doc.sections %}
+    <h2>{{ section.heading }}</h2>
+    {% if section.body %}<p>{{ section.body }}</p>{% endif %}
+    {% if section.bullets %}
+    <ul>
+        {% for item in section.bullets %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% endfor %}
+
+    <p class="note">
+        本页由本实例的部署者提供与维护，文本会随版本调整；继续使用前请以最新页面为准。
+        需要行使删除、导出等权利，或对本页内容有疑问，请联系本实例的管理员。
+    </p>
+    <p><a href="/web/register">返回注册</a> · <a href="/web/login">登录</a></p>
+</main>
+</body>
+</html>

@@ -543,6 +543,17 @@ function toggleBotFields(platform) {
     if (qqFields) qqFields.style.display = platform === 'qq' ? '' : 'none';
 }
 
+/* 上游返回的文案一律按纯文本渲染：拼进 innerHTML 等于让微信/QQ 接口往后台页面注入 DOM */
+function setQrAlert(botId, text) {
+    var area = document.querySelector('#qr-area-' + botId);
+    if (!area) return;
+    area.innerHTML = '';
+    var box = document.createElement('div');
+    box.className = 'alert alert-error';
+    box.textContent = text || '';
+    area.appendChild(box);
+}
+
 /* 微信 QR 码登录轮询 */
 function pollQRStatus(botId, qrcode) {
     var maxRetries = 120;
@@ -578,7 +589,7 @@ function pollQRStatus(botId, qrcode) {
                               window.location.reload();
                           } else {
                               document.querySelector('#qr-area-' + botId).innerHTML =
-                                  '<div class="alert alert-error">' + (d.message || '登录失败') + '</div>';
+                                  setQrAlert(botId, d.message || '登录失败');
                           }
                       });
                 } else if (data.status === 'waiting') {
@@ -587,7 +598,7 @@ function pollQRStatus(botId, qrcode) {
                     window.location.reload();
                 } else {
                     document.querySelector('#qr-area-' + botId).innerHTML =
-                        '<div class="alert alert-error">' + (data.message || '登录失败') + '</div>';
+                        setQrAlert(botId, data.message || '登录失败');
                 }
             })
             .catch(function(e) {
@@ -638,7 +649,7 @@ function pollQQBindStatus(botId) {
                     window.location.reload();
                 } else {
                     document.querySelector('#qr-area-' + botId).innerHTML =
-                        '<div class="alert alert-error">' + (data.message || '绑定失败') + '</div>';
+                        setQrAlert(botId, data.message || '绑定失败');
                 }
             })
             .catch(function(e) {

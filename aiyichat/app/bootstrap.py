@@ -132,6 +132,11 @@ def create_app() -> FastAPI:
         description="基于Prompt Profile的角色扮演对话系统",
         version="0.1.0",
         lifespan=lifespan,
+        # 接口文档只在非 production 暴露：公开部署下 /docs 等于把全部路由与参数结构
+        # 摊给扫描器，后台路由清单本身就是攻击面目录
+        docs_url=None if settings.app_env == "production" else "/docs",
+        redoc_url=None,
+        openapi_url=(None if settings.app_env == "production" else "/openapi.json"),
     )
 
     # 前端静态资源：CSS/JS/图标与本地化的第三方库统一走 /static，
@@ -143,9 +148,12 @@ def create_app() -> FastAPI:
     )
 
     # 注册 Trace ID 中间件（最外层，确保所有请求都有 Trace ID）
+    from app.middleware.security import SecurityHeadersMiddleware
     from app.middleware.trace import TraceMiddleware
 
     app.add_middleware(TraceMiddleware)
+    # 安全响应头：后台全站 Cookie 会话 + 表单操作，缺 frame 限制就是点击劫持的入口
+    app.add_middleware(SecurityHeadersMiddleware)
 
     from app.admin.router import admin_router
     from app.api.router import api_router

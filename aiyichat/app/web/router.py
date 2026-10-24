@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.responses import Response
 
+from app.models.web_credential import TERMS_VERSION, PRIVACY_VERSION
 from app.config import settings
 from app.template_filters import configure_templates
 
@@ -100,6 +101,140 @@ def _render(request: Request, name: str, ctx: dict[str, Any] | None = None) -> R
 def _disabled_page() -> Response:
     """开关关闭时的统一响应：403 + 纯静态提示页（不含任何身份数据）。"""
     return HTMLResponse(content=_DISABLED_HTML, status_code=status.HTTP_403_FORBIDDEN)
+
+
+# 《身份协议》《隐私政策》正文：注册页的勾选框必须有可读的落点，
+# 否则"要求同意一份读不到的文件"在合规上等于没取得同意。
+# 版本号复用凭据模型里的常量，保证"同意的版本"与"落库记录的版本"是同一个值。
+_LEGAL_SECTIONS_TERMS = [
+    {
+        "heading": "一、这是一个什么样的服务",
+        "body": "本实例是自建（self-hosted）的 AI 角色扮演对话服务：你与一个由部署者配置"
+                "的虚拟角色对话。角色不是真实人物，它的所有发言都由大模型生成，"
+                "不代表任何真实个体的观点、身份或经历。",
+    },
+    {
+        "heading": "二、账号与昵称",
+        "bullets": [
+            "你注册的账号名与昵称仅用于在本实例里识别你的会话与你的角色配置。",
+            "不得冒用真实人名人、机构或他人身份注册，也不得使用侵犯第三方权利的昵称。",
+            "一个账号可以创建多个虚拟身份与对话服务，它们同属这一个账号，删除账号会一并清除。",
+        ],
+    },
+    {
+        "heading": "三、使用规范",
+        "bullets": [
+            "不得利用本服务生成、传播违法内容，或用于欺骗、骚扰、诽谤他人。",
+            "不得对真实人物进行冒充、污名化或性化描绘；涉及公众人物的内容不得被误当作其本人发言。",
+            "须年满 14 周岁；未满 18 周岁应在监护人指导下使用。",
+            "不得通过脚本批量注册、压测或以其他滥用方式影响本实例的可用性。",
+        ],
+    },
+    {
+        "heading": "四、服务性质与免责",
+        "body": "本服务按\"现状\"提供，不保证连续可用、不保证输出准确或适宜。"
+                "模型可能生成看似可信但失实的内容，请勿据此做出医疗、法律、财务等现实决策。",
+        "bullets": [
+            "部署者可以调整角色、限流、暂停或终止服务，也可依据本协议删除违规账号与内容。",
+            "对话内容不构成任何专业建议，也不代表部署者立场。",
+        ],
+    },
+    {
+        "heading": "五、协议变更",
+        "body": "协议更新后会在本页面标注新版本号。若你在变更后继续使用该服务，"
+                "视为接受新版本协议；不同意时请停止使用并要求删除账号与数据。",
+    },
+]
+
+_LEGAL_SECTIONS_PRIVACY = [
+    {
+        "heading": "一、谁是数据处理者",
+        "body": "本实例由其部署者（个人或组织）运行与维护，部署者就是你所填信息的处理者。"
+                "开源项目的作者不接收、不转发、也不存储本实例的任何数据。"
+                "具体联系与处理途径请咨询本实例管理员。",
+    },
+    {
+        "heading": "二、存了什么、存在哪",
+        "bullets": [
+            "账号与身份：账号标识、身份标识与所属平台、注册与最近活跃时间。",
+            "登录凭据：用户名与经 PBKDF2-HMAC-SHA256 加盐哈希后的口令；不保存明文口令。",
+            "对话数据：消息正文、时间标签、你上传或生成的图片与语音文件。",
+            "记忆与上下文：长期记忆条目、摘要、注入模型的上下文快照、反思得到的洞见。",
+            "运营与安全记录：额度用量、主动关怀发送记录、登录失败与锁定计数、内容安全事件。",
+            "全部数据保存在本实例自己的数据库与磁盘目录中，随实例部署位置而定。",
+        ],
+    },
+    {
+        "heading": "三、会发给谁",
+        "bullets": [
+            "为了生成回复，对话上下文会发送给部署者配置的大模型服务（例如阿里云百炼）。"
+            "该第三方按它自己的隐私政策处理这些内容，本服务无法代替其作出承诺。",
+            "若部署者开启了语音合成/识别、图片生成等能力，相应文本或图片也会发送到对应服务。",
+            "除上述模型调用外，本服务不向你所在区域之外的广告、统计或分析平台发送数据；"
+            "页面静态资源由本实例自带，不引用外部 CDN。",
+        ],
+    },
+    {
+        "heading": "四、保留与删除",
+        "bullets": [
+            "你可以随时删除单条消息、某个对话、某个对话服务及其记忆，或注销整个账号。",
+            "删除按级联执行：会话一并清除其消息、上下文快照与仅被它们引用的媒体文件。",
+            "部署者可能按自身策略定期备份数据库；备份有保留期限，删除请求在备份被清理前"
+            "可能仍存在于历史备份中，备份同样受本政策约束。",
+        ],
+    },
+    {
+        "heading": "五、Cookie 与安全",
+        "bullets": [
+            "登录后本服务在浏览器写入会话 Cookie（HttpOnly、SameSite=Lax），仅用于维持登录状态；"
+            "不用于跨站追踪。",
+            "建议使用 HTTPS 访问；口令以哈希形式存储，但请注意：对话内容以明文保存在本实例中，"
+            "请勿输入你不愿被部署者读取的信息。",
+        ],
+    },
+    {
+        "heading": "六、未成年人保护",
+        "body": "未满 14 周岁不得注册使用。监护人发现未成年人使用了本服务，"
+                "可要求部署者删除该账号及其全部数据。",
+    },
+    {
+        "heading": "七、政策变更",
+        "body": "政策更新会在本页面标注新版本号，重大变更同时会在注册与登录入口提示。"
+                "此前记录的同意版本会保留，用于证明你在何时同意了何版内容。",
+    },
+]
+
+
+def _legal_doc(title: str, version: str, sections: list) -> dict:
+    return {
+        "title": title,
+        "version": version,
+        "updated_at": "",
+        "sections": sections,
+    }
+
+
+@web_router.get("/web/terms", response_class=HTMLResponse)
+async def terms_page(request: Request) -> Response:
+    """《身份协议》正文：注册页勾选框指向此处。
+
+    不随 `web_auth_enabled` 关闭：即便暂时不开放注册，已注册用户与监管询问仍需能读到条款。
+    """
+    return _render(
+        request,
+        "legal.html",
+        {"doc": _legal_doc("身份协议", TERMS_VERSION, _LEGAL_SECTIONS_TERMS)},
+    )
+
+
+@web_router.get("/web/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request) -> Response:
+    """《隐私政策》正文：说明数据存在本机、只在调用模型时出站。"""
+    return _render(
+        request,
+        "legal.html",
+        {"doc": _legal_doc("隐私政策", PRIVACY_VERSION, _LEGAL_SECTIONS_PRIVACY)},
+    )
 
 
 @web_router.get("/web/register", response_class=HTMLResponse)

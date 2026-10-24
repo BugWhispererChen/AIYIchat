@@ -1,0 +1,29 @@
+# 构建上下文只应包含源码与素材：以下内容为宿主机状态或敏感文件，
+# 打进镜像等于把凭据与本機路径分发出去（镜像可能被再次导出/分享）
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.dockerignore
+__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+certs/
+logs/
+data/chat_imports/
+data/entity_graph/
+data/*.db
+data/*.sqlite*
+node_modules/
+tools/windows_service/build/
+tools/windows_service/dist/
+tools/deploy_package/output/
+*.tar.gz
+*.exe
+.idea/
+.vscode/
+.qoder/

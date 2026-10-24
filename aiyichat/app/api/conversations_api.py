@@ -241,8 +241,11 @@ async def chat_stream(req: StreamChatRequest, request: Request):
             ):
                 for frame in stream_frames(item):
                     yield frame
-        except Exception as e:
-            yield _sse_frame(f"[ERROR] {e}")
+        except Exception:
+            # 原文回显给客户端等于把内部异常（可能含连接串、集合名、路径）交给匿名调用方；
+            # 客户端只需要知道"这轮断了"，细节进日志（logger.exception 带完整栈）
+            logger.exception("流式回复中断: conversation stream failed")
+            yield _sse_frame("[ERROR] 回复中断，请重新发送试试")
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")

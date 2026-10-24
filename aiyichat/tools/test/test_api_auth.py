@@ -678,3 +678,103 @@ class TestConversationApiAlwaysRequiresAuth:
                 mongo._db = None
 
         asyncio.run(flow())
+
+
+class TestChatStreamPayloadCleaning:
+    """SSE 网关层：内部标记不许出现在 data: 帧里，异常原文不许回显给客户端。
+
+    引擎侧的清洗有单测覆盖，这里补的是"过完网关到浏览器的那段"：
+    `stream_frames` 的分帧、错误帧的措辞，都是引擎单测看不到的部分。
+    """
+
+    def test_sse_frames_hide_internal_markup(self) -> None:
+        import app.conversation.engine as engine_module
+        from app.conversation.response_processor import (
+            DisplayStreamCleaner,
+            ResponseProcessor,
+        )
+
+        class _CleaningEngine:
+            """用真实清洗器逐块下发，标签故意横跨增量（最坏情况）。"""
+
+            def __init__(self, bot_id: str = "") -> None:
+                self.bot_id = bot_id
+
+            async def handle_message_stream(self, **kwargs: Any) -> AsyncIterator[str]:
+                cleaner = DisplayStreamCleaner(ResponseProcessor())
+                for delta in ("（微笑）给你", "拍一张[IMG:sunset", " over the sea]，看这"):
+                    for piece in cleaner.push(delta):
+                        yield piece
+                for piece in cleaner.flush():
+                    yield piece
+
+        async def flow() -> None:
+            app = await _setup_app("t_stream_clean")
+            original = engine_module.ConversationEngine
+            engine_module.ConversationEngine = _CleaningEngine  # type: ignore[misc]
+            try:
+                async with _client(app) as client:
+                    await _register(client, "cleaner")
+                    await _approve("cleaner")
+                    token = await _login(client, "cleaner")
+                    resp = await client.post(
+                        "/api/conversations/chat/stream",
+                        json={"text": "拍一张"},
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    assert resp.status_code == 200, resp.text
+                    body = resp.text
+                    # 帧是分片下发的，拼接所有 data: 载荷再比对文案完整性
+                    joined = "".join(
+                        line.removeprefix("data: ")
+                        for line in body.splitlines()
+                        if line.startswith("data:") and line != "data: [DONE]"
+                    )
+                    assert "[IMG:" not in body, body
+                    assert "sunset" not in body, body
+                    assert "微笑" not in body, body
+                    assert joined == "😊给你拍一张，看这", joined
+            finally:
+                engine_module.ConversationEngine = original  # type: ignore[misc]
+                mongo._db = None
+
+        asyncio.run(flow())
+
+    def test_error_frame_keeps_internals_out(self) -> None:
+        """生成中断时只给稳定话术：异常原文可能带连接串、主机与集合名。"""
+        import app.conversation.engine as engine_module
+
+        secret = "mongodb://root:Pa55w0rd@mongo-internal:27017/aiyichat"
+
+        class _BoomEngine:
+            def __init__(self, bot_id: str = "") -> None:
+                self.bot_id = bot_id
+
+            async def handle_message_stream(self, **kwargs: Any) -> AsyncIterator[str]:
+                yield "前半句"
+                raise RuntimeError(f"连接失败: {secret}")
+
+        async def flow() -> None:
+            app = await _setup_app("t_stream_error")
+            original = engine_module.ConversationEngine
+            engine_module.ConversationEngine = _BoomEngine  # type: ignore[misc]
+            try:
+                async with _client(app) as client:
+                    await _register(client, "boom")
+                    await _approve("boom")
+                    token = await _login(client, "boom")
+                    resp = await client.post(
+                        "/api/conversations/chat/stream",
+                        json={"text": "hi"},
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    body = resp.text
+                    assert "前半句" in body, body
+                    assert "[ERROR]" in body, body
+                    assert secret not in body, "异常原文带着内部连接串回显给了客户端"
+                    assert "mongo-internal" not in body and "RuntimeError" not in body, body
+            finally:
+                engine_module.ConversationEngine = original  # type: ignore[misc]
+                mongo._db = None
+
+        asyncio.run(flow())

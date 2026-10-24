@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import to_object_id
 from app.models.profile import PromptProfileCreate, PromptProfileInDB, PromptProfileUpdate
 
 
@@ -18,7 +18,10 @@ class ProfileRepository:
         return PromptProfileInDB.from_mongo(doc)
 
     async def find_by_id(self, profile_id: str) -> Optional[PromptProfileInDB]:
-        doc = await self._collection().find_one({"_id": ObjectId(profile_id)})
+        oid = to_object_id(profile_id)
+        if oid is None:
+            return None
+        doc = await self._collection().find_one({"_id": oid})
         if doc is None:
             return None
         return PromptProfileInDB.from_mongo(doc)

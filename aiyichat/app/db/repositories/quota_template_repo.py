@@ -3,9 +3,9 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import to_object_id
 from app.models.quota_template import (
     QuotaTemplateCreate,
     QuotaTemplateInDB,
@@ -31,9 +31,10 @@ class QuotaTemplateRepository:
         self, template_id: str
     ) -> Optional[QuotaTemplateInDB]:
         """根据 ID 查询额度模板。"""
-        doc = await self._collection().find_one(
-            {"_id": ObjectId(template_id)}
-        )
+        oid = to_object_id(template_id)
+        if oid is None:
+            return None
+        doc = await self._collection().find_one({"_id": oid})
         if doc is None:
             return None
         return QuotaTemplateInDB.from_mongo(doc)
@@ -57,15 +58,16 @@ class QuotaTemplateRepository:
         update_data = update.model_dump(exclude_none=True)
         if not update_data:
             return await self.find_by_id(template_id)
-        await self._collection().update_one(
-            {"_id": ObjectId(template_id)},
-            {"$set": update_data},
-        )
+        oid = to_object_id(template_id)
+        if oid is None:
+            return None
+        await self._collection().update_one({"_id": oid}, {"$set": update_data})
         return await self.find_by_id(template_id)
 
     async def delete(self, template_id: str) -> bool:
         """删除额度模板。"""
-        result = await self._collection().delete_one(
-            {"_id": ObjectId(template_id)}
-        )
+        oid = to_object_id(template_id)
+        if oid is None:
+            return False
+        result = await self._collection().delete_one({"_id": oid})
         return result.deleted_count > 0

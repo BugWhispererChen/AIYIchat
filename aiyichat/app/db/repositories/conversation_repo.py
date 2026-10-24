@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import (
+    to_object_id,
+    to_object_id_list,
+)
 from app.models.conversation import ConversationInDB
 
 
@@ -30,7 +33,10 @@ class ConversationRepository:
 
     async def find_by_id(self, conversation_id: str) -> Optional[ConversationInDB]:
         """根据ID查询对话。"""
-        doc = await self._collection().find_one({"_id": ObjectId(conversation_id)})
+        oid = to_object_id(conversation_id)
+        if oid is None:
+            return None
+        doc = await self._collection().find_one({"_id": oid})
         if doc is None:
             return None
         return ConversationInDB.from_mongo(doc)
@@ -88,9 +94,12 @@ class ConversationRepository:
 
     async def update_after_message(self, conversation_id: str, count: int = 1) -> None:
         """更新对话消息计数和最后消息时间。"""
+        oid = to_object_id(conversation_id)
+        if oid is None:
+            return
         now = datetime.now(timezone.utc)
         await self._collection().update_one(
-            {"_id": ObjectId(conversation_id)},
+            {"_id": oid},
             {
                 "$inc": {"message_count": count},
                 "$set": {"last_message_at": now, "updated_at": now},
@@ -120,8 +129,11 @@ class ConversationRepository:
             update_fields["summary_start_at"] = summary_start_at
         if summary_end_at is not None:
             update_fields["summary_end_at"] = summary_end_at
+        oid = to_object_id(conversation_id)
+        if oid is None:
+            return
         await self._collection().update_one(
-            {"_id": ObjectId(conversation_id)},
+            {"_id": oid},
             {"$set": update_fields},
         )
 
@@ -152,9 +164,10 @@ class ConversationRepository:
 
     async def delete(self, conversation_id: str) -> bool:
         """删除指定对话。"""
-        result = await self._collection().delete_one(
-            {"_id": ObjectId(conversation_id)}
-        )
+        oid = to_object_id(conversation_id)
+        if oid is None:
+            return False
+        result = await self._collection().delete_one({"_id": oid})
         return result.deleted_count > 0
 
     async def search(self, q: str, limit: int = 50) -> list[ConversationInDB]:
@@ -192,9 +205,10 @@ class ConversationRepository:
         """按 ID 列表批量删除对话（先删消息、再删对话）。"""
         if not conversation_ids:
             return 0
-        result = await self._collection().delete_many(
-            {"_id": {"$in": [ObjectId(cid) for cid in conversation_ids]}}
-        )
+        oids = to_object_id_list(conversation_ids)
+        if not oids:
+            return 0
+        result = await self._collection().delete_many({"_id": {"$in": oids}})
         return result.deleted_count
 
     async def delete_by_service(self, service_id: str) -> int:

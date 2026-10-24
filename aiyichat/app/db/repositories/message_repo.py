@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import to_object_id
 from app.models.message import MessageInDB
 
 # 北京时区偏移（用于按天分组时对齐身份本地日期）
@@ -129,9 +129,10 @@ class MessageRepository:
 
     async def delete(self, message_id: str) -> bool:
         """删除指定消息。"""
-        result = await self._collection().delete_one(
-            {"_id": ObjectId(message_id)}
-        )
+        oid = to_object_id(message_id)
+        if oid is None:
+            return False
+        result = await self._collection().delete_one({"_id": oid})
         return result.deleted_count > 0
 
     async def delete_by_conversation(self, conversation_id: str) -> int:

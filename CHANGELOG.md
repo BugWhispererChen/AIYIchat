@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### 新增
+- **后台鉴权静态护栏 `tools/test/test_admin_route_guards.py`**：按 AST 逐个检查后台路由处理函数
+  是否真的挂了 `require_admin`，三种合法挂载写法都认（参数默认值 `Depends(...)`、
+  `Annotated[str, Depends(...)]`、子路由器 `APIRouter(dependencies=[...])`）。
+  此前的"93 个处理函数 = 93 个鉴权依赖"是人工与文本匹配得出的，本轮改用 AST 复核后确认为 0 例外，
+  并把它变成 CI 契约：新加一个没鉴权的后台接口会直接测试失败，而不是等审计发现。
+  护栏还带"扫到的处理函数数量必须 > 80"的自检，防止扫描范围本身失效后对着空集合报绿。
 - **微信表情包日志不再裸打媒体 URL**：`media 不存在` 那条告警把整条 `/api/media/<public_id>`
   写进日志，而 public_id 是读取该图的能力令牌——拿到日志的人就能直接取图。改打掩码值。
   同时给凭据日志护栏加了一条按语句（AST）扫描的规则：媒体引用没经 `mask_secret`/`brief_json`

@@ -11,12 +11,12 @@ from app.admin.routes.common import (
     _account_repo,
     _bot_config_repo,
     _conv_repo,
-    _msg_repo,
     _profile_repo,
     _render,
     _service_repo,
     _identity_repo,
 )
+from app.db.repositories.injection_snapshot_repo import InjectionSnapshotRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
@@ -30,6 +30,7 @@ from app.utils.redaction import mask_secret
 
 accounts_router = APIRouter(tags=["admin"])
 _quota_repo = QuotaRepository()
+_snapshot_repo = InjectionSnapshotRepository()
 _memory_repo = ServiceMemoryRepository()
 _quota_template_repo = QuotaTemplateRepository()
 
@@ -322,7 +323,8 @@ async def account_identity_delete(
             request, account_id,
             f"该身份下有 {svc_count} 个对话服务，请先删除服务",
         )
-    await _identity_repo.delete(identity_id)
+    # 身份名下还有网页凭据/会话/主动关怀记录：只删一行等于留下可登录的凭据
+    await _identity_repo.delete_cascade(identity_id)
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -713,9 +715,9 @@ async def account_service_delete(
 
     # 级联删除服务自身 key 下的数据（加入共享组前的历史仍挂在服务自身 ID 下）
     conv_ids = await _conv_repo.list_ids_by_service(service_id)
-    if conv_ids:
-        await _msg_repo.delete_by_conversation_ids(conv_ids)
-    await _conv_repo.delete_by_service(service_id)
+    # 消息 + 注入快照 + 消息引用的媒体一起删（快照里存着本轮 AI 回复与记忆正文）
+    await _conv_repo.delete_cascade_by_ids(conv_ids)
+    await _snapshot_repo.delete_by_service_ids([service_id])
     await _memory_repo.delete_by_service(service_id)
 
     # 共享组数据：仅当该服务是组内最后一个成员时才一并删除
@@ -725,9 +727,8 @@ async def account_service_delete(
         if not others:
             group_key = service.share_group_id
             group_conv_ids = await _conv_repo.list_ids_by_service(group_key)
-            if group_conv_ids:
-                await _msg_repo.delete_by_conversation_ids(group_conv_ids)
-            await _conv_repo.delete_by_service(group_key)
+            await _conv_repo.delete_cascade_by_ids(group_conv_ids)
+            await _snapshot_repo.delete_by_service_ids([group_key])
             await _memory_repo.delete_by_service(group_key)
 
     await _service_repo.delete(service_id)

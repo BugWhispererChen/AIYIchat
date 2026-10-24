@@ -4,6 +4,7 @@ from typing import Optional
 
 from app.db.mongo import get_database
 from app.db.repositories.object_id import (
+    id_variants_list,
     to_object_id,
     to_object_id_list,
 )
@@ -210,6 +211,42 @@ class ConversationRepository:
             return 0
         result = await self._collection().delete_many({"_id": {"$in": oids}})
         return result.deleted_count
+
+    async def delete_cascade_by_ids(self, conversation_ids: list[str]) -> dict[str, int]:
+        """按对话彻底删除：消息 + 注入快照 + 消息引用的媒体 + 对话本身。
+
+        两条不变量：
+        - 媒体必须在消息还挂着时反解引用：media 文档不记归属，删了消息就找不到图；
+        - 注入快照存着本轮 AI 回复与被注入的记忆正文，只删对话等于给已删会话留一份副本。
+        """
+        from app.db.repositories.injection_snapshot_repo import InjectionSnapshotRepository
+        from app.db.repositories.media_repo import (
+            MediaRepository,
+            media_ids_from_message_docs,
+        )
+        from app.db.repositories.message_repo import MessageRepository
+
+        empty = {"messages": 0, "injection_snapshots": 0, "media": 0, "conversations": 0}
+        if not conversation_ids:
+            return empty
+        docs = [
+            doc
+            async for doc in get_database().messages.find(
+                {"conversation_id": {"$in": id_variants_list(conversation_ids)}},
+                {"media_url": 1},
+            )
+        ]
+        return {
+            "messages": await MessageRepository().delete_by_conversation_ids(
+                conversation_ids
+            ),
+            "injection_snapshots": await InjectionSnapshotRepository()
+            .delete_by_conversation_ids(conversation_ids),
+            "media": await MediaRepository().delete_by_ids(
+                media_ids_from_message_docs(docs)
+            ),
+            "conversations": await self.delete_by_ids(conversation_ids),
+        }
 
     async def delete_by_service(self, service_id: str) -> int:
         """删除指定服务下的所有对话。"""

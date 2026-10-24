@@ -216,3 +216,26 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await _safe_create_index(db.web_sessions, "token", unique=True)
     await _safe_create_index(db.web_sessions, "credential_id")
     await _safe_create_index(db.web_sessions, "expires_at", expireAfterSeconds=0)
+    # 业务主键查询：各仓库 find_by_id 走的是文档里的 `id` 字段而不是 `_id`，
+    # 没索引就是全表扫（后台列表页每行都要查一次）
+    await _safe_create_index(db.identities, "id")
+    await _safe_create_index(db.services, "id")
+    await _safe_create_index(db.bot_configs, "id")
+    await _safe_create_index(db.web_credentials, "id")
+    # 服务归属与共享组：按 bot/角色筛服务、级联时按组 key 收数据
+    await _safe_create_index(db.services, "bot_id")
+    await _safe_create_index(db.services, "profile_id")
+    await _safe_create_index(db.services, "share_group_id")
+    # 表情包：content_hash 用于入库去重，group_id 用于按分组检索
+    await _safe_create_index(db.stickers, "content_hash")
+    await _safe_create_index(db.stickers, "group_id")
+    # 长期记忆与注入快照：级联删除与"清记忆"按这两个字段定位范围
+    await _safe_create_index(db.service_memories, "service_id")
+    await _safe_create_index(db.injection_snapshots, "conversation_id")
+    # 微信上下文 token：按 (bot, 对方) 取回，bot 删除时按 bot_id 反查清理
+    await _safe_create_index(
+        db.wechat_context_tokens,
+        [("bot_id", 1), ("user_id", 1)],
+    )
+    # 会话列表按最后一条消息时间排序（后台与 C 端历史页）
+    await _safe_create_index(db.conversations, "last_message_at")

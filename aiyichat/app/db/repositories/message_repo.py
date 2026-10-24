@@ -3,6 +3,7 @@ from typing import Optional
 
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import id_variants_list, id_variants_query
 from app.db.repositories.object_id import to_object_id
 from app.models.message import MessageInDB
 
@@ -64,7 +65,7 @@ class MessageRepository:
         """获取对话的最近消息（按时间正序）。"""
         cursor = (
             self._collection()
-            .find({"conversation_id": conversation_id})
+            .find({**id_variants_query("conversation_id", conversation_id)})
             .sort(_ORDER_DESC)
             .limit(limit)
         )
@@ -85,7 +86,7 @@ class MessageRepository:
             return False
         found = await self._collection().find_one(
             {
-                "conversation_id": {"$in": conversation_ids},
+                "conversation_id": {"$in": id_variants_list(conversation_ids)},
                 "role": role,
                 "created_at": {"$gt": since},
             },
@@ -99,7 +100,7 @@ class MessageRepository:
         """分页获取对话消息（按时间倒序取出后反转为正序显示）。"""
         cursor = (
             self._collection()
-            .find({"conversation_id": conversation_id})
+            .find({**id_variants_query("conversation_id", conversation_id)})
             .sort(_ORDER_DESC)
             .skip(skip)
             .limit(limit)
@@ -111,14 +112,14 @@ class MessageRepository:
     async def count_by_conversation(self, conversation_id: str) -> int:
         """统计对话下的消息数量。"""
         return await self._collection().count_documents(
-            {"conversation_id": conversation_id}
+            {**id_variants_query("conversation_id", conversation_id)}
         )
 
     async def get_all_for_conversation(self, conversation_id: str) -> list[MessageInDB]:
         """获取对话下的所有消息（按时间正序）。"""
         cursor = (
             self._collection()
-            .find({"conversation_id": conversation_id})
+            .find({**id_variants_query("conversation_id", conversation_id)})
             .sort(_ORDER_ASC)
         )
         return [MessageInDB.from_mongo(doc) async for doc in cursor]
@@ -138,7 +139,7 @@ class MessageRepository:
     async def delete_by_conversation(self, conversation_id: str) -> int:
         """删除某对话下的所有消息。"""
         result = await self._collection().delete_many(
-            {"conversation_id": conversation_id}
+            {**id_variants_query("conversation_id", conversation_id)}
         )
         return result.deleted_count
 
@@ -156,7 +157,7 @@ class MessageRepository:
         if not conv_ids:
             return 0
         result = await self._collection().delete_many(
-            {"conversation_id": {"$in": conv_ids}}
+            {"conversation_id": {"$in": id_variants_list(conv_ids)}}
         )
         return result.deleted_count
 
@@ -173,7 +174,7 @@ class MessageRepository:
             return []
         cursor = (
             self._collection()
-            .find({"conversation_id": {"$in": conv_ids}})
+            .find({"conversation_id": {"$in": id_variants_list(conv_ids)}})
             .sort([("conversation_id", 1), ("created_at", 1), ("_id", 1)])
         )
         if limit > 0:

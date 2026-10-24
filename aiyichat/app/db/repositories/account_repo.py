@@ -83,6 +83,21 @@ class AccountRepository:
         if identity_id and identity_id not in identity_ids:
             identity_ids.append(identity_id)
 
+        # 微信上下文 token 按 bot_id 存：bot 一删就查不到归属，必须在预扫描阶段取 ID
+        bot_ids: list[str] = [
+            doc["id"]
+            async for doc in db.bot_configs.find({"account_id": account_id}, {"id": 1})
+        ]
+        # 私有角色定妆照的媒体只能从角色文档反解，删角色后就找不到归属
+        private_portrait_urls: list[str] = [
+            doc["reference_image_url"]
+            async for doc in db.profiles.find(
+                {"visibility": "private", "account_id": account_id},
+                {"reference_image_url": 1},
+            )
+            if doc.get("reference_image_url")
+        ]
+
         svc_docs: list[dict[str, Any]] = [
             doc
             async for doc in db.services.find(
@@ -108,7 +123,11 @@ class AccountRepository:
                 async for doc in db.conversations.find({"$or": conv_filters}, {"_id": 1})
             }
 
-        media_ids: list[str] = []
+        media_ids: list[str] = [
+            mid
+            for url in private_portrait_urls
+            for mid in media_ids_from_message_docs([{"media_url": url}])
+        ]
         if conv_ids:
             msg_docs: list[dict[str, Any]] = [
                 doc
@@ -184,7 +203,10 @@ class AccountRepository:
         stats["services"] = (await db.services.delete_many({"account_id": account_id})).deleted_count
         # 3. 删除身份
         stats["identities"] = (await db.identities.delete_many({"account_id": account_id})).deleted_count
-        # 4. 删除 Bot
+        # 4. 删除 Bot（连同其微信上下文 token：token 里存着对方与机器人的会话凭据）
+        stats["wechat_context_tokens"] = (
+            await db.wechat_context_tokens.delete_many({"bot_id": {"$in": bot_ids}})
+        ).deleted_count if bot_ids else 0
         stats["bots"] = (await db.bot_configs.delete_many({"account_id": account_id})).deleted_count
         # 5. 删除额度
         stats["quotas"] = (await db.account_quotas.delete_many({"account_id": account_id})).deleted_count

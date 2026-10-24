@@ -142,6 +142,9 @@ async def clear_memory(
 ) -> RedirectResponse:
     """清空该服务的全部记忆（话题、事实、待跟进事件一并删除）。"""
     await _memory_repo.delete_by_service(service_id)
+    # 注入快照里存着已注入的记忆正文与当轮 AI 回复，清记忆不删快照等于留一份副本，
+    # 而且下一轮仍可能把这些旧内容当作上下文
+    await _snapshot_repo.delete_by_service_ids([service_id])
     logger.info("后台清空服务记忆: service=%s", service_id)
     return RedirectResponse(url="/admin/memories", status_code=303)
 

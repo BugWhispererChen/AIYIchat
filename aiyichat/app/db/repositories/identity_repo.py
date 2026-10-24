@@ -89,6 +89,42 @@ class IdentityRepository:
         result = await self._collection().delete_one({"id": identity_id})
         return result.deleted_count > 0
 
+    async def delete_cascade(self, identity_id: str) -> dict[str, int]:
+        """删除身份及其名下的网页凭据/会话、主动关怀记录与会话数据。
+
+        后台"删除身份"以前只删 identities 一行：网页凭据还在就仍能登录到一个已不存在的身份，
+        主动关怀记录与会话/消息/快照则全留下。口径与 AccountRepository.delete_cascade 一致——
+        凭据最先删（用户名当场释放、旧令牌立即失效）。
+        """
+        from app.db.repositories.conversation_repo import ConversationRepository
+
+        db = get_database()
+        cred_ids = [
+            doc["id"]
+            async for doc in db.web_credentials.find(
+                {"identity_id": identity_id}, {"id": 1}
+            )
+        ]
+        stats: dict[str, int] = {}
+        stats["web_sessions"] = (
+            await db.web_sessions.delete_many({"credential_id": {"$in": cred_ids}})
+        ).deleted_count if cred_ids else 0
+        stats["web_credentials"] = (
+            await db.web_credentials.delete_many({"id": {"$in": cred_ids}})
+        ).deleted_count if cred_ids else 0
+        stats["proactive_records"] = (
+            await db.proactive_records.delete_many({"identity_id": identity_id})
+        ).deleted_count
+        conv_ids = [
+            str(doc["_id"])
+            async for doc in db.conversations.find(
+                {"identity_id": identity_id}, {"_id": 1}
+            )
+        ]
+        stats.update(await ConversationRepository().delete_cascade_by_ids(conv_ids))
+        stats["identity"] = 1 if await self.delete(identity_id) else 0
+        return stats
+
     async def delete_by_account(self, account_id: str) -> int:
         """删除账号下的所有身份。"""
         result = await self._collection().delete_many({"account_id": account_id})

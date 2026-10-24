@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.db.mongo import get_database
+from app.db.repositories.object_id import id_variants_list
 from app.models.injection_snapshot import InjectionSnapshotInDB
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ class InjectionSnapshotRepository:
         if not conversation_ids:
             return 0
         result = await self._collection().delete_many(
-            {"conversation_id": {"$in": conversation_ids}}
+            {"conversation_id": {"$in": id_variants_list(conversation_ids)}}
         )
         return result.deleted_count
 

@@ -231,13 +231,21 @@ def _guard_captcha(req: CaptchaRequest) -> None:
         raise AuthError("captcha_failed", "验证码错误或已失效，请重新获取", 400)
 
 
+# 验证码接口本身也是资源：每次调用都要生成图片并在内存里挂一份答案，
+# 不限流就是给人免费刷内存的入口（登录/注册有 `web_rate_limit_*`，这一项此前漏了）。
+_CAPTCHA_RATE_LIMIT = 30
+
+
 @auth_router.get("/captcha")
-async def get_captcha() -> Any:
+async def get_captcha(request: Request) -> Any:
     """获取图形验证码（返回 base64 内联图片，无需二次请求图片资源）。"""
     try:
         if not settings.web_auth_enabled:
             raise AuthError("web_auth_disabled", "网页登录功能未开放", 403)
+        check_rate_limit("captcha", client_ip(request), _CAPTCHA_RATE_LIMIT)
         captcha_id, image = captcha_service.generate()
+    except RateLimited as exc:
+        return _error(AuthError("rate_limited", exc.message, 429))
     except AuthError as exc:
         return _error(exc)
     return {"captcha_id": captcha_id, "image": image}

@@ -136,3 +136,44 @@ def test_display_stream_cleaner_emits_promptly() -> None:
     cleaner.flush()
     assert "点头" not in emitted, emitted
 
+def test_concurrent_find_or_create_creates_one_conversation() -> None:
+    """并发首轮消息只能建一条活跃会话：多出来的那些永远读不到历史与计数。"""
+    from app.db.repositories.conversation_repo import ConversationRepository
+
+    async def case() -> None:
+        mongo._db = mongomock_motor.AsyncMongoMockClient()["test_conv_race"]
+        try:
+            repo = ConversationRepository()
+            convs = await asyncio.gather(
+                *(repo.find_or_create("id-1", "p-1", "svc-1") for _ in range(6))
+            )
+            assert len({str(c.id) for c in convs}) == 1, [str(c.id) for c in convs]
+        finally:
+            mongo._db = None
+
+    asyncio.run(case())
+
+
+def test_chat_text_length_is_bounded() -> None:
+    """一条消息塞进整本小说会被拒：提示词与计费都会被拖爆。"""
+    from app.api.conversations_api import _MAX_CHAT_CHARS
+
+    async def case() -> None:
+        mongo._db = mongomock_motor.AsyncMongoMockClient()["test_text_bound"]
+        try:
+            from app.main import app
+
+            async with _client() as client:
+                resp = await client.post(
+                    "/api/conversations/chat/stream",
+                    json={"text": "x" * (_MAX_CHAT_CHARS + 1)},
+                    headers={"authorization": "Bearer nope"},
+                )
+                # 结构校验在鉴权之前：超长直接 422，不进入模型调用
+                assert resp.status_code == 422, resp.status_code
+        finally:
+            mongo._db = None
+            app.dependency_overrides.clear()
+
+    asyncio.run(case())
+

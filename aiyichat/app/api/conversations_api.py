@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.auth_api import (
     AuthError,
@@ -27,6 +27,9 @@ _msg_repo = MessageRepository()
 _service_repo = ServiceRepository()
 
 
+_MAX_CHAT_CHARS = 4000
+
+
 class StreamChatRequest(BaseModel):
     """流式对话请求体。
 
@@ -38,7 +41,8 @@ class StreamChatRequest(BaseModel):
     bot_id: str = ""
     platform: str = "web"
     platform_id: str = ""
-    text: str
+    # 上限保护：一条消息就能塞进整本小说的话，提示词与计费都会被拖爆
+    text: str = Field(max_length=_MAX_CHAT_CHARS)
     nickname: str = ""
     service_id: str = ""
 
@@ -135,7 +139,9 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
     if not await _conversation_readable(conv, principal):
         raise HTTPException(status_code=403, detail="无权读取该对话的消息")
 
-    messages = await _msg_repo.get_recent(conversation_id, limit)
+    # limit 来自调用方：不设上限就能一次拖走整段历史（内存与响应体都跟着爆）
+    bounded_limit = max(1, min(int(limit or 50), 200))
+    messages = await _msg_repo.get_recent(conversation_id, bounded_limit)
     return [
         {
             "id": m.id,

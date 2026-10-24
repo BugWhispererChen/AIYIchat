@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -9,6 +10,12 @@ from app.db.repositories.object_id import (
     to_object_id_list,
 )
 from app.models.conversation import ConversationInDB
+
+
+
+# 按 (identity, profile, service) 串行化"查不到就建"，键数与活跃会话同量级
+_find_or_create_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
+_LOCK_MAP_CAP = 4096
 
 
 class ConversationRepository:
@@ -66,11 +73,28 @@ class ConversationRepository:
     async def find_or_create(
         self, identity_id: str, profile_id: str, service_id: str
     ) -> ConversationInDB:
-        """查找或创建活跃对话。"""
-        conv = await self.find_active(identity_id, profile_id, service_id)
-        if conv is not None:
-            return conv
-        return await self.create(identity_id, profile_id, service_id)
+        """查找或创建活跃对话（同 key 串行，避免并发建出两条活跃会话）。
+
+        "先查再插"不是原子操作：网页端同一会话的并发首轮请求会各自查不到、各自插入，
+        其中一条之后永远读不到（历史与计数都挂在另一条上）。单实例部署下按 key
+        加进程内锁即可闭合；多实例水平扩展要改成 `status=active` 的部分唯一索引 + upsert。
+        """
+        key = (identity_id, profile_id, service_id)
+        if len(_find_or_create_locks) > _LOCK_MAP_CAP:
+            # 键随活跃会话增长，异常膨胀（大量一次性身份）时清掉未占用的锁
+            for stale_key, stale in [
+                (k, v) for k, v in _find_or_create_locks.items() if not v.locked()
+            ]:
+                _find_or_create_locks.pop(stale_key, None)
+        lock = _find_or_create_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _find_or_create_locks[key] = lock
+        async with lock:
+            conv = await self.find_active(identity_id, profile_id, service_id)
+            if conv is not None:
+                return conv
+            return await self.create(identity_id, profile_id, service_id)
 
     async def find_active_by_key(
         self, context_key: str

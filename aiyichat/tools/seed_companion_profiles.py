@@ -22,6 +22,7 @@ import asyncio
 import hashlib
 import logging
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1550,6 +1551,19 @@ def _build_profiles() -> list[PromptProfileCreate]:
     ]
 
 
+async def _media_exists(media_coll, ref: str) -> bool:
+    """按 URL 里的引用查媒体是否存在。
+
+    引用有两种形态：32 位是迁移后的 `public_id`（能力令牌），24 位是历史 ObjectId。
+    只按 ObjectId 查会让"已迁移好"的角色被判定为缺定妆照，seed 于是重写旧格式 URL。
+    """
+    try:
+        query = {"_id": ObjectId(ref)} if len(ref) == 24 else {"public_id": ref}
+        return await media_coll.find_one(query, {"_id": 1}) is not None
+    except Exception:  # noqa: BLE001 非法 ID 一律按"不存在"处理，交给下面的写入分支
+        return False
+
+
 async def _ensure_reference_images(
     repo: ProfileRepository, *, force: bool = False
 ) -> None:
@@ -1576,14 +1590,8 @@ async def _ensure_reference_images(
 
         # 已设置且媒体仍存在：跳过，避免覆盖后台人工换过的定妆照
         if profile.reference_image_url.startswith("/api/media/"):
-            media_id = profile.reference_image_url.rsplit("/", 1)[-1]
-            try:
-                exists = await media_coll.find_one(
-                    {"_id": ObjectId(media_id)}, {"_id": 1}
-                )
-            except Exception:
-                exists = None
-            if exists:
+            ref = profile.reference_image_url.rsplit("/", 1)[-1]
+            if await _media_exists(media_coll, ref):
                 logger.info("%s 已有定妆照，跳过", slug)
                 continue
 
@@ -1595,12 +1603,21 @@ async def _ensure_reference_images(
         data = img_path.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
 
-        # 内容去重：相同图片已入库则复用其 ID
-        existing = await media_coll.find_one({"sha256": digest}, {"_id": 1})
+        # 内容去重：相同图片已入库则复用，但引用一律走 public_id
+        existing = await media_coll.find_one(
+            {"sha256": digest}, {"_id": 1, "public_id": 1}
+        )
         if existing is not None:
-            media_id = str(existing["_id"])
+            public_id = existing.get("public_id") or uuid.uuid4().hex
+            if not existing.get("public_id"):
+                await media_coll.update_one(
+                    {"_id": existing["_id"], "public_id": {"$exists": False}},
+                    {"$set": {"public_id": public_id}},
+                )
         else:
-            result = await media_coll.insert_one({
+            public_id = uuid.uuid4().hex
+            await media_coll.insert_one({
+                "public_id": public_id,
                 "data": data,
                 "content_type": "image/jpeg",
                 "filename": f"{slug}.jpg",
@@ -1608,12 +1625,14 @@ async def _ensure_reference_images(
                 "sha256": digest,
                 "created_at": datetime.now(timezone.utc),
             })
-            media_id = str(result.inserted_id)
 
+        # URL 必须写 public_id 而不是 ObjectId：seed 每次启动都会跑，
+        # 写回 ObjectId 等于把 backfill_media_public_id 的迁移结果倒回去，
+        # 而媒体接口默认只允许管理员读 ObjectId 引用——普通访问者又会看不到定妆照。
         await repo.update(
-            slug, PromptProfileUpdate(reference_image_url=f"/api/media/{media_id}")
+            slug, PromptProfileUpdate(reference_image_url=f"/api/media/{public_id}")
         )
-        logger.info("已入库定妆照 %s -> /api/media/%s", slug, media_id)
+        logger.info("已入库定妆照 %s（引用改用不可枚举 ID）", slug)
 
 
 async def seed_profiles(*, force: bool = False, manage_db: bool = False) -> None:

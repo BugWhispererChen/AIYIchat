@@ -20,6 +20,9 @@ COPY http_redirect.py .
 COPY data/stickers/ ./data/stickers/
 # 预置角色种子脚本与定妆照素材（容器内手动执行 seed）
 COPY tools/seed_companion_profiles.py ./tools/seed_companion_profiles.py
+# 存量数据迁移脚本：README 让在容器内跑 `python -m tools.migrations.*`，
+# 不一起 COPY 进镜像的话，Docker 部署下这些迁移命令根本不存在
+COPY tools/migrations/ ./tools/migrations/
 COPY data/preset_portraits/ ./data/preset_portraits/
 
 # 服务端口可配置（宿主机与容器内一致），默认 HTTPS 443 + HTTP 80

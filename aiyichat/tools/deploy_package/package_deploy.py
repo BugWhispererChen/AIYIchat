@@ -113,6 +113,7 @@ COPY http_redirect.py .
 COPY data/stickers/ ./data/stickers/
 # 预置角色种子脚本与定妆照素材（容器内手动执行 seed）
 COPY tools/seed_companion_profiles.py ./tools/seed_companion_profiles.py
+COPY tools/migrations/ ./tools/migrations/
 COPY data/preset_portraits/ ./data/preset_portraits/
 # 服务端口可配置（宿主机与容器内一致），默认 HTTPS 443 + HTTP 80
 ENV HTTPS_PORT=443 HTTP_PORT=80
@@ -194,6 +195,21 @@ def assemble_package(
         shutil.copy2(seed_script_src, output_dir / "tools" / "seed_companion_profiles.py")
     else:
         print("警告：预置角色种子脚本不存在，跳过: tools/seed_companion_profiles.py")
+
+    # 复制存量数据迁移脚本：README 让部署后在容器内跑 tools/migrations/*，
+    # 不一起入包的话"有文档没脚本"就是媒体迁移一直没执行的原因之一
+    migrations_src = project_root / "tools" / "migrations"
+    if not migrations_src.exists() and runtime_dir is not None:
+        migrations_src = runtime_dir / "tools" / "migrations"
+    if migrations_src.exists():
+        shutil.copytree(
+            migrations_src,
+            output_dir / "tools" / "migrations",
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+    else:
+        print("警告：数据迁移脚本不存在，跳过: tools/migrations/")
 
     # 证书不入包：自签名证书由 deploy.sh / deploy.ps1 在部署时自动生成，
     # 生产环境可在部署前自行准备正式证书放入 certs/ 目录

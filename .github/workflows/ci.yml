@@ -10,6 +10,11 @@ on:
   pull_request:
     branches: [developing]
 
+# CI 只需要读代码：不写内容、不碰 packages/issues。默认 token 权限随组织配置，
+# 显式收紧后即使有人日后往 workflow 里加步骤，也不会 accidentally 拿到写权限
+permissions:
+  contents: read
+
 jobs:
   static-and-tests:
     runs-on: ubuntu-latest
@@ -17,9 +22,11 @@ jobs:
       run:
         working-directory: aiyichat
     steps:
-      - uses: actions/checkout@v4
+      # 固定到 commit SHA：tag 可被重新指向，供应链上一旦上游账号失陷
+      # 或被强制推送，跑的就是别人的代码。注释里的 tag 供人工核对与升级
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
           cache: pip

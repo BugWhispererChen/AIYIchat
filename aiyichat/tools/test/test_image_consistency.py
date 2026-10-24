@@ -119,6 +119,8 @@ class TestEngineImageFlow:
             contains_self=True,
             ref_image_url="/api/media/ref1",
             fallback_prompt="a young woman, realistic photo, selfie at home",
+            # 任务带扣费账号：生成或发送失败时适配器据此退还额度
+            account_id="acc-1",
         )]
         assert "[IMG:" not in result.text
 
@@ -265,3 +267,62 @@ class TestGenerateForTaskFallback:
         result = asyncio.run(svc.generate_for_task(task))
         assert result == b"t2i"
         svc.generate.assert_awaited_once_with("realistic photo, sunset")
+
+class TestImageQuotaRefund:
+    """图片额度：Engine 预扣，生成或发送失败要退还。"""
+
+    def test_engine_stamps_account_on_tasks(self) -> None:
+        """任务要带着扣费账号，否则适配器失败时无从退还。"""
+        engine = _build_engine(profile=_make_engine_profile(
+            reference_image_url="/api/media/ref1",
+            persona=SimpleNamespace(appearance="a young woman"),
+        ))
+        old = settings.imagegen_enabled
+        settings.imagegen_enabled = True
+        try:
+            result, _ = _run(
+                engine, "拍张照",
+                reply="[IMG:realistic photo, sunset]",
+            )
+        finally:
+            settings.imagegen_enabled = old
+        assert result.image_tasks
+        assert all(task.account_id == "acc-1" for task in result.image_tasks)
+
+    def test_qq_image_failure_refunds_quota(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from types import SimpleNamespace
+
+        import app.db.repositories.quota_repo as quota_module
+        from app.adapters.qq_websocket import QQWebSocketClient
+        from app.conversation.image_task import ImageTask
+
+        calls: list[tuple[str, str, int]] = []
+
+        class _Quota:
+            def __init__(self) -> None:
+                pass
+
+            async def refund(self, account_id: str, content_type: str, amount: int) -> bool:
+                calls.append(("refund", content_type, amount))
+                return True
+
+        monkeypatch.setattr(quota_module, "QuotaRepository", _Quota)
+
+        adapter = object.__new__(QQWebSocketClient)
+        adapter._label = "qq-test"
+        adapter._imagegen = SimpleNamespace(
+            generate_for_task=lambda task: _raise()
+        )
+
+        async def _raise():
+            raise RuntimeError("生成失败")
+
+        async def case() -> None:
+            await adapter._fire_and_forget_imagegen(
+                "user-1", ImageTask(prompt="sunset", account_id="acc-9"),
+                "msg-1", False, "",
+            )
+
+        asyncio.run(case())
+        assert calls == [("refund", "image", 1)], calls
+

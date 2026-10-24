@@ -16,9 +16,11 @@ class ImageTask:
         ref_image_url: 角色定妆照地址（/api/media/{id}），空则无参考图
         fallback_prompt: 降级为纯文生图时使用的完整描述（含外貌特征），
             为空时降级直接使用 prompt
+        account_id: 扣了这张图额度的账号；生成或发送失败时按它退还额度
     """
 
     prompt: str
     contains_self: bool = False
     ref_image_url: str = ""
     fallback_prompt: str = ""
+    account_id: str = ""

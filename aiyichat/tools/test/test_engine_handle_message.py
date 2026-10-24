@@ -1400,3 +1400,69 @@ class TestEmptyReplyFallback:
             result, _ = _run(engine, "发个表情", reply="")
         assert result.text == ""
         assert result.sticker_tasks
+
+
+def _stream_text(chunks: list) -> str:
+    """把流式产出归一成纯文本：闸门开启是 StreamEvent，关闭是裸 str。"""
+    out = []
+    for item in chunks:
+        out.append(getattr(item, "text", item) if not hasattr(item, "kind") else item.text)
+    return "".join(out)
+
+
+class TestStreamDisplayCleaning:
+    """流式下发与落库口径一致：内部标记不给浏览器，但仍要参与收尾解析。"""
+
+    def test_markup_never_reaches_the_client(self) -> None:
+        """`[IMG:]` / `[表情:]` / 动作标签不许出现在下发内容里。
+
+        顺带钉住一个事实：流式链路只产文本——`_resolve_stream_text` 把 specs 丢弃，
+        既不建图片任务也不扣图片额度（非流式才会）。所以网页端看到纯文本气泡是正确的，
+        不该出现半截标签；真要流式出图得另做协议，不属本用例范围。"""
+
+        engine = _build_engine(profile=_make_profile(
+            reference_image_url="/api/media/ref1",
+            persona=SimpleNamespace(appearance="a young woman"),
+        ))
+        old_imagegen = settings.imagegen_enabled
+        old_gate = settings.stream_gate_enabled
+        settings.imagegen_enabled = True
+        settings.stream_gate_enabled = False
+        try:
+            chunks, _provider = _run(
+                engine,
+                "拍一张",
+                reply="（微笑）给你拍一张[IMG:realistic photo, sunset over the sea]",
+                stream=True,
+            )
+        finally:
+            settings.imagegen_enabled = old_imagegen
+            settings.stream_gate_enabled = old_gate
+        joined = _stream_text(chunks)
+        assert "[IMG:" not in joined and "realistic photo" not in joined, joined
+        assert "微笑" not in joined, joined
+        assert "给你拍一张" in joined, joined
+        # 落库文本同样是清洗后的（屏幕所见即落库所持）
+        persisted = str(engine.turn_recorder.record_assistant_message.await_args)
+        assert "[IMG:" not in persisted, persisted
+        assert "realistic photo" not in persisted, persisted
+
+    def test_stream_with_gate_enabled_is_also_clean(self) -> None:
+        """闸门开启那条分支同样要清洗：两条分支的屏幕口径必须一致。"""
+        engine = _build_engine(profile=_make_profile(
+            persona=SimpleNamespace(appearance="a young woman"),
+        ))
+        old_gate = settings.stream_gate_enabled
+        settings.stream_gate_enabled = True
+        try:
+            chunks, _provider = _run(
+                engine,
+                "说点什么",
+                reply="（点头）好的[表情:开心]，我在听",
+                stream=True,
+            )
+        finally:
+            settings.stream_gate_enabled = old_gate
+        joined = _stream_text(chunks)
+        assert "[表情:" not in joined and "开心" not in joined, joined
+

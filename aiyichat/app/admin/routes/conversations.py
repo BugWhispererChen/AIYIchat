@@ -140,7 +140,11 @@ async def conversation_message_delete(
     conv = await _conv_repo.find_by_id(conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
-    await _msg_repo.delete(msg_id)
+    # 归属校验：msg_id 来自表单，不校验就能通过"任意会话 + 任意消息 ID"删到别处的消息
+    message = await _msg_repo.find_by_id(msg_id)
+    if message is None or str(message.conversation_id) != str(conv.id):
+        raise HTTPException(status_code=404, detail="消息不存在")
+    await _msg_repo.delete_with_media(msg_id)
     return RedirectResponse(
         url=f"/admin/conversations/{conv_id}",
         status_code=status.HTTP_303_SEE_OTHER,

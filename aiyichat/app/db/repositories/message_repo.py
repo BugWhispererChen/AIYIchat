@@ -3,8 +3,11 @@ from typing import Optional
 
 
 from app.db.mongo import get_database
-from app.db.repositories.object_id import id_variants_list, id_variants_query
-from app.db.repositories.object_id import to_object_id
+from app.db.repositories.object_id import (
+    id_variants_list,
+    id_variants_query,
+    to_object_id,
+)
 from app.models.message import MessageInDB
 
 # 北京时区偏移（用于按天分组时对齐身份本地日期）
@@ -135,6 +138,38 @@ class MessageRepository:
             return False
         result = await self._collection().delete_one({"_id": oid})
         return result.deleted_count > 0
+
+    async def find_by_id(self, message_id: str) -> Optional[MessageInDB]:
+        """按 ID 取单条消息；无效 ID 返回 None（不抛 InvalidId）。"""
+        oid = to_object_id(message_id)
+        if oid is None:
+            return None
+        doc = await self._collection().find_one({"_id": oid})
+        if doc is None:
+            return None
+        return MessageInDB.from_mongo(doc)
+
+    async def delete_with_media(self, message_id: str) -> bool:
+        """删消息并回收它引用的媒体。
+
+        media 文档不记归属，只有删的那一方知道 `media_url`：删消息不清媒体，
+        生成的图片就整份留在库里（对话级联已经是这个口径，单条删除此前漏了）。
+        """
+        message = await self.find_by_id(message_id)
+        if message is None:
+            return False
+        deleted = await self.delete(message_id)
+        if not deleted:
+            return False
+        if message.media_url:
+            from app.db.repositories.media_repo import media_ids_from_message_docs
+
+            refs = media_ids_from_message_docs([{"media_url": message.media_url}])
+            if refs:
+                from app.db.repositories.media_repo import MediaRepository
+
+                await MediaRepository().delete_by_ids(refs)
+        return True
 
     async def delete_by_conversation(self, conversation_id: str) -> int:
         """删除某对话下的所有消息。"""

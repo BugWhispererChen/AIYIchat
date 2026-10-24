@@ -154,3 +154,57 @@ def test_account_cascade_removes_wechat_tokens_and_portrait_media() -> None:
         asyncio.run(case())
     finally:
         mongo._db = None
+
+def test_single_message_delete_removes_media_and_checks_ownership() -> None:
+    """删单条消息要回收它的媒体；`msg_id` 来自表单，必须校验归属会话。"""
+    from app.db.repositories.media_repo import MediaRepository
+
+    conv_a = ObjectId()
+    conv_b = ObjectId()
+
+    async def case() -> None:
+        _setup()
+        db = get_database()
+        for cid in (conv_a, conv_b):
+            await db.conversations.insert_one({
+                "_id": cid, "identity_id": "id-1", "service_id": "svc-1", "status": "active",
+            })
+        media_id = await _seed_conversation(conv_id=conv_a, as_object_id=False)
+        msg = await db.messages.find_one({"conversation_id": str(conv_a)})
+        other = await db.messages.find_one({"conversation_id": str(conv_b)})
+        assert other is None
+        mid = str(msg["_id"])
+
+        # 无效 ID：查不到、删不掉，也不该抛 InvalidId
+        repo = MessageRepository()
+        assert await repo.find_by_id("not-an-id") is None
+        assert await repo.delete_with_media("not-an-id") is False
+        assert await repo.delete_with_media(mid) is True
+        assert await db.messages.count_documents({}) == 0
+        assert await MediaRepository().delete_by_ids([media_id]) == 0, "媒体已随消息删除"
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None
+
+
+def test_message_repo_handles_objectid_typed_ids() -> None:
+    """历史行可能把 conversation_id 存成 ObjectId：读取与删除都要吃得下。"""
+    conv_id = ObjectId()
+
+    async def case() -> None:
+        _setup()
+        await _seed_conversation(conv_id=conv_id, as_object_id=True)
+        repo = MessageRepository()
+        msgs = await repo.get_recent(str(conv_id))
+        assert len(msgs) == 1
+        assert await repo.find_by_id(str(msgs[0].id)) is not None
+        assert await repo.delete_with_media(str(msgs[0].id)) is True
+        assert await get_database().messages.count_documents({}) == 0
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None
+

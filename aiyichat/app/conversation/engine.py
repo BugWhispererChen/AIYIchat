@@ -719,7 +719,9 @@ class ConversationEngine:
             image_specs = approved
         
         # 组装结构化图片任务（本人出镜时携带定妆照，降级链回退外貌文字描述）
-        image_tasks = self._build_image_tasks(image_specs, profile, mood)
+        image_tasks = self._build_image_tasks(
+            image_specs, profile, mood, account_id=service.account_id
+        )
 
         # 组装表情包任务（标签语义检索 + 以图回图概率触发，限定角色绑定分组）
         sticker_tasks = await self._resolve_sticker_tasks(
@@ -2505,6 +2507,7 @@ class ConversationEngine:
         specs: list[tuple[str, bool]],
         profile: PromptProfileInDB,
         mood: CharacterMood | None = None,
+        account_id: str = "",
     ) -> list[ImageTask]:
         """将 (描述, 是否本人出镜) 列表组装为结构化图片任务。
 
@@ -2530,6 +2533,7 @@ class ConversationEngine:
                 contains_self=contains_self,
                 ref_image_url=ref_url if contains_self else "",
                 fallback_prompt=fallback,
+                account_id=account_id,
             ))
         return tasks
 

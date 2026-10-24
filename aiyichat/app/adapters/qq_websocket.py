@@ -850,6 +850,11 @@ class QQWebSocketClient:
             )
         except Exception as e:
             logger.error("%s 图片生成/发送失败: %s", self._label, e)
+            if task.account_id:
+                # 额度在 Engine 侧已按张预扣；图没生成或没发出去就该退
+                from app.db.repositories.quota_repo import QuotaRepository
+
+                await QuotaRepository().refund(task.account_id, "image", 1)
 
     async def _fire_and_forget_sticker(
         self,

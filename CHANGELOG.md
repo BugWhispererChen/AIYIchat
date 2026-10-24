@@ -56,6 +56,13 @@
   合成或发送失败退还；图片生成开关关闭时不再先扣额度。
 - **隐私留存**：角色克隆导入的原始聊天记录 JSON 解析后立即删除（成功与失败路径都删），
   并顺带清扫 30 分钟以上的历史残留文件。
+- **`?limit=0` 不再等于"把整张表给我"**：`GET /api/proactive/records` 把调用方传入的 `limit`
+  原样透传给仓库，而 Mongo 的 `limit(0)` 语义是不限条数、负数直接抛错——
+  `?limit=0` 是一次全表读取，`?limit=-1` 是一个 500。现夹紧到 1..200（与消息分页接口同口径），
+  并加静态护栏 `tools/test/test_bounded_limits.py`：任何把 `limit`/`page_size` 透传给下游
+  却没夹紧的路由函数都会被拦下（护栏自带命中/豁免用例）。
+- `requirements-dev.txt` 补声明 `pip-audit`：提交前与出包前的依赖审计这道门禁此前只存在于
+  口头流程里，清单里没有，换台环境就跑不了（与 mongomock 曾经的漏声明是同一类问题）。
 - **配置键静默失效**：`chat_presence_penalty`、`summary_max_length`、`topic_history_max`、
   `topic_stall_*`、六个 `memory_*` 阈值、`proactive_llm_temperature`、`sticker_max_dimension`
   在运行配置与重载白名单里都有，却没登记进 `AppSettingsDocument`——pydantic 读回即丢弃，

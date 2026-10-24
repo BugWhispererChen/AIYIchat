@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### 新增
+- **C 端归属校验静态护栏 `tools/test/test_cend_ownership_guards.py`**：凡是收资源 ID
+  （`bot_id`/`service_id`/`session_id`/`conversation_id` 等）的 C 端处理函数，必须能看出
+  它做了归属判定——要么在函数体内直接比较（`!= principal...`、`_require_owned*`、
+  `find_owned*`），要么把调用方的 `account_id`/`credential.id`/`identity.id` 交给服务层去判。
+  本轮按这条规则逐个读了 18 个处理函数（其中 5 个需要人工确认，结论是都在服务层判归属），
+  现已把该结论变成 CI 契约：新加一个按 ID 取资源却不认调用方的 C 端接口会直接测试失败。
 - **后台鉴权静态护栏 `tools/test/test_admin_route_guards.py`**：按 AST 逐个检查后台路由处理函数
   是否真的挂了 `require_admin`，三种合法挂载写法都认（参数默认值 `Depends(...)`、
   `Annotated[str, Depends(...)]`、子路由器 `APIRouter(dependencies=[...])`）。

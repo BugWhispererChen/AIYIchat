@@ -40,7 +40,7 @@ DEFAULT_MODEL_GROUPS: tuple[dict[str, str], ...] = (
         "name": "语音生成",
         "base_url": DEFAULT_BASE_URL,
         "api_key": "",
-        "default_model": "qwen-audio-3.0-tts-plus",
+        "default_model": "qwen-audio-3.1-tts-plus",
     },
     {
         "id": EMBEDDING_DEFAULT_CONFIG_ID,

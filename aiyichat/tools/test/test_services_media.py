@@ -405,14 +405,14 @@ class TestVisionEmbeddingAsrTts:
                 "app.services.tts_service.resolve_model_config",
                 return_value=ResolvedModelConfig(
                     base_url="", api_key="k",
-                    model="qwen-audio-3.0-tts-plus", timeout=30,
+                    model="qwen-audio-3.1-tts-plus", timeout=30,
                 ),
             ), patch(
                 "app.services.tts_service.asyncio.to_thread", new=fake_to_thread
             ):
                 out = await svc.synthesize(
                     "别难过，我在呢",
-                    voice_id="longanlingxin",
+                    voice_id="longanlingxin_v3.1",
                     instruction="用温柔共情的语气轻声安慰",
                     pitch_rate=0.95,
                     emotion_tag="[empathetic]",
@@ -474,6 +474,10 @@ class TestTTSRegistry:
         # Qwen-Audio-TTS 族：WebSocket 合成
         assert detect_family("qwen-audio-3.0-tts-plus").name == "qwen-audio"
         assert detect_family("qwen-audio-3.0-tts-plus").api_kind == API_WEBSOCKET
+        # 3.1 与 3.0 音色规则不同，单独成族
+        assert detect_family("qwen-audio-3.1-tts-plus").name == "qwen-audio-v31"
+        assert detect_family("qwen-audio-3.1-tts-flash").name == "qwen-audio-v31"
+        assert detect_family("qwen-audio-3.1-tts-plus").api_kind == API_WEBSOCKET
         # 未识别模型保守回退 v1
         assert detect_family("unknown-model").name == "cosyvoice-v1"
 
@@ -501,6 +505,30 @@ class TestTTSRegistry:
         assert resolve_voice(qa, "qwen-audio-3.0-tts-plus-myvoice-abc") == (
             "qwen-audio-3.0-tts-plus-myvoice-abc", False,
         )
+
+        v31 = detect_family("qwen-audio-3.1-tts-plus")
+        # 3.1 系统音色白名单与默认音色直接放行
+        for voice in (
+            "longanlingxin_v3.1",
+            "longanqian_v3.1",
+            "longanhuan_v3.1",
+            "longanfengyue_v3.1",
+            "xunanchuan_v3.1",
+        ):
+            assert resolve_voice(v31, voice) == (voice, False)
+        assert resolve_voice(v31, v31.default_voice) == (v31.default_voice, False)
+        # 3.0 基础/复刻音色实测可跨代使用
+        assert resolve_voice(v31, "qwen-audio-3.0-tts-plus-myvoice-abc") == (
+            "qwen-audio-3.0-tts-plus-myvoice-abc", False,
+        )
+        assert resolve_voice(v31, "qwen-audio-3.0-tts-plus-longyufengmo") == (
+            "qwen-audio-3.0-tts-plus-longyufengmo", False,
+        )
+        # 3.0 代系统音色自动映射到 3.1 可用音色
+        assert resolve_voice(v31, "longanlingxin") == ("longanlingxin_v3.1", False)
+        assert resolve_voice(v31, "longanqian") == ("longanqian_v3.1", False)
+        assert resolve_voice(v31, "longanhuan_v3.6") == ("longanhuan_v3.1", False)
+        assert resolve_voice(v31, "longanlufeng") == ("xunanchuan_v3.1", False)
 
     def test_resolve_voice_fallback(self) -> None:
         from app.services.tts_registry import detect_family, resolve_voice
@@ -532,6 +560,18 @@ class TestTTSRegistry:
         voice, fb = resolve_voice(qa, "longxiaochun_v2")
         assert fb is True and voice == qa.default_voice
 
+        v31 = detect_family("qwen-audio-3.1-tts-plus")
+        # CosyVoice 音色与 3.1 不支持的系统音色 → 回退默认音色
+        for bad in (
+            "longcheng",
+            "longxiaochun_v2",
+            "cosyvoice-v3-myvoice-abc",
+            "longanlingxi_v3.1",
+            "longanxiaoxin_v3.1",
+        ):
+            voice, fb = resolve_voice(v31, bad)
+            assert fb is True and voice == v31.default_voice
+
     def test_resolve_voice_empty_and_clone(self) -> None:
         from app.services.tts_registry import detect_family, resolve_voice
 
@@ -543,6 +583,11 @@ class TestTTSRegistry:
         voice, fb = resolve_voice(v1, "cosyvoice-v1-myvoice-abc123")
         assert fb is False and voice == "cosyvoice-v1-myvoice-abc123"
 
+        v31 = detect_family("qwen-audio-3.1-tts-plus")
+        # 3.1 空音色 → 用 3.1 默认音色
+        voice, fb = resolve_voice(v31, "")
+        assert fb is False and voice == "longanlingxin_v3.1"
+
     def test_family_capabilities(self) -> None:
         """模型族表现力能力标志：指令控制与情感标签按族声明。"""
         from app.services.tts_registry import detect_family, supports_instruction
@@ -550,6 +595,10 @@ class TestTTSRegistry:
         qa = detect_family("qwen-audio-3.0-tts-plus")
         assert qa.supports_instruction and qa.supports_emotion_tags
         assert supports_instruction(qa, "qwen-audio-3.0-tts-plus")
+
+        v31 = detect_family("qwen-audio-3.1-tts-plus")
+        assert v31.supports_instruction and v31.supports_emotion_tags
+        assert supports_instruction(v31, "qwen-audio-3.1-tts-plus")
 
         v3 = detect_family("cosyvoice-v3-flash")
         assert v3.supports_instruction and not v3.supports_emotion_tags

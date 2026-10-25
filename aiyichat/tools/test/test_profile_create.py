@@ -169,18 +169,18 @@ class TestProfileCreateWizard:
                     ):
                         resp = await client.post(
                             f"/admin/profiles/create/{slug}/voice/preset-preview",
-                            data={"voice_id": "longanlingxin"},
+                            data={"voice_id": "longanlingxin_v3.1"},
                         )
                     assert resp.status_code == 200 and "试听音频已生成" in resp.text
 
                     # 选定预置音色
                     resp = await client.post(
                         f"/admin/profiles/create/{slug}/voice/select",
-                        data={"voice_id": "longanlingxin"},
+                        data={"voice_id": "longanlingxin_v3.1"},
                     )
                     assert resp.status_code == 200 and "已选定" in resp.text
                     draft = await repo.find_by_slug(slug)
-                    assert draft is not None and draft.voice_id == "longanlingxin"
+                    assert draft is not None and draft.voice_id == "longanlingxin_v3.1"
 
                     # Step 4：确认页渲染
                     resp = await client.get(f"/admin/profiles/create/{slug}/confirm")

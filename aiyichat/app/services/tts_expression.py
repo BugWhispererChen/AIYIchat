@@ -3,7 +3,7 @@
 将对话链路的既有情绪信号（对方情绪检测结果、角色心情）转换为大模型
 TTS 接口的表现力参数，使语音在情感、语气、语调、语速上趋近真人：
 - 自然语言指令（instruction）：动态控制语气/情感/语速，语速描述内嵌于指令文案
-- 情感标签（如 [empathetic]）：拼入合成文本头部，仅 qwen-audio-3.0 系列支持
+- 情感标签（如 [empathetic]）：拼入合成文本头部，仅 qwen-audio-3.0/3.1 系列支持
 - 音调修正（pitch_rate）：角色心情联动的微调
 
 纯函数设计，不依赖运行时状态，便于单测。
@@ -43,7 +43,7 @@ _INSTRUCTION_BY_EMOTION: dict[str, str] = {
     "shy": "用温柔鼓励的语气，语速放缓，带一点宠溺",
 }
 
-# 对方情绪 → 情感标签（作用于其后全部文本，仅 qwen-audio-3.0 系列支持）
+# 对方情绪 → 情感标签（作用于其后全部文本，仅 qwen-audio-3.0/3.1 系列支持）
 _EMOTION_TAG_BY_EMOTION: dict[str, str] = {
     "sad": "[empathetic]",
     "lonely": "[empathetic]",

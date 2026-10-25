@@ -16,11 +16,15 @@ API_MULTIMODAL = "multimodal"  # Qwen-TTS：dashscope.MultiModalConversation（�
 
 # 自定义创建向导的预置音色候选（音色须与当前 TTS 模型成套，
 # 来源：阿里云 Qwen-Audio-TTS 官方音色列表）。
-# 基础音色采用 qwen-audio-3.0-tts-plus-{后缀} 命名，resolve_voice
-# 按复刻音色规则直接放行；如需增删音色，集中在此处维护。
+# 默认 TTS 模型为 qwen-audio-3.1-tts-plus，系统音色必须带 _v3.1 后缀；
+# 基础音色采用 qwen-audio-3.0-tts-plus-{后缀} 命名（实测 3.1 仍兼容），
+# resolve_voice 按复刻音色规则直接放行；如需增删音色，集中在此处维护。
 PRESET_VOICE_OPTIONS: tuple[tuple[str, str, str], ...] = (
-    ("longanlingxin", "龙安灵心（女）", "知心温暖音 · 社交陪伴旗舰音色"),
-    ("longanlufeng", "龙安鲁风（男）", "明亮开朗音 · 25岁男性"),
+    ("longanlingxin_v3.1", "龙安灵心 3.1（女）", "知心温暖音 · 社交陪伴旗舰音色"),
+    ("longanqian_v3.1", "龙安谦 3.1（男）", "清澈少年音 · 通用自然"),
+    ("longanhuan_v3.1", "龙安欢 3.1（女）", "明亮亲切 · 多方言多语种"),
+    ("longanfengyue_v3.1", "龙安风悦 3.1（女）", "温柔治愈 · 多方言多语种"),
+    ("xunanchuan_v3.1", "许南川 3.1（男）", "沉稳男声 · 内容创作"),
     ("qwen-audio-3.0-tts-plus-longyinghaikai", "龙应海凯（男）", "标准通用型客服 · 稳重专业"),
 )
 
@@ -41,6 +45,15 @@ class TTSModelFamily:
 # CosyVoice 预置音色统一以 long/loong 开头；后缀约定：v1 无后缀，v2 为 _v2，v3 为 _v3
 
 _FAMILIES: tuple[TTSModelFamily, ...] = (
+    TTSModelFamily(
+        name="qwen-audio-v31",
+        api_kind=API_WEBSOCKET,
+        default_voice="longanlingxin_v3.1",  # 中文社交陪伴旗舰音色
+        voice_suffixes=("_v3.1",),
+        voice_prefixes=("long", "loong", "xunanchuan"),
+        supports_instruction=True,  # qwen-audio-3.1 系列支持自然语言指令控制
+        supports_emotion_tags=True,  # 仅该系列支持文本内嵌情感标签/富语言标签
+    ),
     TTSModelFamily(
         name="qwen-audio",
         api_kind=API_WEBSOCKET,
@@ -93,17 +106,19 @@ def detect_family(model: str) -> TTSModelFamily:
     """按模型名识别所属模型族，未匹配时回退 cosyvoice-v1（保守兼容）。"""
     m = (model or "").lower()
     if m.startswith("qwen-audio") and "tts" in m:
-        return _FAMILIES[0]
-    if m.startswith("qwen") and "tts" in m:
-        return _FAMILIES[4]
-    if "cosyvoice-v3" in m:
+        if m.startswith("qwen-audio-3.1"):
+            return _FAMILIES[0]
         return _FAMILIES[1]
-    if "cosyvoice-v2" in m:
+    if m.startswith("qwen") and "tts" in m:
+        return _FAMILIES[5]
+    if "cosyvoice-v3" in m:
         return _FAMILIES[2]
-    if "cosyvoice-v1" in m:
+    if "cosyvoice-v2" in m:
         return _FAMILIES[3]
+    if "cosyvoice-v1" in m:
+        return _FAMILIES[4]
     # 未识别模型按 cosyvoice-v1 处理（保守回退，保证可用性）
-    return _FAMILIES[3]
+    return _FAMILIES[4]
 
 
 def supports_instruction(family: TTSModelFamily, model: str) -> bool:
@@ -117,12 +132,37 @@ def supports_instruction(family: TTSModelFamily, model: str) -> bool:
     return family.supports_instruction
 
 
-# qwen-audio 族官方系统音色（仅收录 qwen-audio-3.0-tts-plus 支持的，
+# qwen-audio-3.0 族官方系统音色（仅收录 qwen-audio-3.0-tts-plus 支持的，
 # 见官方 Qwen-Audio-TTS 音色列表；flash 专属音色不在其中）；
 # longanqian 为官方基础音色（清澈少年向），已实测可用（2026-09 探测验证）
 _QWEN_AUDIO_SYSTEM_VOICES = frozenset(
     {"longanlingxin", "longanlufeng", "longanqian"}
 )
+
+# qwen-audio-3.1 族官方系统音色（2026-10 在测试服逐个探测验证）：
+# 3.1 只接受带 _v3.1 后缀的系统音色，裸 3.0 音色会报 Engine error 411
+_QWEN_AUDIO_V31_SYSTEM_VOICES = frozenset(
+    {
+        "longanlingxin_v3.1",
+        "longanqian_v3.1",
+        "longanhuan_v3.1",
+        "longanfengyue_v3.1",
+        "xunanchuan_v3.1",
+    }
+)
+
+# 3.0 代音色 → 3.1 可用音色的迁移映射：
+# - 3.1 没有 longanlufeng / longanhuan_v3.6 对应版本，映射到音色最接近的
+#   3.1 系统音色（longanlufeng 为男声，落到 xunanchuan_v3.1）
+# - 3.0 基础/复刻音色（qwen-audio-3.0-...）实测可跨代使用，不在此表内
+_QWEN_AUDIO_V31_LEGACY_VOICES = {
+    "longanlingxin": "longanlingxin_v3.1",
+    "longanqian": "longanqian_v3.1",
+    "longanhuan": "longanhuan_v3.1",
+    "longanhuan_v3.6": "longanhuan_v3.1",
+    "longanlufeng": "xunanchuan_v3.1",
+    "longanlufeng_v3.1": "xunanchuan_v3.1",
+}
 
 
 def resolve_voice(family: TTSModelFamily, voice_id: str) -> tuple[str, bool]:
@@ -134,6 +174,19 @@ def resolve_voice(family: TTSModelFamily, voice_id: str) -> tuple[str, bool]:
     vid = (voice_id or "").strip()
     if not vid:
         return family.default_voice, False
+
+    # qwen-audio-3.1 族：系统音色白名单 + 3.0 代音色迁移映射；
+    # 其余（如 CosyVoice 裸音色）一律回退默认，避免 Engine error 411
+    if family.name == "qwen-audio-v31":
+        if vid in _QWEN_AUDIO_V31_SYSTEM_VOICES:
+            return vid, False
+        # 基础/复刻音色 ID（qwen-audio-3.0-...）实测可跨代使用
+        if "qwen-audio" in vid.lower():
+            return vid, False
+        mapped = _QWEN_AUDIO_V31_LEGACY_VOICES.get(vid)
+        if mapped is not None:
+            return mapped, False
+        return family.default_voice, True
 
     # 复刻/设计的自定义音色 ID 形如 cosyvoice-v3-myvoice-xxx 或
     # qwen-audio-3.0-tts-plus-myvoice-xxx，含族标记即视为匹配

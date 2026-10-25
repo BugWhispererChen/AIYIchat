@@ -38,12 +38,17 @@ class OpenAICompatibleProvider(LLMProvider):
         self._model = model
         self._timeout = timeout
 
-        # DashScope 的 Qwen3 系列默认开启思考模式，会产生大量隐性延迟
-        # （实测 3.1s vs 0.5s），对话场景无需思考链，显式关闭
+        # 混合推理模型（Qwen3 / DeepSeek 系列）默认先吐 reasoning chunk，实测会把
+        # token 预算吃满（长上下文下正文 0 字）并拖慢首包，对话场景无需思考链。
+        # enable_thinking 是百炼系端点（DashScope / MaaS 工作空间）的私有参数，
+        # 其它 OpenAI 兼容后端（含 DeepSeek 官方 API）不认识它，只在百炼系端点下发。
+        is_bailian_endpoint = (
+            "dashscope" in self._base_url or "maas.aliyuncs.com" in self._base_url
+        )
         self._extra_body: dict | None = (
             {"enable_thinking": False}
-            if "dashscope" in self._base_url
-            and self._model.lower().startswith("qwen3")
+            if is_bailian_endpoint
+            and self._model.lower().startswith(("qwen3", "deepseek"))
             else None
         )
 

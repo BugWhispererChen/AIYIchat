@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
@@ -9,8 +10,11 @@ from app.models.message import MessageInDB
 
 logger = logging.getLogger(__name__)
 
-# tiktoken 编码器缓存（用于 token 预算估算；非 OpenAI 模型亦可作近似代理）
+# tiktoken 编码器缓存（用于 token 预算估算；非 OpenAI 模型亦可作近似代理）。
+# 首次使用会联网下载 BPE 文件（境内实测 80s+，且容器重启后 /tmp 缓存清空），
+# 因此只在启动时后台预热，请求路径**绝不**现场等下载：未就绪就按字符近似。
 _encoder = None
+_encoder_failed = False
 
 
 def _ensure_aware(dt: datetime) -> datetime:
@@ -20,19 +24,39 @@ def _ensure_aware(dt: datetime) -> datetime:
     return dt
 
 
+def warm_up_encoder() -> bool:
+    """后台预热 tiktoken 编码器；失败则永久降级为字符近似，不再反复重试。"""
+    global _encoder, _encoder_failed
+    if _encoder is not None:
+        return True
+    if _encoder_failed:
+        return False
+    started = time.monotonic()
+    try:
+        import tiktoken
+
+        _encoder = tiktoken.get_encoding("cl100k_base")
+        logger.info(
+            "tiktoken 编码器预热完成: %.1fs", time.monotonic() - started
+        )
+        return True
+    except Exception as e:
+        _encoder_failed = True
+        logger.warning(
+            "tiktoken 编码器不可用（%.1fs），token 预算改用字符近似: %s",
+            time.monotonic() - started, e,
+        )
+        return False
+
+
 def _count_tokens(text: str) -> int:
-    """估算文本 token 数。tiktoken 不可用时退化为字符数近似。"""
-    global _encoder
+    """估算文本 token 数。编码器未就绪时退化为字符数近似。"""
     if not text:
         return 0
-    try:
-        if _encoder is None:
-            import tiktoken
-            _encoder = tiktoken.get_encoding("cl100k_base")
+    if _encoder is not None:
         return len(_encoder.encode(text))
-    except Exception:
-        # 退化近似：中文约 1.5 字符/token
-        return max(1, int(len(text) / 1.5))
+    # 退化近似：中文约 1.5 字符/token
+    return max(1, int(len(text) / 1.5))
 
 
 class ContextManager:

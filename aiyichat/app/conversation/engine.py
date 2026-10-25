@@ -81,7 +81,11 @@ from app.utils.redaction import mask_secret
 from app.db.repositories.injection_snapshot_repo import (
     InjectionSnapshotRepository,
 )
-from app.services.embedding_service import get_embedding_service
+from app.services.embedding_service import (
+    embed_batch_within_budget,
+    embed_within_budget,
+    get_embedding_service,
+)
 from app.services.tts_expression import (
     build_tts_instruction,
     mood_pitch_modifier,
@@ -94,6 +98,9 @@ from app.utils.token_estimate import estimate_tokens
 _unused_spawn = spawn
 
 logger = logging.getLogger(__name__)
+
+# 流式分阶段耗时里属于"发出第一个 token 之前"的阶段；这几段之和才是用户感知的等待起点
+_PRE_LLM_STAGES = ("resolve", "context", "emotion", "recall", "prompt")
 
 # 整轮被清洗成空时的兜底文案（流式与非流式共用一句，避免两处漂移）
 EMPTY_REPLY_FALLBACK = "刚才那句我没说好，你再说一次？"
@@ -821,6 +828,17 @@ class ConversationEngine:
         # 对方消息的真实发生时刻（落库发生在流式结束之后，不能取写入时间）
         received_at = datetime.now(timezone.utc)
 
+        # 分阶段耗时打点：2026-10 实测出现过"整轮 80s+ 而 LLM 只占 9s"的轮次，
+        # 没有分阶段日志只能靠猜；阶段行在流式收尾的 finally 里一次性输出。
+        stage_t0 = time.monotonic()
+        stage_ms: dict[str, int] = {}
+
+        def _stage(name: str) -> None:
+            """结束上一段计时并写入 stage_ms。"""
+            nonlocal stage_t0
+            stage_ms[name] = int((time.monotonic() - stage_t0) * 1000)
+            stage_t0 = time.monotonic()
+
         # 解析 Bot/对方/服务/角色/会话
         bot = await self.bot_repo.find_by_id(self.bot_id)
         if bot is None or getattr(bot, "is_blocked", False):
@@ -910,6 +928,7 @@ class ConversationEngine:
             return
 
         # 情绪 + 上下文 + 策略 + 记忆 + 长度（与 handle_message 共用同一批步骤方法）
+        _stage("resolve")
         emotion_tag = detect_emotion(text)
         rough_intensity = (
             _ROUGH_EMOTION_INTENSITY.get(emotion_tag, 0.0) if emotion_tag else 0.0
@@ -917,16 +936,19 @@ class ConversationEngine:
         history, summary = await self.context_manager.get_context(
             conversation.id, conversation.summary, emotion_intensity=rough_intensity
         )
+        _stage("context")
         # 流式链路不启用 LLM 情绪降级（保持原有行为，避免首 token 延迟增加）
         emotion_tag, emotion_hint, strategy_instruction = await self._analyze_turn(
             text, history, emotion_tag, rough_intensity, allow_llm_fallback=False
         )
+        _stage("emotion")
 
         # 流式链路不触发引用刷新/向量回填（保持原有行为）
         (
             service_memory, current_topic, memory_facts, topic_context, mood,
             scored_facts, injected_entities, pending_events,
         ) = await self._retrieve_memories(service.context_key, text, backfill=False, history=history)
+        _stage("recall")
 
         # 记忆注入分层：稳定层留 system 前缀、动态层后置到紧贴对方输入段
         (
@@ -1021,6 +1043,7 @@ class ConversationEngine:
             yield f"额度不足：{quota_reason}"
             return
         prompt_text = self._messages_text(messages)
+        _stage("prompt")
 
         # 流式生成（usage_sink 收集后端返回的 token 用量，供结束后结算）
         provider = get_llm_provider()
@@ -1182,6 +1205,7 @@ class ConversationEngine:
 
             # 流式结束后：清洗、记账、持久化、异步记忆任务（与主链路共用）
             latency_ms = int((time.monotonic() - start_time) * 1000)
+            _stage("llm")
             response_text = "".join(chunks)
             clean_text, image_specs, sticker_specs = self._resolve_stream_text(
                 response_text, gate, profile, identity.id
@@ -1200,6 +1224,7 @@ class ConversationEngine:
             # "已启动"，避免取消落在 settle 内部时再补一次造成重复消息与重复扣费。
             settle_task = spawn(settle(clean_text, latency_ms))
             await asyncio.shield(settle_task)
+            _stage("settle")
             # 文本落库之后再生成媒体：图片生成较慢，不能挡住首字与文字气泡
             async for event in self._stream_media_events(
                 clean_text=clean_text,
@@ -1214,7 +1239,16 @@ class ConversationEngine:
                 voice_reply=voice_reply,
             ):
                 yield event
+            _stage("media")
         finally:
+            if stage_ms:
+                # 客户端中止时同样输出已有阶段：中止轮次往往正是被某一段拖慢的那一轮
+                logger.info(
+                    "流式分阶段耗时: %s conv=%s service=%s",
+                    self._format_stage_timings(stage_ms),
+                    conversation.id,
+                    service.id,
+                )
             if settle_task is None and chunks:
                 # 客户端中止/断连：已放行部分仍要落库。绝不在 finally 里 await
                 # （异步生成器关闭时 await 会触发 ignored GeneratorExit），改交后台任务。
@@ -1228,6 +1262,13 @@ class ConversationEngine:
                         int((time.monotonic() - start_time) * 1000),
                     )
                 )
+
+    @staticmethod
+    def _format_stage_timings(stage_ms: dict[str, int]) -> str:
+        """把分阶段耗时拼成一行日志正文，并汇总 pre_llm 与 total 便于扫读。"""
+        parts = " ".join(f"{k}={stage_ms[k]}" for k in stage_ms)
+        pre_llm = sum(stage_ms[k] for k in _PRE_LLM_STAGES if k in stage_ms)
+        return f"stage_ms: {parts} pre_llm={pre_llm} total={sum(stage_ms.values())}"
 
     def _resolve_stream_text(
         self, response_text: str, gate: Optional[SentenceGate], profile, identity_id: str
@@ -1496,20 +1537,11 @@ class ConversationEngine:
                 mood = service_memory.mood
             now = datetime.now(timezone.utc)
             emb_service = get_embedding_service()
-            # 查询向量化带短超时护栏：embedding 客户端自身超时为 20s，过长；
+            # 查询向量化带短超时护栏（与工具检索/表情包/回填共用同一预算）：
             # 记忆检索再慢也不该拖住对话，超时即放弃语义召回、退化为只注入稳定层。
-            query_embedding: list[float] = []
-            if emb_service.enabled:
-                try:
-                    query_embedding = await asyncio.wait_for(
-                        emb_service.embed(text),
-                        timeout=settings.memory_recall_timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "记忆语义召回超时(%.1fs)，本轮放弃动态检索: service=%s",
-                        settings.memory_recall_timeout_seconds, service_id,
-                    )
+            query_embedding = await embed_within_budget(
+                emb_service, text, what="记忆语义召回"
+            )
             # 两阶段检索：core 层（安全/身份）常驻注入，不占 top-k 名额；
             # episodic/semantic 层参与语义/时效排序取 top-k
             core_facts = [f for f in service_memory.facts if f.tier == "core"]
@@ -2420,8 +2452,10 @@ class ConversationEngine:
             if emb_service.enabled:
                 missing = [f for f in all_facts if not f.embedding][:10]
                 if missing:
-                    vectors = await emb_service.embed_batch(
-                        [f.content for f in missing]
+                    vectors = await embed_batch_within_budget(
+                        emb_service,
+                        [f.content for f in missing],
+                        what="存量事实向量回填",
                     )
                     for fact, vec in zip(missing, vectors, strict=True):
                         if vec:
@@ -2486,9 +2520,8 @@ class ConversationEngine:
                     args = {}
                 if tc.name == "retrieve_memory":
                     query = str(args.get("query", ""))
-                    q_emb = (
-                        await emb_service.embed(query)
-                        if emb_service.enabled else []
+                    q_emb = await embed_within_budget(
+                        emb_service, query, what="记忆工具检索"
                     )
                     hits = search_facts(query, facts, q_emb, topk=5)
                     tool_result = "；".join(hits) if hits else "（没有相关记忆）"

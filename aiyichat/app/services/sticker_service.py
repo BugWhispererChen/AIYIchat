@@ -123,12 +123,11 @@ async def search_sticker(
         return None
 
     # 语义检索：查询向量化 + 与库内向量逐一算相似度
-    from app.services.embedding_service import get_embedding_service
+    from app.services.embedding_service import embed_within_budget, get_embedding_service
 
     emb_service = get_embedding_service()
-    query_vec: list[float] = (
-        await emb_service.embed(desc) if emb_service.enabled else []
-    )
+    # 表情包在文字已经送达之后才发，端点长挂同样会把整轮收尾拖死 → 共用检索超时预算
+    query_vec = await embed_within_budget(emb_service, desc, what="表情包检索")
     if query_vec:
         best: StickerDocument | None = None
         best_score = 0.0

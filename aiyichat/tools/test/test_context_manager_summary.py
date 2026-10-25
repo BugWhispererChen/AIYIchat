@@ -15,6 +15,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.conversation.context_manager import ContextManager
 from app.models.message import MessageInDB
 
@@ -218,3 +220,54 @@ class TestSummaryTimeline:
         identity_content = provider.complete.call_args.kwargs["messages"][1]["content"]
         assert "[2025-12-31] 身份: 跨年快乐" in identity_content
         assert "[2026-01-01] 身份: 新年新计划" in identity_content
+
+
+class TestTokenBudgetEncoder:
+    """tiktoken 只能在启动时后台预热，绝不能懒加载进请求路径。
+
+    2026-10 测试服实测：tiktoken 首次使用要联网下载 BPE 文件（境内 80s+，且容器
+    重启后 /tmp 缓存清空），懒加载落在 `get_context` 里，导致重启后的第一轮回复
+    整轮卡 83 秒，而 LLM 本身只占 9 秒。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_encoder_state(self):
+        import app.conversation.context_manager as cm
+
+        old = (cm._encoder, cm._encoder_failed)
+        cm._encoder = None
+        cm._encoder_failed = False
+        yield
+        cm._encoder, cm._encoder_failed = old
+
+    def test_unloaded_encoder_never_touches_tiktoken(self) -> None:
+        import app.conversation.context_manager as cm
+
+        with patch("tiktoken.get_encoding") as get_enc:
+            assert cm._count_tokens("你好世界hello") == 6  # 9 字符 ÷ 1.5
+            assert cm._count_tokens("") == 0
+        get_enc.assert_not_called()
+
+    def test_warm_up_then_reused_without_reload(self) -> None:
+        import app.conversation.context_manager as cm
+
+        encoder = MagicMock()
+        encoder.encode.return_value = [1, 2, 3]
+        with patch("tiktoken.get_encoding", return_value=encoder):
+            assert cm.warm_up_encoder() is True
+        assert cm._count_tokens("任意文本") == 3
+        with patch("tiktoken.get_encoding") as get_enc:
+            assert cm._count_tokens("再来一段") == 3
+            assert cm.warm_up_encoder() is True
+        get_enc.assert_not_called()
+
+    def test_warm_up_failure_is_sticky(self) -> None:
+        """下载失败只发生一次：永久降级为字符近似，不再每条消息重试。"""
+        import app.conversation.context_manager as cm
+
+        with patch("tiktoken.get_encoding", side_effect=RuntimeError("network down")):
+            assert cm.warm_up_encoder() is False
+        with patch("tiktoken.get_encoding") as get_enc:
+            assert cm.warm_up_encoder() is False
+            assert cm._count_tokens("文本") == 1
+        get_enc.assert_not_called()

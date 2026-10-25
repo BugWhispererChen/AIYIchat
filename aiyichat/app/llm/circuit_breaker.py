@@ -43,6 +43,10 @@ class CircuitBreakerConfig:
     recovery_timeout: float = 30.0  # 熔断后恢复试探间隔（秒）
     half_open_max_calls: int = 3  # 半开状态最大试探请求数
     success_threshold: int = 2  # 半开状态关闭熔断所需连续成功次数
+    # 慢即失败阈值（秒）：调用成功但耗时超过它时按失败计入窗口（结果照常返回）。
+    # 端点"慢成功"对实时链路已无价值，只按异常计数的熔断器永远等不到它。
+    # None 表示不启用（文本主链路保持旧口径：只有报错才算失败）。
+    slow_failure_seconds: float | None = None
 
 
 @dataclass
@@ -121,13 +125,27 @@ class CircuitBreaker:
                 self.stats.half_open_calls += 1
 
         # 执行实际调用
+        started = time.monotonic()
         try:
             result = await func(*args, **kwargs)
-            await self._on_success()
-            return result
         except Exception as e:
             await self._on_failure(e)
             raise
+
+        elapsed = time.monotonic() - started
+        threshold = self.config.slow_failure_seconds
+        if threshold is not None and elapsed >= threshold:
+            # 慢成功：结果仍然返回给调用方，但按失败计入窗口，让连续慢端点也能触发熔断
+            logger.warning(
+                "Circuit breaker 记录慢成功: %.2fs >= %.2fs", elapsed, threshold
+            )
+            await self._on_failure(
+                TimeoutError(f"slow call {elapsed:.2f}s >= {threshold:.2f}s")
+            )
+            return result
+
+        await self._on_success()
+        return result
 
     def _check_state_transition(self) -> None:
         """检查并执行状态转换。"""

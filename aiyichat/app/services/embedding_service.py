@@ -12,6 +12,7 @@ dashscope_api_key 未配置时，embed 返回空向量，调用方自动降级�
 再发起请求，熔断器就失去进入半开、自动恢复的机会，变成永久锁死。
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -32,9 +33,15 @@ logger = logging.getLogger(__name__)
 _BATCH_LIMIT = 10
 # 单条文本截断长度，避免超出模型输入上限
 _MAX_INPUT_CHARS = 2048
+# 向量化 HTTP 客户端超时（秒）：检索链路另有 memory_recall_timeout_seconds 预算，
+# 这里只兜住没有预算护栏的调用（管理页、批量回填），取略大于预算值避免抢跑
+_CLIENT_TIMEOUT_SECONDS = 8.0
 
 # 熔断参数：窗口 10 次、失败率 0.6（连续 5 次失败即触发，覆盖额度耗尽这种 100% 失败），
 # 冷却 600s 后半开放行 1 次试探，成功即恢复。
+# 慢成功阈值 5s：明显慢于检索预算（memory_recall_timeout_seconds，默认 3s）的成功
+# 对实时链路已经没有价值，2026-10 测试服实测端点偶发单次挂起 80s+，只按异常计数的
+# 熔断器抓不到这种"慢成功"。
 # 必须是工厂而非模块级单例：CircuitBreaker 按引用持有 config，共享实例会让
 # 任一服务改参数就波及全部服务（也包括同进程后续测试）。
 def _new_breaker_config() -> CircuitBreakerConfig:
@@ -45,6 +52,7 @@ def _new_breaker_config() -> CircuitBreakerConfig:
         recovery_timeout=600.0,
         half_open_max_calls=1,
         success_threshold=1,
+        slow_failure_seconds=5.0,
     )
 
 
@@ -116,7 +124,10 @@ class EmbeddingService:
             self._client = AsyncOpenAI(
                 base_url=cfg.base_url,
                 api_key=cfg.api_key,
-                timeout=20.0,
+                # 口径与 chat provider 一致：超时后立刻失败走降级，
+                # 不用 SDK 默认重试（20s×3 + 退避会把一次检索拖到一分钟以上）
+                timeout=_CLIENT_TIMEOUT_SECONDS,
+                max_retries=0,
             )
             self._model = cfg.model
         return self._client, self._model
@@ -231,3 +242,43 @@ def reset_embedding_service() -> None:
     """重置单例（运行时切换配置或测试时使用）。"""
     global _embedding_service
     _embedding_service = None
+
+
+async def embed_within_budget(
+    service: EmbeddingService, text: str, *, what: str
+) -> list[float]:
+    """带超时预算的单条向量化：超时返回空向量，调用方按既有逻辑降级为规则排序。
+
+    端点偶发长挂（2026-10 测试服实测 80s+）时，未设预算的调用会把整轮回复一起拖住；
+    检索类向量化再慢也不该比回复本身更值钱，超时即降级。
+    """
+    if not service.enabled:
+        return []
+    try:
+        return await asyncio.wait_for(
+            service.embed(text), timeout=settings.memory_recall_timeout_seconds
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "向量化超时(%s, %.1fs)，本轮降级为规则排序",
+            what, settings.memory_recall_timeout_seconds,
+        )
+        return []
+
+
+async def embed_batch_within_budget(
+    service: EmbeddingService, texts: list[str], *, what: str
+) -> list[list[float]]:
+    """批量版预算护栏：超时返回等长空向量，调用方的回填/检索按降级跳过。"""
+    if not service.enabled:
+        return [[] for _ in texts]
+    try:
+        return await asyncio.wait_for(
+            service.embed_batch(texts), timeout=settings.memory_recall_timeout_seconds
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "批量向量化超时(%s, %.1fs)，本轮跳过向量处理: %d 条",
+            what, settings.memory_recall_timeout_seconds, len(texts),
+        )
+        return [[] for _ in texts]

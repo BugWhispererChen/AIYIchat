@@ -116,3 +116,40 @@ class TestProviderFactory:
             first = pf.get_llm_provider("chat")
             pf.reset_provider()
             assert first is not pf.get_llm_provider("chat")
+
+
+class TestThinkingFlag:
+    """enable_thinking 只在认识该参数的百炼系端点下发。
+
+    混合推理模型（Qwen3 / DeepSeek）默认先吐 reasoning chunk：实测长上下文下
+    token 预算被思考吃满（正文 0 字）且首包显著变慢；而 DeepSeek 官方 API 等
+    非百炼后端不认识这个参数，传了会直接报错。
+    """
+
+    @staticmethod
+    def _extra_body(base_url: str, model: str) -> object:
+        from app.llm.openai_provider import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider(
+            base_url=base_url, api_key="k", model=model
+        )._extra_body
+
+    def test_dashscope_qwen3_turns_thinking_off(self) -> None:
+        assert self._extra_body(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-flash"
+        ) == {"enable_thinking": False}
+
+    def test_maas_deepseek_turns_thinking_off(self) -> None:
+        """现网口径：MaaS 工作空间端点 + deepseek 同样默认思考（2026-10 实测）。"""
+        assert self._extra_body(
+            "https://ws-abc.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+            "deepseek-v4.1-flash",
+        ) == {"enable_thinking": False}
+
+    def test_official_deepseek_api_not_touched(self) -> None:
+        assert self._extra_body("https://api.deepseek.com/v1", "deepseek-chat") is None
+
+    def test_unknown_model_family_not_touched(self) -> None:
+        assert self._extra_body(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1", "gpt-4o"
+        ) is None

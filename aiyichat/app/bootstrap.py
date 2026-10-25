@@ -46,6 +46,15 @@ async def lifespan(app: FastAPI):
     await load_settings_from_db()
     logger.info("Runtime settings loaded")
 
+    # tiktoken 的 BPE 文件首次使用需联网下载（境内实测 80s+）：放后台线程预热，
+    # 请求路径只用已就绪的编码器，未就绪按字符近似，避免第一轮回复替它买单。
+    import asyncio
+
+    from app.conversation.context_manager import warm_up_encoder
+    from app.utils.tasks import spawn
+
+    spawn(asyncio.to_thread(warm_up_encoder))
+
     # 导入随包预置的表情包资源（幂等去重；失败不阻塞启动）
     try:
         from app.services.sticker_seeder import seed_stickers

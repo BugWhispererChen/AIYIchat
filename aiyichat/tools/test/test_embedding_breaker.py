@@ -215,3 +215,126 @@ class TestErrorCodeFingerprint:
         assert status["last_error_code"] == "400:AllocationQuota.FreeTierOnly"
         assert status["last_error"] == str(long_err)
         assert status["fail_count"] == 1
+
+
+class TestSlowSuccessCounting:
+    """慢成功计入熔断：端点不报错但每次挂几十秒时，也必须能被熔断挡下。
+
+    2026-10 测试服实测 embedding 端点偶发单次请求 80s+ 仍返回 200，
+    只按异常计数的熔断器永远抓不到这种拖垮整轮回复的情况。
+    """
+
+    def test_slow_successes_open_the_breaker_but_still_return(self) -> None:
+        async def body():
+            svc = _make_service()
+
+            async def slow_create(*_args, **_kwargs):
+                await asyncio.sleep(0.02)
+                return _ok_item()
+
+            svc._client.embeddings.create = slow_create
+            svc._breaker.config.slow_failure_seconds = 0.005
+            with patch.object(type(svc), "enabled", property(lambda self: True)):
+                vectors = [await svc.embed("文本") for _ in range(6)]
+            # 结果照常返回（慢≠错），但连续慢已把熔断推开
+            assert vectors[0] == [0.5]
+            assert svc._breaker.state.value == "open"
+
+        _run(body())
+
+    def test_fast_success_does_not_count_as_failure(self) -> None:
+        async def body():
+            svc = _make_service()
+            svc._client.embeddings.create = AsyncMock(return_value=_ok_item())
+            svc._breaker.config.slow_failure_seconds = 5.0
+            with patch.object(type(svc), "enabled", property(lambda self: True)):
+                for _ in range(8):
+                    assert await svc.embed("文本") == [0.5]
+            assert svc._breaker.state.value == "closed"
+            assert svc._breaker.failure_rate == 0.0
+
+        _run(body())
+
+
+class TestClientBudget:
+    """客户端超时/重试口径与 chat provider 一致：慢就快速失败，不靠 SDK 默认重试。"""
+
+    def test_timeout_and_zero_retries(self) -> None:
+        from app.llm.model_registry import ResolvedModelConfig
+
+        svc = EmbeddingService()
+        with patch(
+            "app.services.embedding_service.resolve_model_config",
+            return_value=ResolvedModelConfig(
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key="sk-test", model="emb-m", timeout=30,
+            ),
+        ):
+            client, model = svc._ensure_client()
+        assert model == "emb-m"
+        assert client.timeout == 8.0
+        assert client.max_retries == 0
+
+
+class TestWithinBudgetHelpers:
+    """检索类向量化统一走预算：超时即空向量，调用方按既有逻辑降级。"""
+
+    class _Slow:
+        enabled = True
+
+        async def embed(self, text: str) -> list[float]:
+            await asyncio.sleep(0.05)
+            return [1.0]
+
+        async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+            await asyncio.sleep(0.05)
+            return [[1.0] for _ in texts]
+
+    class _Off:
+        enabled = False
+
+        async def embed(self, text: str) -> list[float]:  # pragma: no cover
+            raise AssertionError("未启用不应被调用")
+
+        async def embed_batch(self, texts):  # pragma: no cover
+            raise AssertionError("未启用不应被调用")
+
+    def test_embed_timeout_returns_empty_and_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from app.services.embedding_service import embed_within_budget
+
+        async def body():
+            with caplog.at_level("WARNING"), patch.object(
+                settings, "memory_recall_timeout_seconds", 0.01
+            ):
+                assert await embed_within_budget(
+                    TestWithinBudgetHelpers._Slow(), "文本", what="记忆语义召回"
+                ) == []
+        _run(body())
+        assert "记忆语义召回" in caplog.text
+
+    def test_batch_timeout_returns_equal_length_empty(self) -> None:
+        from app.services.embedding_service import embed_batch_within_budget
+
+        async def body():
+            with patch.object(settings, "memory_recall_timeout_seconds", 0.01):
+                out = await embed_batch_within_budget(
+                    TestWithinBudgetHelpers._Slow(), ["a", "b", "c"], what="向量回填"
+                )
+            assert out == [[], [], []]
+
+        _run(body())
+
+    def test_disabled_service_short_circuits(self) -> None:
+        from app.services.embedding_service import (
+            embed_batch_within_budget,
+            embed_within_budget,
+        )
+
+        async def body():
+            off = TestWithinBudgetHelpers._Off()
+            assert await embed_within_budget(off, "文本", what="x") == []
+            assert await embed_batch_within_budget(off, ["a", "b"], what="x") == [[], []]
+
+        _run(body())

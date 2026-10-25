@@ -1466,3 +1466,39 @@ class TestStreamDisplayCleaning:
         joined = _stream_text(chunks)
         assert "[表情:" not in joined and "开心" not in joined, joined
 
+
+class TestStageTimings:
+    """分阶段耗时日志：让"整轮很慢但 LLM 不慢"这类问题留下一行可读证据。
+
+    2026-10 测试服实测出现过整轮 80s+ 而 latency_ms 只有 9s 的轮次，当时没有
+    任何分阶段日志可归因，只能逐个环节猜。
+    """
+
+    def test_stream_emits_stage_summary_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        engine = _build_engine()
+        with caplog.at_level("INFO", logger="app.conversation.engine"):
+            _run(engine, "今天想出门走走", stream=True)
+        line = next(
+            (r.getMessage() for r in caplog.records if "流式分阶段耗时" in r.getMessage()),
+            "",
+        )
+        assert line, [r.getMessage() for r in caplog.records]
+        for key in ("resolve=", "context=", "recall=", "llm=", "pre_llm="):
+            assert key in line, line
+
+    def test_format_marks_pre_llm_sum(self) -> None:
+        from app.conversation.engine import ConversationEngine
+
+        stage = {
+            "resolve": 5, "context": 7, "emotion": 1, "recall": 8000,
+            "prompt": 3, "llm": 900, "media": 20,
+        }
+        text = ConversationEngine._format_stage_timings(stage)
+        assert "recall=8000" in text
+        # pre_llm 只累计发首 token 之前的阶段，不含 llm/media
+        assert "pre_llm=8016" in text
+        assert "total=8936" in text
+
+

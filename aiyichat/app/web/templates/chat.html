@@ -11,20 +11,24 @@
     <script src="{{ asset('js/web-chat.js') }}" defer></script>
 </head>
 <body class="chat-body" data-token-key="aiyichat_web_token">
-    <div class="web-topbar">
+    <div class="web-topbar chat-topbar">
         <span class="brand"><span class="brand-dot"></span>爱易聊</span>
-        <button type="button" class="icon-btn session-rail-toggle" id="session-toggle" aria-label="展开历史对话">
-            {{ icon('clock') }}<span>历史</span>
-        </button>
+        <nav class="web-topbar-nav" aria-label="对话页导航">
+            <button type="button" class="icon-btn session-rail-toggle" id="session-toggle" aria-label="展开历史对话">
+                {{ icon('clock') }}<span>历史</span>
+            </button>
+            <a href="/web/services">聊天服务</a>
+            <a href="/web/account">账号</a>
+        </nav>
         <span class="quota-chip" id="quota-info">正在读取账号信息…</span>
         <span class="spacer"></span>
-        <a class="icon-btn" href="/web/services">聊天服务</a>
-        <a class="icon-btn" href="/web/account">账号</a>
-        <button class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
-            {{ icon('sun', 'icon-sun') }}
-            {{ icon('moon', 'icon-moon') }}
-        </button>
-        <button class="icon-btn" id="logout-btn">退出登录</button>
+        <div class="web-topbar-actions">
+            <button type="button" class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
+                {{ icon('sun', 'icon-sun') }}
+                {{ icon('moon', 'icon-moon') }}
+            </button>
+            <button type="button" class="icon-btn" id="logout-btn">退出登录</button>
+        </div>
     </div>
 
     <!-- 服务选择：一个服务 = 角色 × 渠道，是聊天页可切换的对话单元 -->

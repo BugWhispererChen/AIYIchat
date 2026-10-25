@@ -5,16 +5,18 @@
 #}
 <div class="web-topbar">
     <span class="brand"><span class="brand-dot"></span>爱易聊</span>
-    <nav>
+    <nav class="web-topbar-nav" aria-label="主要导航">
         <a href="/web/chat"{% if active_page == 'chat' %} aria-current="page"{% endif %}>对话</a>
         <a href="/web/services"{% if active_page == 'services' %} aria-current="page"{% endif %}>聊天服务</a>
         <a href="/web/account"{% if active_page == 'account' %} aria-current="page"{% endif %}>账号</a>
     </nav>
     <span class="spacer"></span>
-    <button class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
-        {% from "partials/_icons.html" import icon %}
-        {{ icon('sun', 'icon-sun') }}
-        {{ icon('moon', 'icon-moon') }}
-    </button>
-    <button class="icon-btn" id="logout-btn">退出登录</button>
+    <div class="web-topbar-actions">
+        <button type="button" class="icon-btn theme-btn" onclick="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色">
+            {% from "partials/_icons.html" import icon %}
+            {{ icon('sun', 'icon-sun') }}
+            {{ icon('moon', 'icon-moon') }}
+        </button>
+        <button type="button" class="icon-btn" id="logout-btn">退出登录</button>
+    </div>
 </div>

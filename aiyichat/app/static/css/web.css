@@ -126,6 +126,7 @@
 .consent a { color: var(--primary); }
 .btn-submit {
     width: 100%;
+    min-height: 44px;
     margin-top: .5rem;
     background: var(--primary);
     border-color: var(--primary);
@@ -144,7 +145,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: .4rem .6rem;
+    gap: .45rem .65rem;
     padding: .55rem .9rem;
     background: var(--surface-translucent);
     backdrop-filter: saturate(180%) blur(8px);
@@ -170,8 +171,12 @@
     vertical-align: middle;
     animation: ui-pulse 2.8s ease-in-out infinite;
 }
-.web-topbar nav { display: flex; gap: .3rem; flex-wrap: wrap; }
-.web-topbar nav a {
+.web-topbar-nav { display: flex; gap: .3rem; flex-wrap: wrap; }
+.web-topbar-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
     font-size: .8rem;
     padding: .28rem .65rem;
     border-radius: var(--radius-pill);
@@ -180,13 +185,14 @@
     text-decoration: none;
     transition: all var(--transition);
 }
-.web-topbar nav a:hover { background: var(--surface-2); color: var(--text); }
-.web-topbar nav a[aria-current="page"] {
+.web-topbar-nav a:hover { background: var(--surface-2); color: var(--text); }
+.web-topbar-nav a[aria-current="page"] {
     background: var(--primary-soft);
     color: var(--info-text);
     border-color: var(--primary-ink);
     font-weight: 600;
 }
+.web-topbar-actions { display: flex; align-items: center; gap: .4rem; }
 .web-topbar .spacer { margin-left: auto; }
 .quota-chip {
     font-family: var(--font-mono);
@@ -202,7 +208,9 @@
 .icon-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: .3rem;
+    min-height: 34px;
     border: 1px solid var(--border-strong);
     background: var(--surface);
     color: var(--text-2);
@@ -216,6 +224,14 @@
     transition: all var(--transition);
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.web-topbar-nav .session-rail-toggle {
+    border-color: transparent;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    padding: .28rem .65rem;
+    font-size: .8rem;
+}
+.web-topbar .theme-btn { width: 34px; flex: 0 0 34px; padding: .28rem; }
 #logout-btn:hover { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger); }
 .theme-btn svg { width: 16px; height: 16px; display: block; }
 .theme-btn .icon-sun { display: none; }
@@ -233,25 +249,33 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 /* ══ 账号中心：分区导航、额度仪表、设备与危险区 ══ */
 .account-nav {
     position: sticky;
-    top: 0;
+    top: 53px;
     z-index: 2;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: .35rem;
     margin-bottom: 1rem;
     padding: .5rem 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
 }
 .account-nav a {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
     padding: .3rem .7rem;
     border-radius: var(--radius-pill);
     font-size: .82rem;
     color: var(--text-2);
     text-decoration: none;
+    white-space: nowrap;
 }
 .account-nav a:hover { background: var(--surface-2); color: var(--text); }
-.account-section { scroll-margin-top: 4.5rem; }
+.account-section { scroll-margin-top: 6.5rem; }
 .account-meta { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; font-size: .82rem; color: var(--text-2); }
 .quota-cell { display: grid; gap: .35rem; }
 .quota-cell .quota-head { display: flex; align-items: baseline; gap: .4rem; font-size: .84rem; }
@@ -514,8 +538,8 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 }
 .mic-btn {
     grid-column: 1;
-    width: 2.55rem;
-    height: 2.55rem;
+    width: 44px;
+    height: 44px;
     margin: 0;
     padding: 0;
     display: inline-flex;
@@ -536,8 +560,12 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 }
 .mic-btn[disabled] { opacity: .5; cursor: not-allowed; }
 .voice-cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
     margin-left: .45rem;
-    padding: .05rem .3rem;
+    padding: .25rem .5rem;
     border: 0;
     background: transparent;
     color: var(--danger-text);
@@ -553,6 +581,7 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
     grid-column: 2;
     flex: 1;
     min-width: 0;
+    min-height: 44px;
     margin: 0;
     resize: none;
     max-height: 8rem;
@@ -566,6 +595,7 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .send-btn {
     grid-column: 3;
     width: auto;
+    min-height: 44px;
     margin: 0;
     padding: .55rem 1.15rem;
     font-size: .9rem;
@@ -579,12 +609,18 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .send-btn[disabled] { opacity: .5; cursor: not-allowed; }
 .composer-hint {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: .25rem;
+    margin: 0;
     text-align: center;
     font-family: var(--font-mono);
     font-size: .68rem;
     letter-spacing: .08em;
     color: var(--text-3);
-    padding-bottom: .35rem;
+    padding: .25rem .7rem .35rem;
 }
 
 /* ══ 响应式 ══ */
@@ -605,11 +641,47 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
     }
     .chat-main { position: relative; }
     .session-rail.is-open { transform: none; }
+    .session-rail-toggle { display: inline-flex !important; }
 }
 @media (max-width: 640px) {
     .bubble { max-width: 92%; font-size: .93rem; }
-    .web-topbar .brand { font-size: .96rem; }
-    .session-rail-toggle { display: inline-flex !important; }
+    .web-topbar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: .45rem .6rem;
+        padding: .55rem .7rem;
+    }
+    .web-topbar .brand { grid-column: 1; grid-row: 1; font-size: .96rem; }
+    .web-topbar .spacer { display: none; }
+    .web-topbar-actions { grid-column: 3; grid-row: 1; justify-self: end; gap: .35rem; }
+    .web-topbar-actions .icon-btn { min-height: 40px; }
+    .web-topbar .theme-btn { width: 40px; flex-basis: 40px; }
+    .web-topbar-nav {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+        gap: .35rem;
+        width: 100%;
+    }
+    .web-topbar-nav a,
+    .web-topbar-nav .session-rail-toggle {
+        width: 100%;
+        min-height: 42px;
+        padding: .4rem .55rem;
+    }
+    .chat-topbar > .quota-chip {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: end;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .chat-input-bar { padding: .55rem .65rem calc(.55rem + env(safe-area-inset-bottom)); }
+    .chat-input-bar .composer { gap: .45rem; }
+    .send-btn { padding: .55rem .9rem; }
 }
 .session-rail-toggle { display: none; }
 
@@ -680,6 +752,20 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .strength-level.lvl-mid { color: var(--warning-text); }
 .strength-level.lvl-strong { color: var(--success-text); }
 
+/* ══ 卡片与表单操作区 ══ */
+.page .ui-card-head { align-items: center; flex-wrap: wrap; }
+.page .ui-card-head > .ui-cluster--end { margin-left: auto; }
+.svc-editor .ui-cluster--bar,
+#role-editor-card .ui-cluster--bar,
+.account-section .ui-cluster--bar { justify-content: flex-end; }
+#account-data .ui-cluster--bar { justify-content: space-between; }
+.svc-editor .ui-cluster--bar .ui-btn--primary,
+#role-editor-card .ui-cluster--bar .ui-btn--primary { min-width: 7rem; }
+.account-section .ui-list-row { row-gap: .65rem; }
+.account-section .ui-list-row > .ui-cluster--fill { min-width: 0; }
+.account-section .ui-list-row > .ui-btn { margin-left: auto; }
+.account-section .ui-list-row > .ui-inset { flex: 1 1 100%; }
+
 /* ══ 聊天服务页：渠道 / 服务 / 角色 ══ */
 .svc-summary { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1rem; }
 .svc-stat {
@@ -716,7 +802,16 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .channel-head { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
 .channel-name { font-family: var(--font-display); font-size: .98rem; color: var(--text); }
 .channel-meta { line-height: 1.6; }
-.channel-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: auto; padding-top: .2rem; }
+.channel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+    margin-top: auto;
+    padding-top: .65rem;
+    border-top: 1px dashed var(--border);
+}
+.channel-actions .ui-btn--danger { margin-left: auto; }
 .qr-panel {
     display: grid; justify-items: center; gap: .4rem;
     padding-top: .6rem; border-top: 1px dashed var(--border); text-align: center;
@@ -724,9 +819,29 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 .qr-panel[hidden] { display: none; }
 .qr-image { width: 190px; max-width: 100%; height: auto; padding: .5rem; border-radius: var(--radius-sm); background: #fff; }
 .svc-editor { margin-top: 1rem; }
-.svc-row { align-items: flex-start; }
+.svc-row,
+.role-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: .65rem .8rem;
+}
+.svc-row-main,
+.role-row-main { min-width: 0; }
+.svc-row-main .u-muted,
+.role-row-main .u-muted { overflow-wrap: anywhere; }
+.svc-row-status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
+.role-row-status { justify-self: end; }
+.svc-row-actions,
+.role-row-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: .35rem; }
+.channel-actions .ui-btn,
+.svc-row-actions .ui-btn,
+.role-row-actions .ui-btn { width: auto; flex: 0 0 auto; }
+.svc-row-actions .ui-btn--danger,
+.role-row-actions .ui-btn--danger { margin-left: .35rem; }
 .platform-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .9rem; }
 .platform-option {
+    min-height: 40px;
     margin: 0; padding: .45rem .9rem;
     border: 1px solid var(--border); border-radius: var(--radius-pill);
     background: var(--surface); color: var(--text-2);
@@ -738,8 +853,47 @@ textarea { resize: vertical; min-height: 4.5rem; line-height: 1.7; }
 @media (max-width: 900px) {
     #channel-list { grid-template-columns: 1fr; }
 }
+@media (max-width: 760px) {
+    .svc-row,
+    .role-row { grid-template-columns: minmax(0, 1fr); }
+    .svc-row-status { justify-content: flex-start; }
+    .role-row-status { justify-self: start; }
+    .svc-row-actions,
+    .role-row-actions { width: 100%; flex-wrap: wrap; justify-content: stretch; }
+    .svc-row-actions .ui-btn,
+    .role-row-actions .ui-btn {
+        flex: 1 1 0;
+        min-height: 42px;
+        border-color: var(--border);
+        background: var(--surface-2);
+    }
+    .svc-row-actions .ui-btn--danger,
+    .role-row-actions .ui-btn--danger {
+        margin-left: 0;
+        border-color: var(--danger);
+        background: var(--danger-bg);
+        color: var(--danger-text);
+    }
+    .account-section .ui-list-row > .ui-cluster--fill { flex-basis: 100%; }
+}
 @media (max-width: 640px) {
     .svc-summary { gap: .4rem; }
     .svc-stat { padding: .35rem .6rem; }
-    .channel-actions .ui-btn { flex: 1 1 auto; }
+    .svc-tab { flex: 1 1 0; min-width: 5.5rem; min-height: 44px; }
+    .platform-option { flex: 1 1 0; min-height: 44px; }
+    .channel-actions .ui-btn { flex: 1 1 calc(50% - .4rem); min-height: 44px; }
+    .channel-actions .ui-btn--primary { flex-basis: 100%; }
+    .channel-actions .ui-btn--ghost { border-color: var(--border); background: var(--surface-2); }
+    .channel-actions .ui-btn--ghost.ui-btn--danger { border-color: var(--danger); background: var(--danger-bg); }
+    .channel-actions .ui-btn--danger { flex-basis: 100%; margin-left: 0; }
+    .svc-row-actions .ui-btn,
+    .role-row-actions .ui-btn { min-height: 44px; }
+    .page .ui-card-head > .ui-cluster--end { width: 100%; margin-left: 0; }
+    .page .ui-card-head > .ui-cluster--end .ui-btn { width: 100%; min-height: 44px; }
+    .svc-editor .ui-cluster--bar .ui-btn,
+    #role-editor-card .ui-cluster--bar .ui-btn,
+    .account-section .ui-cluster--bar .ui-btn { flex: 1 1 0; min-height: 44px; }
+    .account-section .ui-list-row > .ui-btn { width: 100%; min-height: 44px; margin-left: 0; }
+    .account-nav { position: static; margin-bottom: .75rem; padding: .25rem 0 .55rem; }
+    .account-nav a { min-height: 42px; }
 }

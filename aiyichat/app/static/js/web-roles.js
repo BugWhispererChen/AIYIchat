@@ -162,10 +162,10 @@
         }
         items.forEach(function (it) {
             const row = document.createElement('div');
-            row.className = 'ui-list-row ui-cluster';
+            row.className = 'ui-list-row role-row';
 
             const grow = document.createElement('div');
-            grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
+            grow.className = 'ui-stack ui-stack--tight ui-cluster--fill role-row-main';
             const t = document.createElement('div');
             t.className = 'u-fw-600';
             t.textContent = it.name;
@@ -178,12 +178,12 @@
             row.appendChild(grow);
 
             const tag = document.createElement('span');
-            tag.className = 'ui-badge ' + (it.is_active ? 'ui-badge--ok' : 'ui-badge--err');
+            tag.className = 'ui-badge role-row-status ' + (it.is_active ? 'ui-badge--ok' : 'ui-badge--err');
             tag.textContent = it.is_active ? '启用中' : '已停用';
             row.appendChild(tag);
 
             const acts = document.createElement('div');
-            acts.className = 'ui-cluster ui-cluster--nowrap';
+            acts.className = 'role-row-actions';
             if (it.owned) {
                 acts.appendChild(mkBtn('编辑', function () { openEditor(it.id); }));
                 acts.appendChild(mkBtn(it.is_active ? '停用' : '启用', function () { toggle(it); }));

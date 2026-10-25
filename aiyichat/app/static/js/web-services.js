@@ -648,10 +648,10 @@
         }
         services.forEach(function (svc) {
             const row = document.createElement('div');
-            row.className = 'ui-list-row ui-cluster svc-row';
+            row.className = 'ui-list-row svc-row';
 
             const grow = document.createElement('div');
-            grow.className = 'ui-stack ui-stack--tight ui-cluster--fill';
+            grow.className = 'ui-stack ui-stack--tight ui-cluster--fill svc-row-main';
             const name = document.createElement('div');
             name.className = 'u-fw-600';
             name.textContent = svc.name;
@@ -671,12 +671,15 @@
             grow.appendChild(meta);
             row.appendChild(grow);
 
-            if (svc.current) row.appendChild(badge('当前对话', 'ui-badge--ink'));
-            if (svc.bot_platform) row.appendChild(badge(platformName(svc.bot_platform), 'ui-badge--line'));
-            row.appendChild(badge(svc.is_active ? '启用中' : '已停用', svc.is_active ? 'ui-badge--ok' : 'ui-badge--err'));
+            const status = document.createElement('div');
+            status.className = 'svc-row-status';
+            if (svc.current) status.appendChild(badge('当前对话', 'ui-badge--ink'));
+            if (svc.bot_platform) status.appendChild(badge(platformName(svc.bot_platform), 'ui-badge--line'));
+            status.appendChild(badge(svc.is_active ? '启用中' : '已停用', svc.is_active ? 'ui-badge--ok' : 'ui-badge--err'));
+            row.appendChild(status);
 
             const actions = document.createElement('div');
-            actions.className = 'ui-cluster ui-cluster--nowrap';
+            actions.className = 'svc-row-actions';
             actions.appendChild(mkBtn('编辑', function () { openServiceEditor(svc); }));
             actions.appendChild(mkBtn(
                 svc.is_active ? '停用' : '启用',

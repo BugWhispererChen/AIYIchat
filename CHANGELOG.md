@@ -25,6 +25,8 @@
   同时改正「身份与账号相互独立」「一个身份对应一份记忆与额度」两处与数据模型矛盾的文案。
   `TERMS_VERSION` / `PRIVACY_VERSION` 递增到 `v1.1`。术语表见 `aiyichat/TERMINOLOGY.md`，
   禁用短语由 `test_naming_conventions.py::TestVisibleCopyTerminology` 守卫。
+- **仪表盘情绪分布图例改中文展示**：此前只映射 5 种情绪，`tired`/`excited`/`confused`/`nostalgic`/
+  `grateful`/`shy` 会原样透出英文；现覆盖检测器全部 11 种标签，未知标签兜底为「其他」。
 
 ### 新增
 - **SSE 网关的闸门路径端到端用例** `tools/test/test_api_auth.py::TestChatStreamPayloadCleaning::test_sse_frames_carry_gate_events_in_order`：

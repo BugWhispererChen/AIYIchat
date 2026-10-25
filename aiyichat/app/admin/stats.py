@@ -40,13 +40,19 @@ async def get_dashboard_stats() -> DashboardStats:
     return stats
 
 
-# 情绪标签→中文展示名（与 emotion_detector 对齐）
+# 情绪标签→中文展示名（覆盖 emotion_detector 支持的全部标签）
 _EMOTION_LABELS: dict[str, str] = {
     "sad": "悲伤",
     "angry": "愤怒",
     "anxious": "焦虑",
     "happy": "开心",
     "lonely": "孤独",
+    "tired": "疲惫",
+    "excited": "兴奋",
+    "confused": "困惑",
+    "nostalgic": "怀念",
+    "grateful": "感激",
+    "shy": "害羞",
 }
 
 
@@ -78,6 +84,6 @@ async def get_dashboard_charts(days: int = 14) -> DashboardCharts:
         msg_daily_values=[d["count"] for d in daily],
         latency_labels=[d["date"] for d in latency],
         latency_values=[d["avg_ms"] for d in latency],
-        emotion_labels=[_EMOTION_LABELS.get(e["emotion"], e["emotion"]) for e in emotions],
+        emotion_labels=[_EMOTION_LABELS.get(e["emotion"], "其他") for e in emotions],
         emotion_values=[e["count"] for e in emotions],
     )

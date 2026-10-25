@@ -9,9 +9,10 @@
 """
 
 import asyncio
+import json
 import os
 import re
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import mongomock_motor
 import pytest
@@ -541,6 +542,47 @@ class TestDashboardAndSettings:
                     assert resp.status_code == 200
             finally:
                 settings.chat_max_tokens = old_max_tokens
+                await _teardown_app(app)
+
+        _run(flow())
+
+    def test_dashboard_emotion_distribution_is_chinese(self) -> None:
+        """情绪图例必须全部中文，不能把检测器的英文标签透传到前端。"""
+
+        async def flow() -> None:
+            app = await _setup_app()
+            try:
+                repo = MessageRepository()
+                for tag in ("confused", "tired", "happy", "shy"):
+                    await repo.create(
+                        "conv-emotion", "user", "测试消息", emotion_tag=tag
+                    )
+
+                async with _client(app) as client:
+                    # mongomock 不支持带 timezone 的 $dateToString，按日曲线打桩；
+                    # 情绪聚合仍走真实仓储逻辑。
+                    with (
+                        patch.object(
+                            MessageRepository, "count_daily", AsyncMock(return_value=[])
+                        ),
+                        patch.object(
+                            MessageRepository,
+                            "avg_latency_daily",
+                            AsyncMock(return_value=[]),
+                        ),
+                    ):
+                        resp = await client.get("/admin/")
+                assert resp.status_code == 200
+                match = re.search(
+                    r"window\.DASHBOARD_CHARTS = (\{.*?\});", resp.text, re.S
+                )
+                assert match, "仪表盘未注入图表数据"
+                charts = json.loads(match.group(1))
+                assert set(charts["emotion"]["labels"]) == {
+                    "困惑", "疲惫", "开心", "害羞",
+                }
+                assert "confused" not in resp.text
+            finally:
                 await _teardown_app(app)
 
         _run(flow())

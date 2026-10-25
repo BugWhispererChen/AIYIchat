@@ -214,7 +214,7 @@ function refreshSelects() {
         groups.forEach(function(g) {
             var o = document.createElement('option');
             o.value = g.id;
-            o.textContent = (g.name || g.id) + ' (' + g.id + ')';
+            o.textContent = (g.name || g.id) + ' (' + (g.default_model || '未设置模型') + ')';
             if (g.id === cur) o.selected = true;
             sel.appendChild(o);
         });
@@ -265,15 +265,19 @@ document.addEventListener('DOMContentLoaded', function() {
     refreshSelects();
     // 基础配置行变化时刷新下拉与状态指示
     document.getElementById('mc-rows').addEventListener('input', function(e) {
-        if (e.target.classList.contains('mc-name')) {
+        if (e.target.classList.contains('mc-name') ||
+            e.target.classList.contains('mc-default-model')) {
             refreshSelects();
         } else {
             updateFeatureIndicators();
         }
     });
-    // 功能下拉切换时更新状态灯与 model 占位符
+    // 功能下拉切换时更新状态灯，并记住手动选择（含"— 请选择 —"）防止刷新回滚
     document.querySelectorAll('select.config-select').forEach(function(sel) {
-        sel.addEventListener('change', updateFeatureIndicators);
+        sel.addEventListener('change', function() {
+            sel.setAttribute('data-selected', sel.value);
+            updateFeatureIndicators();
+        });
     });
 });
 </script>

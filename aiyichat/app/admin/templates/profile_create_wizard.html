@@ -54,13 +54,17 @@
         </div>
         {% endif %}
 
-        <div class="ui-cluster u-mt-3">
-            <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required class="u-mw-240">
-            <button type="submit" form="wiz-ref-upload-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-ref-upload-btn">上传照片</button>
-            <button type="submit" form="wiz-ref-generate-form" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-ref-generate-btn"
-                    {% if not (profile.persona.appearance or profile.persona.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
-                AI 生成候选
-            </button>
+        <div class="ui-media-actions u-mt-3">
+            <div class="ui-media-actions__row">
+                <input type="file" name="file" form="wiz-ref-upload-form" accept="image/*" required>
+                <button type="submit" form="wiz-ref-upload-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-ref-upload-btn">上传照片</button>
+            </div>
+            <div class="ui-media-actions__row">
+                <button type="submit" form="wiz-ref-generate-form" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-ref-generate-btn"
+                        {% if not (profile.persona.appearance or profile.persona.age_appearance) %}disabled title="缺少外貌描述"{% endif %}>
+                    AI 生成候选
+                </button>
+            </div>
         </div>
         <p id="wiz-ref-loading-hint" class="ui-note" style="display:none;">
             <span class="ui-spinner ui-spinner--xs"></span><span id="wiz-ref-loading-text">处理中…</span>
@@ -79,14 +83,15 @@
     </section>
 </div>
 
-<div class="ui-cluster ui-cluster--bar u-mt-4">
+<div class="ui-wizard-actions u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-2" style="display:none;"></form>
     <button type="submit" form="wiz-cancel-form-2" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <div class="u-fill"></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--primary">
-        {% if profile.reference_image_url %}下一步：声音设置{% else %}跳过，下一步：声音设置{% endif %}
-    </a>
+    <div class="ui-wizard-actions__nav">
+        <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--primary">
+            {% if profile.reference_image_url %}下一步：声音设置{% else %}跳过，下一步：声音设置{% endif %}
+        </a>
+    </div>
 </div>
 {% endif %}
 
@@ -101,14 +106,18 @@
         {% elif profile.voice_clone_status == 'failed' %}
         <p class="ui-note ui-note--err">上次复刻失败，可重新上传</p>
         {% endif %}
-        <div class="ui-cluster u-mt-2">
-            <input type="file" name="voice_file" form="wiz-voice-clone-form"
-                   accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required class="u-mw-240">
-            <button type="submit" form="wiz-voice-clone-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-voice-clone-btn">上传并复刻</button>
-            <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-voice-record-btn" onclick="toggleWizVoiceRecord()">录音复刻</button>
-            {% if profile.voice_id %}
-            <button type="submit" form="wiz-voice-preview-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="wiz-voice-preview-btn">试听当前音色</button>
-            {% endif %}
+        <div class="ui-media-actions u-mt-2">
+            <div class="ui-media-actions__row">
+                <input type="file" name="voice_file" form="wiz-voice-clone-form"
+                       accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required>
+                <button type="submit" form="wiz-voice-clone-form" class="ui-btn ui-btn--primary ui-btn--sm" id="wiz-voice-clone-btn">上传并复刻</button>
+            </div>
+            <div class="ui-media-actions__row">
+                <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="wiz-voice-record-btn" onclick="toggleWizVoiceRecord()">录音复刻</button>
+                {% if profile.voice_id %}
+                <button type="submit" form="wiz-voice-preview-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="wiz-voice-preview-btn">试听当前音色</button>
+                {% endif %}
+            </div>
         </div>
 
         {# 录音面板（默认隐藏）——display:none 必须留内联，脚本用 style.display 切换 #}
@@ -163,15 +172,16 @@
     <span class="ui-spinner ui-spinner--xs"></span><span id="wiz-voice-loading-text">处理中…</span>
 </p>
 
-<div class="ui-cluster ui-cluster--bar u-mt-4">
+<div class="ui-wizard-actions u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-3" style="display:none;"></form>
     <button type="submit" form="wiz-cancel-form-3" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <a href="/admin/profiles/create/{{ profile.slug }}/image" class="ui-btn ui-btn--ghost">上一步：定妆照</a>
-    <div class="u-fill"></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/confirm" class="ui-btn ui-btn--primary">
-        {% if profile.voice_id %}下一步：确认生成{% else %}跳过（使用默认音色），下一步{% endif %}
-    </a>
+    <div class="ui-wizard-actions__nav">
+        <a href="/admin/profiles/create/{{ profile.slug }}/image" class="ui-btn ui-btn--ghost">上一步：定妆照</a>
+        <a href="/admin/profiles/create/{{ profile.slug }}/confirm" class="ui-btn ui-btn--primary">
+            {% if profile.voice_id %}下一步：确认生成{% else %}跳过（使用默认音色），下一步{% endif %}
+        </a>
+    </div>
 </div>
 
 <!-- 声音操作表单 -->
@@ -229,7 +239,7 @@
                 </select>
             </label>
         </div>
-        <div class="ui-cluster">
+        <div class="ui-cluster ui-cluster--bar ui-cluster--end">
             <button type="submit" id="wiz-confirm-btn" class="ui-btn ui-btn--primary">确认并生成角色</button>
         </div>
         <p id="wiz-confirm-loading-hint" class="ui-note" style="display:none;">
@@ -238,12 +248,13 @@
     </form>
 </section>
 
-<div class="ui-cluster ui-cluster--bar u-mt-4">
+<div class="ui-wizard-actions u-mt-4">
     <form method="post" action="/admin/profiles/create/{{ profile.slug }}/cancel" id="wiz-cancel-form-4" style="display:none;"></form>
     <button type="submit" form="wiz-cancel-form-4" class="ui-btn ui-btn--outline ui-btn--danger"
             onclick="return confirm('确定取消创建？草稿角色将被删除。')">取消创建</button>
-    <div class="u-fill"></div>
-    <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--ghost">上一步：声音设置</a>
+    <div class="ui-wizard-actions__nav">
+        <a href="/admin/profiles/create/{{ profile.slug }}/voice" class="ui-btn ui-btn--ghost">上一步：声音设置</a>
+    </div>
 </div>
 {% endif %}
 

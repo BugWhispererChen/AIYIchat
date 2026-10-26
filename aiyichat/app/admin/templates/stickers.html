@@ -20,29 +20,33 @@
 
 {# ── 检索带：关键词 + 状态 + 排序，筛选条件随链接与回跳保留 ── #}
 <div class="ui-toolbar">
-    <form method="get" action="/admin/stickers" class="ui-cluster ui-cluster--fill">
+    <form method="get" action="/admin/stickers" class="ui-toolbar__form">
         {% if group_filter %}<input type="hidden" name="group" value="{{ group_filter }}">{% endif %}
-        <input class="ui-input" type="search" name="q" value="{{ q }}"
-               placeholder="搜索名称、标签或描述..." aria-label="搜索表情包">
-        <select class="ui-select" name="state" aria-label="按状态筛选">
-            <option value="all" {% if state_filter == 'all' %}selected{% endif %}>全部状态</option>
-            <option value="enabled" {% if state_filter == 'enabled' %}selected{% endif %}>已启用</option>
-            <option value="disabled" {% if state_filter == 'disabled' %}selected{% endif %}>已停用</option>
-            <option value="novector" {% if state_filter == 'novector' %}selected{% endif %}>无向量</option>
-        </select>
-        <select class="ui-select" name="sort" aria-label="排序方式">
-            <option value="default" {% if sort == 'default' %}selected{% endif %}>默认排序</option>
-            <option value="usage" {% if sort == 'usage' %}selected{% endif %}>按使用次数</option>
-            <option value="name" {% if sort == 'name' %}selected{% endif %}>按名称</option>
-        </select>
-        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>
-        {% if q or state_filter != 'all' or sort != 'default' or group_filter %}
-        <a href="/admin/stickers" class="ui-btn ui-btn--ghost ui-btn--sm">重置</a>
-        {% endif %}
+        <div class="ui-toolbar__filters">
+            <input class="ui-input" type="search" name="q" value="{{ q }}"
+                   placeholder="搜索名称、标签或描述..." aria-label="搜索表情包">
+            <select class="ui-select" name="state" aria-label="按状态筛选">
+                <option value="all" {% if state_filter == 'all' %}selected{% endif %}>全部状态</option>
+                <option value="enabled" {% if state_filter == 'enabled' %}selected{% endif %}>已启用</option>
+                <option value="disabled" {% if state_filter == 'disabled' %}selected{% endif %}>已停用</option>
+                <option value="novector" {% if state_filter == 'novector' %}selected{% endif %}>无向量</option>
+            </select>
+            <select class="ui-select" name="sort" aria-label="排序方式">
+                <option value="default" {% if sort == 'default' %}selected{% endif %}>默认排序</option>
+                <option value="usage" {% if sort == 'usage' %}selected{% endif %}>按使用次数</option>
+                <option value="name" {% if sort == 'name' %}selected{% endif %}>按名称</option>
+            </select>
+        </div>
+        <div class="ui-toolbar__actions">
+            <span class="ui-toolbar__meta">
+                共 {{ filtered_total }} 张{% if filtered_total != total %}（全库 {{ total }} 张）{% endif %}
+            </span>
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>
+            {% if q or state_filter != 'all' or sort != 'default' or group_filter %}
+            <a href="/admin/stickers" class="ui-btn ui-btn--ghost ui-btn--sm">重置</a>
+            {% endif %}
+        </div>
     </form>
-    <span class="muted u-fs-80">
-        共 {{ filtered_total }} 张{% if filtered_total != total %}（全库 {{ total }} 张）{% endif %}
-    </span>
 </div>
 
 {# ── 分组筛选：统一胶囊规格，当前分组高亮 ── #}
@@ -79,7 +83,7 @@
                     <input class="ui-input" type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
                 </label>
             </div>
-            <div class="ui-cluster">
+            <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                 <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">创建分组</button>
             </div>
         </form>
@@ -115,7 +119,7 @@
                             {% else %}{{ badge('已停用', 'line') }}{% endif %}
                         </td>
                         <td>
-                            <div class="ui-cluster ui-cluster--nowrap">
+                            <div class="ui-table-actions">
                                 <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0">
                                     <input type="hidden" name="next" value="{{ group_return }}">
                                     <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
@@ -173,7 +177,7 @@
                 </select>
             </label>
         </div>
-        <div class="ui-cluster">
+        <div class="ui-cluster ui-cluster--bar ui-cluster--end">
             <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">上传</button>
         </div>
     </form>

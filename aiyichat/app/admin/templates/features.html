@@ -10,7 +10,7 @@
 {{ alert('success', success) }}
 {{ alert('error', error) }}
 
-<form method="post" action="/admin/features" class="ui-page">
+<form method="post" action="/admin/features" class="ui-page ui-has-action-dock">
     <section class="ui-card">
         <p class="ui-note">
             标注 {{ badge('零成本', 'ok') }} 的能力为纯规则实现，建议常开；
@@ -38,10 +38,6 @@
                 </label>
             </div>
             {% endfor %}
-        </div>
-
-        <div class="ui-cluster">
-            <button type="submit" class="ui-btn ui-btn--primary">保存设置</button>
         </div>
     </section>
 
@@ -216,5 +212,10 @@
             若最短值大于最长值，保存时会自动交换。
         </p>
     </section>
+
+    <div class="ui-cluster ui-cluster--end ui-action-dock">
+        <span class="ui-note ui-action-dock__hint">保存后应用于全部功能开关与参数</span>
+        <button type="submit" class="ui-btn ui-btn--primary">保存设置</button>
+    </div>
 </form>
 {% endblock %}

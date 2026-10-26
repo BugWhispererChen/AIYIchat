@@ -52,10 +52,12 @@
 
     <!-- 基础配置管理 -->
     {% call card('基础配置（连接凭证组）') %}
-        <div class="ui-cluster">
-            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('DeepSeek','https://api.deepseek.com/v1','deepseek-chat')">+ DeepSeek</button>
-            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('通义千问','https://dashscope.aliyuncs.com/compatible-mode/v1','qwen-plus')">+ 通义千问</button>
-            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('阿里云百炼','https://dashscope.aliyuncs.com/compatible-mode/v1','')">+ 百炼</button>
+        <div class="ui-cluster ui-cluster--between">
+            <div class="ui-cluster">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('DeepSeek','https://api.deepseek.com/v1','deepseek-chat')">+ DeepSeek</button>
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('通义千问','https://dashscope.aliyuncs.com/compatible-mode/v1','qwen-plus')">+ 通义千问</button>
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="addPreset('阿里云百炼','https://dashscope.aliyuncs.com/compatible-mode/v1','')">+ 百炼</button>
+            </div>
             <button type="button" class="ui-btn ui-btn--primary ui-btn--sm" onclick="addGroup()">+ 新增一组</button>
         </div>
         <p class="ui-note">
@@ -103,7 +105,7 @@
         </div>
     {% endcall %}
 
-    <div class="ui-cluster">
+    <div class="ui-cluster ui-cluster--bar ui-cluster--end">
         <button type="submit" class="ui-btn ui-btn--primary u-mw-200">保存设置</button>
     </div>
 </form>

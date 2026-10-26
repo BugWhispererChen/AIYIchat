@@ -213,9 +213,11 @@
 </section>
 {% endif %}
 
-<div class="ui-cluster ui-cluster--bar">
-    <a href="/admin/memories" class="ui-btn ui-btn--ghost ui-btn--sm">← 返回列表</a>
-    <a href="/admin/memories/{{ detail.memory.service_id }}/injections" class="ui-btn ui-btn--outline ui-btn--sm">注入观测</a>
+<div class="ui-cluster ui-cluster--bar ui-cluster--between">
+    <div class="ui-cluster">
+        <a href="/admin/memories" class="ui-btn ui-btn--ghost ui-btn--sm">← 返回列表</a>
+        <a href="/admin/memories/{{ detail.memory.service_id }}/injections" class="ui-btn ui-btn--outline ui-btn--sm">注入观测</a>
+    </div>
     <form method="post" action="/admin/memories/{{ detail.memory.service_id }}/clear"
           onsubmit="return confirm('确定清空该服务的全部记忆？此操作不可恢复。');" class="u-m0">
         <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">清空全部记忆</button>

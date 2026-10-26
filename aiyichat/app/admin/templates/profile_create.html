@@ -41,9 +41,9 @@
                 {% endfor %}
             </div>
         </fieldset>
-        <div class="ui-cluster">
-            <button type="submit" id="create-btn" class="ui-btn ui-btn--primary">生成角色信息</button>
+        <div class="ui-cluster ui-cluster--bar ui-cluster--between">
             <a href="/admin/profiles" class="ui-btn ui-btn--ghost">取消</a>
+            <button type="submit" id="create-btn" class="ui-btn ui-btn--primary">生成角色信息</button>
         </div>
         {# display:none 必须留内联：脚本用 style.display 切换 #}
         <p id="create-loading-hint" class="ui-note" style="display:none;">

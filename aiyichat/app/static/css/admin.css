@@ -192,6 +192,8 @@ body.nav-collapsed .nav-collapse svg { transform: rotate(180deg); }
 .main-content > *:nth-child(3) { animation-delay: 90ms; }
 .main-content > *:nth-child(4) { animation-delay: 135ms; }
 .main-content > *:nth-child(n+5) { animation-delay: 180ms; }
+/* 固定操作条不能被祖先的入场 transform 改变定位包含块。 */
+.main-content > *:has(.ui-action-dock) { animation: none; }
 
 /* ══ 区块内小件 ══ */
 .mono-block {

@@ -26,19 +26,24 @@
     {% if profile.clone_style_hint %}
     <p class="ui-note">{{ profile.clone_style_hint }}</p>
     {% endif %}
-    <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-toggle" class="ui-cluster">
-        <label class="ui-cluster">
-            <input type="checkbox" name="enabled" role="switch" {{ 'checked' if profile.clone_enabled }}>
-            <span>启用克隆语料动态检索</span>
-        </label>
-        <button type="submit" class="ui-btn ui-btn--ghost">保存</button>
-        <a href="/admin/clone-feedback" class="ui-btn ui-btn--ghost">查看反馈</a>
-    </form>
-    <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-delete" class="u-mt-2"
-          onsubmit="return confirm('确认永久删除该角色的全部克隆语料、角色经历与反馈？该操作不可恢复。')">
-        <input type="hidden" name="confirm" value="delete">
-        <button type="submit" class="ui-btn ui-btn--ghost">撤回并删除克隆语料</button>
-    </form>
+    <div class="ui-cluster ui-cluster--between ui-cluster--actions">
+        <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-toggle" class="ui-cluster">
+            <label class="ui-cluster">
+                <input type="checkbox" name="enabled" role="switch" {{ 'checked' if profile.clone_enabled }}>
+                <span>启用克隆语料动态检索</span>
+            </label>
+            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存设置</button>
+        </form>
+        <a href="/admin/clone-feedback" class="ui-btn ui-btn--outline ui-btn--sm">查看反馈</a>
+    </div>
+    <div class="ui-danger-zone u-mt-2">
+        <p class="ui-note">撤回会永久删除克隆语料、角色经历与反馈，且无法恢复。</p>
+        <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-delete"
+              onsubmit="return confirm('确认永久删除该角色的全部克隆语料、角色经历与反馈？该操作不可恢复。')">
+            <input type="hidden" name="confirm" value="delete">
+            <button type="submit" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger">撤回并删除克隆语料</button>
+        </form>
+    </div>
 </div>
 {% endif %}
 
@@ -59,7 +64,7 @@
     </aside>
 
     <!-- 右侧表单分区卡片 -->
-    <form method="post" action="/admin/profiles/{{ profile.slug }}/edit" id="profile-form" class="ui-stack">
+    <form method="post" action="/admin/profiles/{{ profile.slug }}/edit" id="profile-form" class="ui-stack ui-has-mobile-action-dock">
         <!-- 基本信息 -->
         <section class="ui-card section-card" id="sec-basic">
             <div class="ui-card-head"><h4 class="ui-card-title">基本信息</h4></div>
@@ -167,15 +172,22 @@
                 </div>
                 {% endif %}
             </div>
-            <div class="ui-cluster u-mt-3">
-                {% if ref_candidate_url %}
-                <button type="submit" form="ref-confirm-form" class="ui-btn ui-btn--primary ui-btn--sm" id="ref-confirm-btn">确认设为定妆照</button>
-                {% endif %}
-                <button type="submit" form="ref-generate-form" class="ui-btn ui-btn--outline ui-btn--sm" id="ref-generate-btn">用外貌描述生成{{ '新' if ref_candidate_url }}候选</button>
-                <input type="file" name="file" form="ref-upload-form" accept="image/*" required class="u-mw-220">
-                <button type="submit" form="ref-upload-form" class="ui-btn ui-btn--outline ui-btn--sm" id="ref-upload-btn">上传设为定妆照</button>
+            <div class="ui-media-actions u-mt-3">
+                <div class="ui-media-actions__row">
+                    <input type="file" name="file" form="ref-upload-form" accept="image/*" required>
+                    <button type="submit" form="ref-upload-form" class="ui-btn ui-btn--outline ui-btn--sm" id="ref-upload-btn">上传设为定妆照</button>
+                </div>
+                <div class="ui-media-actions__row">
+                    {% if ref_candidate_url %}
+                    <button type="submit" form="ref-confirm-form" class="ui-btn ui-btn--primary ui-btn--sm" id="ref-confirm-btn">确认设为定妆照</button>
+                    {% endif %}
+                    <button type="submit" form="ref-generate-form" class="ui-btn ui-btn--outline ui-btn--sm" id="ref-generate-btn">用外貌描述生成{{ '新' if ref_candidate_url }}候选</button>
+                </div>
                 {% if profile.reference_image_url %}
-                <button type="submit" form="ref-clear-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="ref-clear-btn" onclick="return confirm('确定清除定妆照？')">清除</button>
+                <div class="ui-media-actions__row ui-media-actions__row--danger">
+                    <p class="ui-note">清除后，本人出镜图片将仅依据外貌文字描述生成。</p>
+                    <button type="submit" form="ref-clear-form" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" id="ref-clear-btn" onclick="return confirm('确定清除定妆照？')">清除定妆照</button>
+                </div>
                 {% endif %}
             </div>
             <p id="ref-loading-hint" class="ui-note" style="display:none;">
@@ -368,25 +380,32 @@
             {% endif %}
 
             {# 操作按钮 #}
-            <div class="ui-cluster">
-                <input type="file" name="voice_file" form="voice-clone-upload-form"
-                       accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required class="u-mw-220">
-                <button type="submit" form="voice-clone-upload-form" class="ui-btn ui-btn--primary ui-btn--sm" id="voice-clone-btn">
-                    上传并复刻
-                </button>
-                <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="voice-record-btn" onclick="toggleVoiceRecord()">
-                    录音复刻
-                </button>
-                {% if profile.voice_id %}
-                <button type="submit" form="voice-clone-preview-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="voice-preview-btn">
-                    试听音色
-                </button>
-                {% endif %}
+            <div class="ui-media-actions">
+                <div class="ui-media-actions__row">
+                    <input type="file" name="voice_file" form="voice-clone-upload-form"
+                           accept="audio/wav,audio/mpeg,audio/mp4,.wav,.mp3,.m4a" required>
+                    <button type="submit" form="voice-clone-upload-form" class="ui-btn ui-btn--primary ui-btn--sm" id="voice-clone-btn">
+                        上传并复刻
+                    </button>
+                </div>
+                <div class="ui-media-actions__row">
+                    <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="voice-record-btn" onclick="toggleVoiceRecord()">
+                        录音复刻
+                    </button>
+                    {% if profile.voice_id %}
+                    <button type="submit" form="voice-clone-preview-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="voice-preview-btn">
+                        试听音色
+                    </button>
+                    {% endif %}
+                </div>
                 {% if profile.voice_clone_status %}
-                <button type="submit" form="voice-clone-clear-form" class="ui-btn ui-btn--ghost ui-btn--sm" id="voice-clear-btn"
-                        onclick="return confirm('确定清除声音复刻状态？（不会删除云端音色）')">
-                    清除复刻
-                </button>
+                <div class="ui-media-actions__row ui-media-actions__row--danger">
+                    <p class="ui-note">仅清除本地复刻绑定状态，不会删除云端音色。</p>
+                    <button type="submit" form="voice-clone-clear-form" class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" id="voice-clear-btn"
+                            onclick="return confirm('确定清除声音复刻状态？（不会删除云端音色）')">
+                        清除复刻
+                    </button>
+                </div>
                 {% endif %}
             </div>
 
@@ -417,6 +436,10 @@
                 <span class="ui-spinner ui-spinner--xs"></span><span id="voice-loading-text">处理中…</span>
             </p>
         </section>
+
+        <div class="ui-cluster ui-cluster--end ui-action-dock ui-action-dock--mobile">
+            <button type="submit" class="ui-btn ui-btn--primary">保存修改</button>
+        </div>
     </form>
 </div>
 

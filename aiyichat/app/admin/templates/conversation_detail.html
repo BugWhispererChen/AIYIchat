@@ -16,7 +16,7 @@
                '运营管理',
                badge(conversation.status, 'ok' if conversation.status == 'active' else 'line')) }}
 
-<div class="ui-cluster">
+<div class="ui-cluster ui-cluster--bar ui-cluster--between">
     <a href="/admin/conversations" class="ui-btn ui-btn--ghost ui-btn--sm">&larr; 返回列表</a>
     {# 删除对话：同时清理所有消息，需二次确认 #}
     <form method="post" action="/admin/conversations/{{ conversation.id }}/delete" class="u-m0"

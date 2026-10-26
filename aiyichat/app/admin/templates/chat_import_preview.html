@@ -63,7 +63,7 @@
     </aside>
 
     <!-- 右侧表单分区卡片 -->
-    <form method="post" action="/admin/chat-import/save" id="preview-form" class="ui-stack">
+    <form method="post" action="/admin/chat-import/save" id="preview-form" class="ui-stack ui-has-mobile-action-dock">
         <input type="hidden" name="task_id" value="{{ task_id }}">
 
         <!-- 基本信息 -->
@@ -239,9 +239,9 @@
             </label>
         </section>
 
-        <div class="ui-cluster">
-            <button type="submit" class="ui-btn ui-btn--primary">确认入库</button>
+        <div class="ui-cluster ui-cluster--end ui-action-dock ui-action-dock--mobile">
             <a href="/admin/chat-import" class="ui-btn ui-btn--ghost">重新分析</a>
+            <button type="submit" class="ui-btn ui-btn--primary">确认入库</button>
         </div>
     </form>
 </div>

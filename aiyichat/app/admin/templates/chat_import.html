@@ -92,15 +92,15 @@
             <small class="field-hint">启用后仅保存精选、去重的对话上下文与目标回复；未完成入库的片段 24 小时自动过期。入库时必须选择“私有”并指定所属账号。</small>
         </label>
 
-        <div class="ui-cluster">
+        <div class="ui-cluster ui-cluster--bar ui-cluster--end">
             <button type="submit" class="ui-btn ui-btn--primary">开始分析</button>
         </div>
     </form>
 {% endcall %}
 {% endif %}
 
-<p class="u-mt-4">
-    <a href="/admin/clone-feedback" class="ui-btn ui-btn--ghost">查看克隆反馈</a>
-    <a href="/admin/profiles">&larr; 返回角色列表</a>
-</p>
+<div class="ui-cluster ui-cluster--bar ui-cluster--between">
+    <a href="/admin/profiles" class="ui-btn ui-btn--ghost ui-btn--sm">&larr; 返回角色列表</a>
+    <a href="/admin/clone-feedback" class="ui-btn ui-btn--outline ui-btn--sm">查看克隆反馈</a>
+</div>
 {% endblock %}

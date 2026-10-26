@@ -37,6 +37,7 @@
     font-weight: 550;
     letter-spacing: .01em;
     text-decoration: none;
+    white-space: nowrap;
     cursor: pointer;
     transition: background var(--transition), border-color var(--transition),
                 color var(--transition), box-shadow var(--transition),
@@ -44,6 +45,7 @@
 }
 .ui-btn:hover { border-color: var(--text-3); background: var(--surface-2); }
 .ui-btn:active { transform: translateY(1px); }
+.ui-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .ui-btn[disabled], .ui-btn.is-disabled {
     opacity: .5;
     cursor: not-allowed;
@@ -106,6 +108,7 @@
 
 /* ── 卡片 ───────────────────────────────────────────── */
 .ui-card {
+    min-width: 0;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -837,6 +840,7 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     gap: var(--section-gap);
     align-content: start;
 }
+.ui-page > * { min-width: 0; }
 
 /* 单列窄表单（改密码一类只有两三个字段的操作卡） */
 .ui-form--narrow { max-width: 480px; }
@@ -874,6 +878,103 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     border-top: 1px solid var(--border);
     padding-top: var(--space-4);
 }
+
+.ui-cluster--actions > form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: inherit;
+    margin: 0;
+}
+.ui-cluster--actions > form > .ui-btn { width: auto; flex: 0 0 auto; }
+
+.ui-table-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: max-content;
+    white-space: nowrap;
+}
+.ui-table-actions > form {
+    display: flex;
+    align-items: center;
+    gap: inherit;
+    margin: 0;
+}
+.ui-table-actions .ui-btn { width: auto; flex: 0 0 auto; }
+.ui-record-cell { min-width: 340px; }
+
+.ui-danger-zone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+.ui-danger-zone > form { margin: 0; }
+.ui-danger-zone > .ui-note { flex: 1 1 220px; margin: 0; }
+.ui-danger-zone .ui-btn { width: auto; }
+
+.ui-media-actions { display: grid; gap: var(--space-3); }
+.ui-media-actions__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+}
+.ui-media-actions__row .ui-btn { width: auto; flex: 0 0 auto; }
+.ui-media-actions__row input[type="file"] {
+    flex: 1 1 240px;
+    width: auto;
+    min-width: 0;
+    max-width: 420px;
+}
+.ui-media-actions__row--danger {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+.ui-media-actions__row--danger .ui-note { flex: 1 1 220px; margin: 0; }
+
+.ui-wizard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+}
+.ui-wizard-actions__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: auto;
+}
+.ui-wizard-actions .ui-btn { width: auto; }
+
+.ui-action-dock {
+    position: fixed;
+    left: calc(var(--sidebar-w) + var(--space-8));
+    right: var(--space-8);
+    bottom: var(--space-4);
+    z-index: var(--z-sticky);
+    max-width: calc(var(--content-max) - var(--space-8) - var(--space-8));
+    margin: 0 auto;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-translucent);
+    box-shadow: var(--shadow-md);
+    backdrop-filter: saturate(180%) blur(8px);
+}
+.ui-action-dock--mobile { display: none; }
+.ui-action-dock__hint { margin: 0 auto 0 0; }
+.ui-has-action-dock { padding-bottom: 88px; }
+body.nav-collapsed .ui-action-dock { left: var(--space-8); }
 
 /* ── 网格：一律 minmax(0,1fr) 防止子项内容撑破列 ──────── */
 .ui-grid {
@@ -953,6 +1054,38 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
 .ui-toolbar .ui-field,
 .ui-toolbar input,
 .ui-toolbar select { min-width: 160px; }
+.ui-toolbar__form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap);
+    min-width: 0;
+}
+.ui-toolbar__filters {
+    display: flex;
+    flex: 1 1 480px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap);
+    min-width: 0;
+}
+.ui-toolbar__filters .ui-input { flex: 1 1 220px; }
+.ui-toolbar__filters .ui-select { flex: 1 1 160px; }
+.ui-toolbar__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cluster-gap);
+    margin-left: auto;
+}
+.ui-toolbar__actions .ui-btn { width: auto; flex: 0 0 auto; }
+.ui-toolbar__meta {
+    margin-right: auto;
+    color: var(--text-2);
+    font-size: .8rem;
+    white-space: nowrap;
+}
 
 /* Pico 的 button/input 默认 width:100%，放进弹性行会被拉成整行宽；
    在抱团容器里显式收回，只让输入框吃剩余空间。 */
@@ -1029,6 +1162,11 @@ details[open] > .ui-summary::before { transform: rotate(45deg); }
     .ui-grid--split { grid-template-columns: 1fr; }
     .ui-grid--4,
     .ui-grid--5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ui-action-dock { left: var(--space-8); }
+}
+@media (max-width: 900px) {
+    .ui-action-dock--mobile { display: flex; }
+    .ui-has-mobile-action-dock { padding-bottom: 88px; }
 }
 @media (max-width: 768px) {
     .ui-page-head { align-items: stretch; flex-direction: column; }
@@ -1036,6 +1174,18 @@ details[open] > .ui-summary::before { transform: rotate(45deg); }
     .ui-grid--4,
     .ui-grid--5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ui-span-2 { grid-column: span 2; }
+    .ui-btn--sm { height: 36px; }
+    .ui-btn.ui-btn--xs { height: 32px; }
+    .ui-action-dock {
+        left: var(--space-4);
+        right: var(--space-4);
+        bottom: var(--space-3);
+    }
+    .ui-toolbar__form,
+    .ui-toolbar__filters { flex-basis: 100%; }
+    .ui-toolbar__actions { width: 100%; justify-content: flex-end; }
+    .ui-wizard-actions__nav { flex: 1 1 100%; justify-content: flex-end; }
+    .ui-wizard-actions__nav .ui-btn--primary { flex: 1 1 100%; }
 }
 @media (max-width: 640px) {
     .ui-grid--2,
@@ -1044,4 +1194,12 @@ details[open] > .ui-summary::before { transform: rotate(45deg); }
     .ui-grid--5 { grid-template-columns: 1fr; }
     .ui-span-2,
     .ui-span-all { grid-column: auto; }
+    .ui-action-dock { padding: var(--space-3); }
+    .ui-action-dock > .ui-btn { flex: 1 1 auto; }
+    .ui-action-dock__hint { display: none; }
+    .ui-danger-zone { align-items: stretch; }
+    .ui-media-actions__row input[type="file"] {
+        flex-basis: 100%;
+        max-width: none;
+    }
 }

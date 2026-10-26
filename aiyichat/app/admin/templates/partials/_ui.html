@@ -72,8 +72,8 @@
 {%- endmacro %}
 
 {# 动作区：按钮/链接抱团，靠右或两端对齐 #}
-{% macro actions(align='end') -%}
-<div class="ui-cluster ui-cluster--{{ align }}">{{ caller() }}</div>
+{% macro actions(align='end', bar=false) -%}
+<div class="ui-cluster ui-cluster--{{ align }}{% if bar %} ui-cluster--bar{% endif %}">{{ caller() }}</div>
 {%- endmacro %}
 
 

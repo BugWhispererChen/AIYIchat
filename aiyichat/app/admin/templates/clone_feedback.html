@@ -33,13 +33,13 @@
                     <td class="u-break-word">{{ item.edited_reply or '—' }}</td>
                     <td>{{ {'pending': '待评审', 'reviewed': '已采纳', 'rejected': '已驳回'}.get(item.status, item.status) }}</td>
                     <td>
-                        <form method="post" action="/admin/clone-feedback/{{ item.id }}/status" class="ui-cluster">
-                            <select class="ui-select" name="status">
+                        <form method="post" action="/admin/clone-feedback/{{ item.id }}/status" class="ui-table-actions">
+                            <select class="ui-select ui-select--sm" name="status" aria-label="评审状态">
                                 <option value="reviewed" {% if item.status == 'reviewed' %}selected{% endif %}>已采纳</option>
                                 <option value="rejected" {% if item.status == 'rejected' %}selected{% endif %}>已驳回</option>
                                 <option value="pending" {% if item.status == 'pending' %}selected{% endif %}>待评审</option>
                             </select>
-                            <button class="ui-btn ui-btn--ghost" type="submit">更新</button>
+                            <button class="ui-btn ui-btn--outline ui-btn--sm" type="submit">更新</button>
                         </form>
                     </td>
                 </tr>

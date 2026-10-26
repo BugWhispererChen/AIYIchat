@@ -38,7 +38,7 @@
                 <input class="ui-input" type="text" name="remark" placeholder="可选备注信息">
             </label>
         </div>
-        {% call actions('start') %}
+        {% call actions('end', true) %}
         <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">创建账号</button>
         {% endcall %}
     </form>

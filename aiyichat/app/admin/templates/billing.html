@@ -44,7 +44,7 @@
                     <input class="ui-input" type="number" name="image_limit" value="1000000000" min="0">
                 </label>
             </div>
-            <div class="ui-cluster">
+            <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                 <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">创建套餐</button>
             </div>
         </form>
@@ -72,7 +72,7 @@
                     <td class="num">{{ t.image_limit|format_quota }}</td>
                     <td>{% if t.validity_days %}{{ t.validity_days }}天{% else %}<span class="muted">永久</span>{% endif %}</td>
                     <td>
-                        <div class="ui-cluster ui-cluster--nowrap">
+                        <div class="ui-table-actions">
                             <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" onclick="var f=document.getElementById('edit-{{ t.id }}');f.style.display=(f.style.display==='none'||!f.style.display)?'table-row':'none';this.textContent=(f.style.display==='none')?'编辑':'收起';">编辑</button>
                             <form method="post" action="/admin/billing/templates/{{ t.id }}/delete" class="u-m0"
                                   data-confirm="确认删除套餐「{{ t.name }}」？" data-danger data-confirm-text="删除">
@@ -85,13 +85,17 @@
                 {# display:none 必须留内联：脚本用 style.display 在 table-row/none 之间切换 #}
                 <tr id="edit-{{ t.id }}" class="ui-row-sub" style="display:none;">
                     <td colspan="6">
-                        <form method="post" action="/admin/billing/templates/{{ t.id }}/update" class="ui-grid grid-5-col">
-                            <input class="ui-input ui-input--sm" type="text" name="name" value="{{ t.name }}" title="名称" placeholder="名称">
-                            <input class="ui-input ui-input--sm" type="number" name="text_limit" value="{{ t.text_limit }}" title="文字" min="0" placeholder="文字额度（Token）">
-                            <input class="ui-input ui-input--sm" type="number" name="voice_limit" value="{{ t.voice_limit }}" title="语音" min="0" placeholder="语音额度">
-                            <input class="ui-input ui-input--sm" type="number" name="image_limit" value="{{ t.image_limit }}" title="图片" min="0" placeholder="图片额度">
-                            <input class="ui-input ui-input--sm" type="number" name="validity_days" value="{{ t.validity_days or '' }}" title="有效期(天)" min="1" placeholder="有效期(天)">
-                            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存</button>
+                        <form method="post" action="/admin/billing/templates/{{ t.id }}/update" class="ui-stack">
+                            <div class="ui-grid grid-5-col">
+                                <input class="ui-input ui-input--sm" type="text" name="name" value="{{ t.name }}" title="名称" placeholder="名称">
+                                <input class="ui-input ui-input--sm" type="number" name="text_limit" value="{{ t.text_limit }}" title="文字" min="0" placeholder="文字额度（Token）">
+                                <input class="ui-input ui-input--sm" type="number" name="voice_limit" value="{{ t.voice_limit }}" title="语音" min="0" placeholder="语音额度">
+                                <input class="ui-input ui-input--sm" type="number" name="image_limit" value="{{ t.image_limit }}" title="图片" min="0" placeholder="图片额度">
+                                <input class="ui-input ui-input--sm" type="number" name="validity_days" value="{{ t.validity_days or '' }}" title="有效期(天)" min="1" placeholder="有效期(天)">
+                            </div>
+                            <div class="ui-cluster ui-cluster--end">
+                                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存</button>
+                            </div>
                         </form>
                     </td>
                 </tr>

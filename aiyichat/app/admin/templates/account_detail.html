@@ -53,8 +53,11 @@
                         <input class="ui-input" type="text" name="remark" value="{{ account.remark }}">
                     </label>
                 </div>
-                <div class="ui-cluster">
+                <div class="ui-cluster ui-cluster--end">
                     <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存</button>
+                </div>
+                <div class="ui-danger-zone">
+                    <p class="ui-note">删除账号会级联删除关联身份、渠道与服务，且无法恢复。</p>
                     {# 删除账号：级联删除关联身份/渠道/服务，需二次确认 #}
                     <button type="submit" formaction="/admin/accounts/{{ account.id }}/delete"
                             class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" data-danger data-confirm-text="删除账号"
@@ -101,7 +104,7 @@
                         </label>
                         {% endfor %}
                     </div>
-                    <div class="ui-cluster">
+                    <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                         <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">更新额度</button>
                     </div>
                 </form>
@@ -134,7 +137,7 @@
                     <span class="ui-label">备注（选填）</span>
                     <input class="ui-input" type="text" name="remark" placeholder="如：微信转账开通">
                 </label>
-                <div class="ui-cluster">
+                <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                     <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">开通套餐</button>
                 </div>
             </form>
@@ -176,7 +179,7 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="ui-cluster">
+                                <div class="ui-table-actions">
                                     {# 禁用/启用身份：禁用时通过 Modal 输入禁用原因 #}
                                     <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/toggle-block"
                                           {% if not u.is_blocked %}data-confirm="确认禁用身份「{{ u.name or u.platform_id }}」？" data-prompt data-prompt-field="block_reason" data-prompt-placeholder="请输入禁用原因（可留空）"{% else %}data-confirm="确定启用身份「{{ u.name or u.platform_id }}」？"{% endif %} class="u-m0">
@@ -253,7 +256,7 @@
                         <input type="checkbox" name="is_minor" role="switch">
                         <span>未成年人（启用后将限制亲密关系与不宜内容，并加强防沉迷引导）</span>
                     </label>
-                    <div class="ui-cluster">
+                    <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                         <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">创建身份</button>
                     </div>
                 </form>
@@ -311,12 +314,15 @@
                             {% if bot.is_blocked and bot.block_reason %}
                             <p class="ui-note ui-note--err">禁用原因：{{ bot.block_reason }}</p>
                             {% endif %}
-                            <div class="ui-cluster u-mt-2">
-                                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-fill">保存修改</button>
+                            <div class="ui-cluster ui-cluster--end u-mt-2">
+                                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存修改</button>
+                            </div>
+                            <div class="ui-danger-zone u-mt-2">
+                                <p class="ui-note">删除后无法恢复，请确认已不再使用该渠道。</p>
                                 {# 删除渠道：不可恢复，需二次确认 #}
                                 <button type="submit" formaction="/admin/accounts/{{ account.id }}/bots/{{ bot.id }}/delete"
-                                        class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger u-fill" data-danger data-confirm-text="删除"
-                                        data-confirm="确认删除渠道「{{ bot.name }}」？此操作不可恢复！">删除</button>
+                                        class="ui-btn ui-btn--outline ui-btn--sm ui-btn--danger" data-danger data-confirm-text="删除"
+                                        data-confirm="确认删除渠道「{{ bot.name }}」？此操作不可恢复！">删除渠道</button>
                             </div>
                         </form>
                         {% if bot.platform == 'wechat' %}
@@ -404,7 +410,7 @@
                             <span>沙箱模式（仅QQ）</span>
                         </label>
                     </div>
-                    <div class="ui-cluster">
+                    <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                         <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加渠道</button>
                     </div>
                 </form>
@@ -481,7 +487,7 @@
                                 <span class="ui-label">共享组ID</span>
                                 <input class="ui-input" type="text" name="share_group_id" value="{{ sinfo.service.share_group_id or '' }}" placeholder="填相同ID的服务共享对话与记忆（限同账号同角色，留空不共享）">
                             </label>
-                            <div class="ui-cluster">
+                            <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                                 <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存修改</button>
                             </div>
                         </form>
@@ -528,7 +534,7 @@
                         </select>
                     </label>
                 </div>
-                <div class="ui-cluster">
+                <div class="ui-cluster ui-cluster--bar ui-cluster--end">
                     <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">添加服务</button>
                 </div>
             </form>

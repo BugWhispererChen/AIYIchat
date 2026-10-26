@@ -40,19 +40,27 @@ CHUNK_ANALYSIS_PROMPT = """你是一位资深心理学家和语言学专家。�
     "interests": ["推测的兴趣爱好"],
     "core_values": ["从对话中体现的核心价值观"],
     "background_hints": "从对话内容推测的身份背景线索"
-  }}
+  }},
+  "role_facts": [
+    {{
+      "content": "此人明确说过的自身事实或经历，例如“我今年刚搬到杭州”；不是对方的经历，也不要推测",
+      "kind": "identity|life_event|preference|relationship|experience",
+      "confidence": 0.0到1.0
+    }}
+  ]
 }}
 
 注意：
 - 仅分析【{target_name}】这个人的特征，忽略对话中其他人
 - 基于实际对话内容给出分析，不要臆测
+- role_facts 只能记录此人明确说出的自身信息；对方的信息、玩笑和假设都不能写入
 - 所有评分基于对话中实际表现，不要默认中间值
 - 直接输出JSON，不要包含其他文字"""
 
 
 # ── 阶段2：综合合并 Prompt ─────────────────────────────────
 
-MERGE_ANALYSIS_PROMPT = """你是一位虚拟角色设计专家。请根据以下对同一个人多段聊天记录的分析结果，综合生成一份完整的虚拟角色档案。
+MERGE_ANALYSIS_PROMPT = """你是一位严谨的角色画像整理专家。请根据以下对同一个人多段聊天记录的分析结果，综合生成一份有证据支撑的虚拟角色档案。
 
 {extra_description}
 
@@ -61,12 +69,12 @@ MERGE_ANALYSIS_PROMPT = """你是一位虚拟角色设计专家。请根据以�
 {{
   "name": "角色名称",
   "source": "聊天记录分析",
-  "identity": {{
-    "background": "基于分析结果创作的角色背景故事（2-3句话，融入身份线索）",
+  "persona": {{
+    "background": "仅基于分析中明确出现的身份线索概括背景；证据不足时写空字符串，不要编造经历",
     "era": "现代",
-    "age_appearance": "基于分析推测的年龄外观描述",
+    "age_appearance": "基于分析推测的年龄外观描述；不确定写空字符串",
     "appearance": "",
-    "core_values": ["从分析中提取的3-5个核心价值观"],
+    "core_values": ["从分析中提取的3-5个核心价值观；没有证据则空列表"],
     "relationships": []
   }},
   "language_style": {{
@@ -78,9 +86,9 @@ MERGE_ANALYSIS_PROMPT = """你是一位虚拟角色设计专家。请根据以�
     "example_utterances": ["从所有分块中选取最有代表性的5-8句原话"]
   }},
   "personality": {{
-    "mbti_hint": "综合判断的MBTI类型",
+    "mbti_hint": "综合判断的MBTI类型；不确定写空字符串",
     "traits": {{
-      "warmth": 所有分块的平均值(0-1),
+      "warmth": 所有分块的有效评分平均值(0-1),
       "humor": 平均值,
       "sensitivity": 平均值,
       "directness": 平均值,
@@ -101,7 +109,9 @@ MERGE_ANALYSIS_PROMPT = """你是一位虚拟角色设计专家。请根据以�
 }}
 
 注意：
-- 综合多段分析结果时，取各维度的平均值或最具代表性的描述
+- 顶层字段名必须是 persona，不得输出 identity
+- 只归纳分析结果中真实出现的信息；证据不足就留空，严禁为了角色丰满而编造背景、关系或经历
+- 综合多段分析结果时，对风格描述去重取代表性结论；数值型 traits 才取有效评分平均值
 - traits的浮点数保留2位小数
 - 如果提供了额外描述信息，请将其融入角色设定中
 - 直接输出JSON，不要包含markdown代码块标记或其他文字"""

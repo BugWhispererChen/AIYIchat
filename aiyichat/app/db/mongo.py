@@ -167,6 +167,25 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     # 角色：按 slug 唯一，按 visibility + account_id 索引
     await _safe_create_index(db.profiles, "slug", unique=True)
     await _safe_create_index(db.profiles, [("visibility", 1), ("account_id", 1)])
+    # 聊天记录克隆：数据集/片段/反馈按账号与角色版本隔离；pending 语料 24h 自动过期
+    await _safe_create_index(db.clone_datasets, "id", unique=True)
+    await _safe_create_index(db.clone_datasets, "task_id")
+    await _safe_create_index(
+        db.clone_datasets, [("profile_id", 1), ("version", 1)]
+    )
+    await _safe_create_index(db.clone_datasets, "account_id")
+    await _safe_create_index(db.clone_datasets, "expires_at", expireAfterSeconds=0)
+    await _safe_create_index(db.clone_episodes, "id", unique=True)
+    await _safe_create_index(db.clone_episodes, "dataset_id")
+    await _safe_create_index(
+        db.clone_episodes, "expires_at", expireAfterSeconds=0
+    )
+    await _safe_create_index(
+        db.clone_episodes,
+        [("profile_id", 1), ("clone_version", 1), ("account_id", 1), ("disabled", 1)],
+    )
+    await _safe_create_index(db.clone_feedback, "account_id")
+    await _safe_create_index(db.clone_feedback, "profile_id")
     # 对话：按 identity_id + profile_id + service_id + status 索引，按 service_id 索引，按 created_at 索引
     await _safe_create_index(
         db.conversations,

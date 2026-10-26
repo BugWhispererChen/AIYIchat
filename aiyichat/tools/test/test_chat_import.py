@@ -43,8 +43,8 @@ class TestParseJsonFile:
         # 按时间排序：早的在前
         assert messages[0].sender == "我"
 
-    def test_filters_media_and_short_messages(self, tmp_path) -> None:
-        """媒体占位符与超短消息被过滤。"""
+    def test_keeps_short_and_media_messages(self, tmp_path) -> None:
+        """媒体占位与单字回复都保留：前者是表达习惯，后者是口癖证据。"""
         file_path = _write_json(tmp_path, [
             {"timestamp": "2024-03-15T14:23:01", "sender": "张三",
              "content": "[图片]", "is_target": True},
@@ -54,8 +54,10 @@ class TestParseJsonFile:
              "content": "这条是有效消息", "is_target": True},
         ])
         messages, result = parse_json_file(file_path)
-        assert result.total_count == 1
-        assert messages[0].content == "这条是有效消息"
+        assert result.total_count == 3
+        assert [m.content for m in messages] == ["[图片]", "嗯", "这条是有效消息"]
+        assert messages[0].message_type == "media"
+        assert messages[1].source_index == 1
 
     def test_invalid_json_raises(self, tmp_path) -> None:
         """非法 JSON → ValueError。"""

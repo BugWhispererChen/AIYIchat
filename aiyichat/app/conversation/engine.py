@@ -473,7 +473,7 @@ class ConversationEngine:
             (emotion_tag, emotion_hint, strategy_instruction),
             (
                 service_memory, current_topic, memory_facts, topic_context, mood,
-                scored_facts, injected_entities, pending_events,
+                scored_facts, injected_entities, pending_events, query_embedding,
             ),
         ) = await asyncio.gather(
             self._analyze_turn(
@@ -488,6 +488,20 @@ class ConversationEngine:
             memory_facts, memory_fact_objs,
             dynamic_memory_facts, dynamic_memory_objs,
         ) = self._prepare_memory_layers(scored_facts)
+
+        # 克隆片段检索：复用本轮查询向量，仅读取已激活且属于该账号的版本
+        from app.services.clone_service import (
+            render_clone_context,
+            retrieve_clone_context,
+        )
+
+        clone_context = await retrieve_clone_context(
+            profile,
+            text=text,
+            history=history,
+            query_embedding=query_embedding,
+        )
+        clone_hint = render_clone_context(clone_context)
 
         last_identity_at = _last_identity_message_at(history)
         gap_mode = _gap_mode((received_at - last_identity_at).total_seconds()) if last_identity_at else "none"
@@ -560,6 +574,7 @@ class ConversationEngine:
             gap_mode=gap_mode,
             last_proactive_at=last_proactive_at,
             last_proactive_text=last_proactive_text,
+            clone_hint=clone_hint,
         )
         self._log_time_audit(
             time_audit,
@@ -768,6 +783,8 @@ class ConversationEngine:
             summary=summary,
             injected_entities=injected_entities,
             received_at=received_at,
+            clone_context=clone_context,
+            clone_hint=clone_hint,
         )
 
         # 提取当前 profile 的音色设置；表现力参数（指令/音调/情感标签）
@@ -946,7 +963,7 @@ class ConversationEngine:
         # 流式链路不触发引用刷新/向量回填（保持原有行为）
         (
             service_memory, current_topic, memory_facts, topic_context, mood,
-            scored_facts, injected_entities, pending_events,
+            scored_facts, injected_entities, pending_events, query_embedding,
         ) = await self._retrieve_memories(service.context_key, text, backfill=False, history=history)
         _stage("recall")
 
@@ -955,6 +972,19 @@ class ConversationEngine:
             memory_facts, memory_fact_objs,
             dynamic_memory_facts, dynamic_memory_objs,
         ) = self._prepare_memory_layers(scored_facts)
+
+        from app.services.clone_service import (
+            render_clone_context,
+            retrieve_clone_context,
+        )
+
+        clone_context = await retrieve_clone_context(
+            profile,
+            text=text,
+            history=history,
+            query_embedding=query_embedding,
+        )
+        clone_hint = render_clone_context(clone_context)
 
         last_identity_at = _last_identity_message_at(history)
         gap_mode = _gap_mode((received_at - last_identity_at).total_seconds()) if last_identity_at else "none"
@@ -1026,6 +1056,7 @@ class ConversationEngine:
             gap_mode=gap_mode,
             last_proactive_at=last_proactive_at,
             last_proactive_text=last_proactive_text,
+            clone_hint=clone_hint,
         )
         self._log_time_audit(
             stream_time_audit,
@@ -1118,6 +1149,8 @@ class ConversationEngine:
                 summary=summary,
                 injected_entities=injected_entities,
                 received_at=received_at,
+                clone_context=clone_context,
+                clone_hint=clone_hint,
             )
 
         try:
@@ -1510,7 +1543,7 @@ class ConversationEngine:
         self, service_id: str, text: str, backfill: bool, history: list | None = None
     ) -> tuple[
         object | None, str, list[str], str, CharacterMood | None, list[MemoryFact],
-        list[str], list[PendingEvent],
+        list[str], list[PendingEvent], list[float],
     ]:
         """加载服务级长期记忆并按相关性排序取 top-k。
 
@@ -1529,19 +1562,20 @@ class ConversationEngine:
         mood: CharacterMood | None = None
         scored_facts: list[MemoryFact] = []
         pending_events: list[PendingEvent] = []
+        query_embedding: list[float] = []
         service_memory = await self.memory_repo.find_by_service(service_id)
+        emb_service = get_embedding_service()
+        # 查询向量每轮最多算一次：对方记忆与克隆片段共用，避免额外一次 HTTP
+        if service_memory or settings.clone_retrieval_enabled:
+            query_embedding = await embed_within_budget(
+                emb_service, text, what="记忆语义召回"
+            )
         if service_memory:
             current_topic = service_memory.current_topic
             # 角色心情状态（开关启用时读取，读取时按时间衰减计算有效值）
             if settings.character_mood_enabled:
                 mood = service_memory.mood
             now = datetime.now(timezone.utc)
-            emb_service = get_embedding_service()
-            # 查询向量化带短超时护栏（与工具检索/表情包/回填共用同一预算）：
-            # 记忆检索再慢也不该拖住对话，超时即放弃语义召回、退化为只注入稳定层。
-            query_embedding = await embed_within_budget(
-                emb_service, text, what="记忆语义召回"
-            )
             # 两阶段检索：core 层（安全/身份）常驻注入，不占 top-k 名额；
             # episodic/semantic 层参与语义/时效排序取 top-k
             core_facts = [f for f in service_memory.facts if f.tier == "core"]
@@ -1681,7 +1715,7 @@ class ConversationEngine:
 
         return (
             service_memory, current_topic, memory_facts, topic_context, mood,
-            scored_facts, injected_entities, pending_events,
+            scored_facts, injected_entities, pending_events, query_embedding,
         )
 
     @staticmethod
@@ -1855,6 +1889,7 @@ class ConversationEngine:
         last_proactive_at: datetime | None = None,
         last_proactive_text: str = "",
         insight_lines: list[str] | None = None,
+        clone_hint: str = "",
     ) -> list:
         """组装 LLM 消息列表（含长度软引导、未成年人保护注入与时间上下文审计）。
 
@@ -1893,6 +1928,7 @@ class ConversationEngine:
             last_proactive_at=last_proactive_at,
             last_proactive_text=last_proactive_text,
             insight_lines=insight_lines,
+            clone_hint=clone_hint,
         )
         # 未成年人保护：注入合规约束（紧贴 user_input 前）
         if getattr(identity, "is_minor", False):
@@ -2240,6 +2276,8 @@ class ConversationEngine:
         summary: str | None = None,
         injected_entities: list[str] | None = None,
         received_at: datetime | None = None,
+        clone_context: object | None = None,
+        clone_hint: str = "",
     ) -> None:
         """回合收尾：持久化双方消息、更新元数据/活跃时间、异步摘要与焦点提取。"""
         # 持久化对方消息与 AI 回复（保存清理后的纯文本；对方消息按接收时刻落时间戳）
@@ -2318,6 +2356,8 @@ class ConversationEngine:
                 reply_text=clean_text,
                 emotion_hint=emotion_tag or "",
                 injected_entities=injected_entities or [],
+                clone_context=clone_context,
+                clone_hint=clone_hint,
             )
         )
 
@@ -2335,6 +2375,8 @@ class ConversationEngine:
         reply_text: str = "",
         emotion_hint: str = "",
         injected_entities: list[str] | None = None,
+        clone_context: object | None = None,
+        clone_hint: str = "",
     ) -> None:
         """构建并写入记忆注入快照（fire-and-forget，内部吃掉异常）。"""
         try:
@@ -2366,6 +2408,11 @@ class ConversationEngine:
             if injected_entities:
                 entity_text = "\n".join(injected_entities)
                 entity_tokens = _count_tokens(entity_text)
+            clone_examples = list(getattr(clone_context, "examples", []) or [])
+            clone_memories = list(
+                getattr(clone_context, "role_memories", []) or []
+            )
+            clone_tokens = _count_tokens(clone_hint) if clone_hint else 0
             snapshot = InjectionSnapshotInDB(
                 _id="",
                 service_id=service.context_key,
@@ -2377,7 +2424,7 @@ class ConversationEngine:
                 summary_tokens=summary_tokens,
                 total_tokens=(
                     system_tokens + memory_tokens + history_tokens + summary_tokens
-                    + entity_tokens
+                    + entity_tokens + clone_tokens
                 ),
                 current_topic=current_topic,
                 mood_label=(mood.label if mood else ""),
@@ -2385,6 +2432,15 @@ class ConversationEngine:
                 emotion_hint=emotion_hint,
                 injected_entities=injected_entities or [],
                 entity_tokens=entity_tokens,
+                clone_version=int(
+                    getattr(clone_context, "dataset_version", 0) or 0
+                ),
+                clone_episode_ids=[e.id for e in clone_examples],
+                clone_episode_scores=list(
+                    getattr(clone_context, "scores", []) or []
+                ),
+                clone_memory_fids=[m.fid for m in clone_memories],
+                clone_tokens=clone_tokens,
             )
             await self._snapshot_repo.save(snapshot)
         except Exception as e:  # noqa: BLE001 快照采集失败不影响主链路

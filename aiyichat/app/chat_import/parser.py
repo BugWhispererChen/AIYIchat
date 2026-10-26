@@ -9,6 +9,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 
 from app.chat_import.models import ChatMessage, ParseResult
 from app.config import settings
@@ -17,6 +18,14 @@ logger = logging.getLogger(__name__)
 
 # 上传文件落盘目录
 CHAT_IMPORTS_DIR = Path(__file__).parent.parent.parent / "data" / "chat_imports"
+
+# 媒体占位不是正文，但“爱发语音/爱用表情”本身是风格证据，因此保留为 media。
+_MEDIA_PLACEHOLDERS = frozenset({
+    "[图片]", "[语音]", "[视频]", "[表情]", "[文件]",
+    "[红包]", "[转账]", "[位置]", "[名片]", "[链接]",
+})
+# 系统事件不属于任何一方，不能进入角色画像。
+_SYSTEM_PLACEHOLDERS = frozenset({"[系统消息]", "[撤回了一条消息]"})
 
 
 def _import_tz() -> timezone:
@@ -125,7 +134,7 @@ def parse_json_file(file_path: Path) -> tuple[list[ChatMessage], ParseResult]:
             logger.warning("跳过第 %d 条非字典消息", i)
             continue
         try:
-            msg = _parse_message(item)
+            msg = _parse_message(item, source_index=i)
             if msg is not None:
                 messages.append(msg)
         except Exception as e:
@@ -135,8 +144,8 @@ def parse_json_file(file_path: Path) -> tuple[list[ChatMessage], ParseResult]:
     if len(messages) == 0:
         raise ValueError("解析后没有有效消息，请检查JSON文件格式")
 
-    # 按时间排序
-    messages.sort(key=lambda m: m.timestamp)
+    # 按时间排序；同时间戳用原顺序兜底，避免排序不稳定导致证据错位
+    messages.sort(key=lambda m: (m.timestamp, m.source_index))
 
     # 生成解析摘要
     summary = _build_parse_result(messages)
@@ -147,30 +156,22 @@ def parse_json_file(file_path: Path) -> tuple[list[ChatMessage], ParseResult]:
     return messages, summary
 
 
-def _parse_message(item: dict) -> ChatMessage | None:
-    """解析单条消息字典为ChatMessage对象。
+def _parse_message(item: dict, source_index: int = 0) -> ChatMessage | None:
+    """解析单条消息字典为 ChatMessage 对象。
 
-    Args:
-        item: 原始消息字典
-
-    Returns:
-        ChatMessage对象，如果消息应被过滤则返回None
+    “嗯/好/哦”等单字回复是口癖和节奏证据，不再按长度丢弃；
+    媒体占位保留为 media，避免把“爱发语音/表情”的表达习惯洗掉。
     """
     content = str(item.get("content", "")).strip()
 
-    # 过滤空消息和超短消息
-    if len(content) < 2:
+    if not content or content in _SYSTEM_PLACEHOLDERS:
         return None
 
-    # 过滤非文本消息标记
-    skip_patterns = [
-        "[图片]", "[语音]", "[视频]", "[表情]", "[文件]",
-        "[红包]", "[转账]", "[位置]", "[名片]", "[链接]",
-        "[系统消息]", "[撤回了一条消息]",
-    ]
-    for pattern in skip_patterns:
+    message_type: Literal["text", "media"] = "text"
+    for pattern in _MEDIA_PLACEHOLDERS:
         if content == pattern or content.startswith(pattern):
-            return None
+            message_type = "media"
+            break
 
     # 解析时间戳
     timestamp_raw = item.get("timestamp", "")
@@ -187,13 +188,19 @@ def _parse_message(item: dict) -> ChatMessage | None:
     if not sender:
         return None
 
-    is_target = bool(item.get("is_target", False))
+    raw_target = item.get("is_target", False)
+    if isinstance(raw_target, str):
+        is_target = raw_target.strip().lower() in {"1", "true", "yes"}
+    else:
+        is_target = bool(raw_target)
 
     return ChatMessage(
         timestamp=timestamp,
         sender=sender,
         content=content,
         is_target=is_target,
+        source_index=source_index,
+        message_type=message_type,
     )
 
 

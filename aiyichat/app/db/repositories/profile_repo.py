@@ -124,11 +124,18 @@ class ProfileRepository:
         return result.modified_count > 0
 
     async def hard_delete(self, slug: str) -> bool:
-        """物理删除角色。
+        """物理删除角色及其克隆语料/反馈。
 
         与 delete 的软删除（仅置 is_active=False）不同：身份自助清理自建私有角色时
         需要真正释放文档与配额名额，调用方必须先校验归属与服务引用。
         """
+        profile = await self.find_by_slug(slug)
+        if profile is None:
+            return False
+        db = get_database()
+        await db.clone_episodes.delete_many({"profile_id": profile.id})
+        await db.clone_datasets.delete_many({"profile_id": profile.id})
+        await db.clone_feedback.delete_many({"profile_id": profile.id})
         result = await self._collection().delete_one({"slug": slug})
         return result.deleted_count > 0
 

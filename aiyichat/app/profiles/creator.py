@@ -25,7 +25,7 @@ CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根�
 请严格按照以下JSON schema输出：
 
 {{
-  "identity": {{
+  "persona": {{
     "background": "角色背景故事（3-5句话，交代身份、经历与来到对方身边的缘由）",
     "era": "时代背景（如：现代）",
     "age_appearance": "年龄外观描述（中文，如：25岁左右的都市女性）",
@@ -72,7 +72,7 @@ CUSTOM_PROFILE_PROMPT = """你是一位资深虚拟角色设计专家。请根�
 
 注意：
 - 角色设定必须完全贴合对方描述；描述简略时合理补充细节，使角色立体饱满
-- identity.appearance 必须输出英文（将直接用于AI生成角色肖像照）
+- persona.appearance 必须输出英文（将直接用于AI生成角色肖像照）
 - traits 的浮点数保留2位小数，评分贴合人设，不要默认中间值
 - example_utterances 要充分体现语言风格，像角色本人说的话
 - 直接输出JSON，不要包含markdown代码块标记或其他文字"""

@@ -3,8 +3,10 @@
 提供上传JSON文件、LLM分析、预览编辑、确认入库的完整流程。
 """
 
+import json
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,18 +15,32 @@ from starlette.responses import Response
 from app.admin.auth import require_admin
 from app.admin.routes.common import _account_repo, _profile_repo, _render
 from app.chat_import.analyzer import create_task, get_task, run_analysis, save_task
+from app.chat_import.clone_corpus import (
+    build_episodes,
+    compute_style_profile,
+    render_style_hint,
+    select_runtime_episodes,
+    source_hash,
+)
 from app.chat_import.parser import (
     delete_uploaded_file,
     parse_json_file,
     save_uploaded_file,
 )
+from app.db.repositories.clone_repo import (
+    CloneDatasetRepository,
+    CloneEpisodeRepository,
+)
+from app.models.clone import CloneDatasetInDB, CloneEpisodeInDB
 from app.models.profile import (
     ProfileDialogueStrategy,
     ProfilePersona,
     ProfileLanguageStyle,
     ProfilePersonality,
     PromptProfileCreate,
+    PromptProfileUpdate,
 )
+from app.services.clone_service import backfill_clone_embeddings
 from app.utils.tasks import spawn
 
 logger = logging.getLogger(__name__)
@@ -78,6 +94,9 @@ async def chat_import_upload(
     # 获取表单参数
     role_name = str(form.get("role_name", "")).strip()
     extra_description = str(form.get("extra_description", "")).strip()
+    store_clone_corpus = str(form.get("store_clone_corpus", "")).lower() in {
+        "1", "true", "on", "yes",
+    }
 
     # 生成任务ID并落盘
     task_id = uuid.uuid4().hex[:12]
@@ -105,6 +124,55 @@ async def chat_import_upload(
     # 创建分析任务（落库持久化，重启后仍可查进度）
     task = await create_task(task_id, str(file_path))
     task.parse_result = parse_result
+
+    # 用户明确选择保留时才落最小情境片段；原文件仍已在上面删除。
+    if store_clone_corpus:
+        try:
+            drafts = build_episodes(messages, parse_result.target_name)
+            selected = select_runtime_episodes(drafts)
+            style_profile = compute_style_profile(messages, drafts)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            dataset = CloneDatasetInDB(
+                task_id=task_id,
+                opt_in=True,
+                source_sha256=source_hash(file_content),
+                target_name=parse_result.target_name,
+                episode_count=len(selected),
+                scene_counts={
+                    scene: sum(1 for e in drafts if e.scene == scene)
+                    for scene in {e.scene for e in drafts}
+                },
+                style_profile=style_profile,
+                # 未入库预览默认 24 小时过期，由 Mongo TTL 清理
+                expires_at=expires_at,
+            )
+            await CloneDatasetRepository().create(dataset)
+            await CloneEpisodeRepository().create_many([
+                CloneEpisodeInDB(
+                    dataset_id=dataset.id,
+                    source_indexes=e.source_indexes,
+                    started_at=e.started_at,
+                    ended_at=e.ended_at,
+                    context_text=e.context_text,
+                    target_text=e.target_text,
+                    scene=e.scene,
+                    quality=e.quality,
+                    expires_at=expires_at,
+                )
+                for e in selected
+            ])
+            task.clone_dataset_id = dataset.id
+            task.clone_episode_count = len(selected)
+        except Exception as e:
+            logger.exception("克隆语料构建失败")
+            task.status = "error"
+            task.error_message = f"克隆语料构建失败: {e}"
+            await save_task(task)
+            return _render(request, "chat_import.html", {
+                "active_page": "profiles",
+                "error": f"克隆语料构建失败，未开始分析: {e}",
+            })
+
     await save_task(task)
 
     # 启动后台异步分析（spawn 保存任务引用，防止被 GC 提前取消）
@@ -152,11 +220,18 @@ async def chat_import_preview(
         raise HTTPException(status_code=400, detail="分析尚未完成")
 
     accounts = {a.id: a for a in await _account_repo.list_all()}
+    clone_dataset = None
+    if task.clone_dataset_id:
+        clone_dataset = await CloneDatasetRepository().find_by_id(
+            task.clone_dataset_id
+        )
     return _render(request, "chat_import_preview.html", {
         "active_page": "profiles",
         "profile": task.result,
         "task_id": task_id,
         "accounts": accounts,
+        "clone_dataset": clone_dataset,
+        "clone_episode_count": task.clone_episode_count,
     })
 
 
@@ -171,6 +246,23 @@ async def chat_import_save(
         """将多行文本按行分割并去空。"""
         val = form.get(key, "")
         return [line.strip() for line in str(val).split("\n") if line.strip()]
+
+    def _relationships(key: str) -> list[dict]:
+        """关系字段按 JSON 数组编辑；非法输入明确报错，不静默清空。"""
+        raw = str(form.get(key, "")).strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400, detail=f"人物关系不是合法 JSON：{e}"
+            ) from e
+        if not isinstance(parsed, list) or not all(
+            isinstance(item, dict) for item in parsed
+        ):
+            raise HTTPException(status_code=400, detail="人物关系必须是对象数组")
+        return parsed
 
     # 解析 traits
     trait_keys = form.getlist("trait_key")
@@ -193,19 +285,45 @@ async def chat_import_save(
     if not slug:
         raise HTTPException(status_code=400, detail="slug 不能为空")
 
+    task_id = str(form.get("task_id", "")).strip()
+    task = await get_task(task_id) if task_id else None
+    dataset = (
+        await CloneDatasetRepository().find_by_id(task.clone_dataset_id)
+        if task and task.clone_dataset_id else None
+    )
+
     # 检查slug是否已存在
     existing = await _profile_repo.find_by_slug(slug)
     if existing:
         accounts = {a.id: a for a in await _account_repo.list_all()}
-        task_id = str(form.get("task_id", ""))
-        task = await get_task(task_id) if task_id else None
         return _render(request, "chat_import_preview.html", {
             "active_page": "profiles",
             "profile": task.result if task else {},
             "task_id": task_id,
             "accounts": accounts,
+            "clone_dataset": dataset,
+            "clone_episode_count": task.clone_episode_count if task else 0,
             "error": f"slug '{slug}' 已存在，请修改后重试",
         })
+
+    if dataset is not None:
+        if task is None or task.status != "done":
+            raise HTTPException(status_code=409, detail="分析尚未完成，不能激活语料")
+        if visibility != "private" or not account_id:
+            accounts = {a.id: a for a in await _account_repo.list_all()}
+            return _render(request, "chat_import_preview.html", {
+                "active_page": "profiles",
+                "profile": task.result if task else {},
+                "task_id": task_id,
+                "accounts": accounts,
+                "clone_dataset": dataset,
+                "clone_episode_count": task.clone_episode_count if task else 0,
+                "error": "保留聊天语料时必须选择“私有”并指定所属账号",
+            })
+        if dataset.status != "pending":
+            raise HTTPException(
+                status_code=409, detail=f"克隆语料状态不可激活: {dataset.status}"
+            )
 
     # 构建 PromptProfileCreate 对象
     # 解析回复风格（非法值回退 standard）
@@ -227,8 +345,9 @@ async def chat_import_save(
             background=str(form.get("persona_background", "")),
             era=str(form.get("persona_era", "")),
             age_appearance=str(form.get("persona_age_appearance", "")),
+            appearance=str(form.get("persona_appearance", "")),
             core_values=_lines("persona_core_values"),
-            relationships=[],
+            relationships=_relationships("persona_relationships"),
         ),
         language_style=ProfileLanguageStyle(
             vocabulary=_lines("ls_vocabulary"),
@@ -254,10 +373,52 @@ async def chat_import_save(
         meta_instructions=str(form.get("meta_instructions", "")),
         voice_id=str(form.get("voice_id", "")),
         verbosity=verbosity,  # type: ignore[arg-type]
+        clone_status="pending" if dataset else "",
+        clone_enabled=bool(dataset),
+        clone_dataset_id=dataset.id if dataset else "",
+        clone_style_hint=(
+            render_style_hint(dataset.style_profile) if dataset else ""
+        ),
     )
 
     # 入库
-    await _profile_repo.create(profile)
+    created = await _profile_repo.create(profile)
+    if dataset is not None:
+        dataset_repo = CloneDatasetRepository()
+        try:
+            version = await dataset_repo.next_version(created.id)
+            await CloneEpisodeRepository().bind_dataset(
+                dataset.id,
+                account_id=account_id or "",
+                profile_id=created.id,
+                version=version,
+            )
+            # 先停旧版本，再激活新版本，避免把刚激活的数据集再次置为 disabled
+            await dataset_repo.disable_for_profile(created.id)
+            await dataset_repo.activate(
+                dataset.id,
+                account_id=account_id or "",
+                profile_id=created.id,
+                version=version,
+            )
+            await _profile_repo.update(
+                slug,
+                PromptProfileUpdate(
+                    clone_status="active",
+                    clone_enabled=True,
+                    clone_dataset_id=dataset.id,
+                    clone_version=version,
+                ),
+            )
+            # 向量回填不阻塞预览入库；失败时运行期仍走字符/场景检索降级
+            spawn(backfill_clone_embeddings(dataset.id))
+        except Exception as e:
+            logger.exception("激活克隆语料失败: dataset=%s", dataset.id)
+            await dataset_repo.mark_error(dataset.id, f"激活失败: {e}")
+            await _profile_repo.hard_delete(slug)
+            raise HTTPException(
+                status_code=500, detail=f"克隆语料激活失败，角色未创建: {e}"
+            ) from e
     logger.info("聊天记录分析角色已入库: %s (%s)", profile.name, profile.slug)
 
     # 重定向到角色详情页

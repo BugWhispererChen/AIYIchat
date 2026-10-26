@@ -258,6 +258,7 @@ class PromptAssembler:
         last_proactive_at: datetime | None = None,  # 对方上次发言后角色主动发出的消息时间
         last_proactive_text: str = "",  # 该主动消息原文（主动消息不入 messages 集合）
         insight_lines: list[str] | None = None,  # 反思层洞见（常驻稳定段，不占记忆注入名额）
+        clone_hint: str = "",  # 克隆语料检索结果（动态尾段，只作风格/经历证据）
     ) -> list[dict[str, str]]:
         """
         组装完整的Prompt消息数组。
@@ -425,6 +426,7 @@ class PromptAssembler:
             now_local=now_local, idle_phrase=idle_phrase,
             topic_stall_hint=topic_stall_hint,
             dynamic_memory_hint=dynamic_hint,
+            clone_hint=clone_hint,
             routine_hint=self._render_routine_hint(profile, now_utc),
             last_identity_local=last_identity_at.astimezone(tz) if last_identity_at else None,
             gap_mode=gap_mode,
@@ -540,11 +542,21 @@ class PromptAssembler:
             lang_lines.append(verbosity_desc)
         sections.append("\n".join(lang_lines))
 
-        # 示例对话风格（根据当前输入动态选取最相关的示例，默认取前2条）
+        # 示例对话风格：固定取前 2 条稳定示例放在前缀；
+        # 当前输入相关的真实聊天片段由动态尾段提供，避免每轮变化击穿前缀缓存。
         if lang.example_utterances:
-            selected = self._select_examples(identity_input, lang.example_utterances)
+            selected = lang.example_utterances[:2]
             examples = "\n".join(f"- {u}" for u in selected)
             sections.append(f"【示例对话风格】\n{examples}")
+
+        # 聊天记录克隆的确定性统计倾向（稳定前缀，不随当前输入变化）
+        clone_style_hint = getattr(profile, "clone_style_hint", "")
+        if clone_style_hint:
+            sections.append(
+                "【真实聊天统计倾向】\n"
+                f"{clone_style_hint}\n"
+                "优先保持这种自然长度与表达密度，不要为了显得亲切而刻意加长。"
+            )
 
         # 对话策略
         strategy = profile.dialogue_strategy
@@ -694,6 +706,7 @@ class PromptAssembler:
         has_yesterday_history: bool = False,
         last_proactive_local: datetime | None = None,
         last_proactive_text: str = "",
+        clone_hint: str = "",
     ) -> str:
         """
         渲染时刻/间隔语义与情绪、长度、支持策略上下文提示（独立system消息，紧贴user_input前）。
@@ -779,6 +792,9 @@ class PromptAssembler:
         # 动态层记忆：位置紧贴对方输入，与稳定层（第 2 段）分离以保护前缀缓存
         if dynamic_memory_hint:
             parts.append(dynamic_memory_hint)
+        # 克隆语料：随当前情境变化，必须留在易变尾段；只作风格与角色经历证据
+        if clone_hint:
+            parts.append(clone_hint)
         # 新增：情感表达引导
         if emotion_hint or mood_hint:
             parts.append(

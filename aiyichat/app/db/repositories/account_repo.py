@@ -210,11 +210,21 @@ class AccountRepository:
         stats["bots"] = (await db.bot_configs.delete_many({"account_id": account_id})).deleted_count
         # 5. 删除额度
         stats["quotas"] = (await db.account_quotas.delete_many({"account_id": account_id})).deleted_count
-        # 6. 删除私有角色
+        # 6. 删除聊天记录克隆语料与反馈（片段含原聊天上下文，必须随账号清除）
+        stats["clone_episodes"] = (
+            await db.clone_episodes.delete_many({"account_id": account_id})
+        ).deleted_count
+        stats["clone_feedback"] = (
+            await db.clone_feedback.delete_many({"account_id": account_id})
+        ).deleted_count
+        stats["clone_datasets"] = (
+            await db.clone_datasets.delete_many({"account_id": account_id})
+        ).deleted_count
+        # 7. 删除私有角色
         stats["private_profiles"] = (
             await db.profiles.delete_many({"visibility": "private", "account_id": account_id})
         ).deleted_count
-        # 7. 删除账号本身
+        # 8. 删除账号本身
         stats["account"] = (await self._collection().delete_one({"id": account_id})).deleted_count
 
         return stats

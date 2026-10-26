@@ -10,6 +10,7 @@ from app.api.web_profiles_api import web_profiles_router
 from app.api.web_services_api import web_services_router
 from app.api.web_bots_api import web_bots_router
 from app.api.web_account_api import web_account_router
+from app.api.web_clone_api import web_clone_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -25,3 +26,4 @@ api_router.include_router(web_bots_router, prefix="/web/bots", tags=["web-bots"]
 # C 端账号中心（资料 / 密码 / 设备 / 额度 / 数据与隐私 / 注销）：走 require_web_account，
 # 不要求账号已有活跃服务
 api_router.include_router(web_account_router, prefix="/web/account", tags=["web-account"])
+api_router.include_router(web_clone_router, prefix="/web/clone", tags=["web-clone"])

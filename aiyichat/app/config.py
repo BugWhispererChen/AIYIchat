@@ -300,6 +300,11 @@ class _RuntimeSettings:
     chat_import_chunk_size: int = 100
     # 导入记录时间戳所属时区的 UTC 偏移（小时），修正存量导入整体错位 8 小时的问题
     chat_import_timezone_offset: int = 8
+    # 克隆语料运行期检索：默认关，按角色 clone_enabled 灰度；失败只降级不阻塞回复
+    clone_retrieval_enabled: bool = False
+    clone_retrieval_topk: int = 2
+    clone_retrieval_max_chars: int = 1000
+    clone_retrieval_min_score: float = 0.15
 
     # Function Calling（默认关闭，谨慎灰度）
     function_calling_enabled: bool = False
@@ -488,6 +493,8 @@ class _RuntimeSettings:
             "proactive_share_news_ratio",
             "chat_import_chunk_size",
             "chat_import_timezone_offset",
+            "clone_retrieval_enabled", "clone_retrieval_topk",
+            "clone_retrieval_max_chars", "clone_retrieval_min_score",
             "safety_crisis_extra", "safety_forbidden_extra",
             "sticker_enabled", "sticker_seed_enabled", "sticker_max_per_turn",
             "sticker_similarity_threshold", "sticker_reply_probability",
@@ -668,6 +675,10 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         proactive_share_news_ratio: float = Field(default=0.5)
         chat_import_chunk_size: int = Field(default=100)
         chat_import_timezone_offset: int = Field(default=8)
+        clone_retrieval_enabled: bool = Field(default=False)
+        clone_retrieval_topk: int = Field(default=2)
+        clone_retrieval_max_chars: int = Field(default=1000)
+        clone_retrieval_min_score: float = Field(default=0.15)
         safety_crisis_extra: list = Field(default_factory=list)
         safety_forbidden_extra: list = Field(default_factory=list)
         sticker_enabled: bool = Field(default=False)

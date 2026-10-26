@@ -303,6 +303,11 @@ class AppSettingsDocument(BaseModel):
     # 导入记录时间戳所属时区的 UTC 偏移（小时）：导出文件为本地墙钟时间，
     # 不按该偏移转 aware UTC 会被当作 UTC 再渲染，整体错位 8 小时
     chat_import_timezone_offset: int = 8
+    # 克隆语料运行期检索（默认关，按角色灰度）
+    clone_retrieval_enabled: bool = False
+    clone_retrieval_topk: int = 2
+    clone_retrieval_max_chars: int = 1000
+    clone_retrieval_min_score: float = 0.15
 
     # Function Calling
     function_calling_enabled: bool = False

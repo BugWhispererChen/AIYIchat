@@ -16,6 +16,32 @@
 {{ alert('success', success) }}
 {{ alert('error', error) }}
 
+{% if profile.clone_status == 'active' %}
+<div class="ui-card u-mb-3">
+    <div class="ui-card-head"><h4 class="ui-card-title">聊天记录克隆</h4></div>
+    <p class="ui-note">
+        当前语料版本 v{{ profile.clone_version }}，共保留语境片段参与动态检索。
+        该开关只影响运行期是否注入示例与角色经历，不删除语料、不改变版本。
+    </p>
+    {% if profile.clone_style_hint %}
+    <p class="ui-note">{{ profile.clone_style_hint }}</p>
+    {% endif %}
+    <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-toggle" class="ui-cluster">
+        <label class="ui-cluster">
+            <input type="checkbox" name="enabled" role="switch" {{ 'checked' if profile.clone_enabled }}>
+            <span>启用克隆语料动态检索</span>
+        </label>
+        <button type="submit" class="ui-btn ui-btn--ghost">保存</button>
+        <a href="/admin/clone-feedback" class="ui-btn ui-btn--ghost">查看反馈</a>
+    </form>
+    <form method="post" action="/admin/profiles/{{ profile.slug }}/clone-delete" class="u-mt-2"
+          onsubmit="return confirm('确认永久删除该角色的全部克隆语料、角色经历与反馈？该操作不可恢复。')">
+        <input type="hidden" name="confirm" value="delete">
+        <button type="submit" class="ui-btn ui-btn--ghost">撤回并删除克隆语料</button>
+    </form>
+</div>
+{% endif %}
+
 <div class="ui-grid ui-grid--aside">
     <!-- 左侧锚点导航 -->
     <aside class="anchor-nav">

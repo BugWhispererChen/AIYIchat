@@ -30,6 +30,7 @@ from app.admin.routes.profiles import profiles_router
 from app.admin.routes.profile_create import profile_create_router
 from app.admin.routes.proactive import proactive_router
 from app.admin.routes.chat_import import chat_import_router
+from app.admin.routes.clone_feedback import clone_feedback_router
 from app.admin.routes.safety import safety_router
 from app.admin.routes.stickers import stickers_router
 from app.admin.routes.qq_bots import qq_bots_router
@@ -343,6 +344,7 @@ admin_router.include_router(conversations_router)
 admin_router.include_router(wechat_bots_router)
 admin_router.include_router(qq_bots_router)
 admin_router.include_router(chat_import_router)
+admin_router.include_router(clone_feedback_router)
 admin_router.include_router(features_router)
 admin_router.include_router(stickers_router)
 admin_router.include_router(safety_router)

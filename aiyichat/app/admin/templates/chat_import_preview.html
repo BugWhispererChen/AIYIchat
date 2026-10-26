@@ -25,6 +25,27 @@
 
 {{ alert('error', error) }}
 
+{% if clone_dataset %}
+<div class="ui-card u-mb-3">
+    <div class="ui-card-head"><h4 class="ui-card-title">克隆语料</h4></div>
+    <p class="ui-note">
+        已保留 {{ clone_episode_count }} 组脱敏情境片段，覆盖
+        {% for scene, count in clone_dataset.scene_counts.items() %}
+        {{ {'daily': '日常', 'comfort': '安慰', 'celebrate': '报喜', 'conflict': '冲突', 'advice': '商量', 'greeting': '问候', 'question': '问答'}.get(scene, scene) }} {{ count }}{% if not loop.last %}、{% endif %}
+        {% endfor %}。
+        运行期仅当全局「克隆语料动态检索」开启时生效。
+    </p>
+    {% if clone_dataset.style_profile.overall.count %}
+    <p class="ui-note">
+        真实回复中位 {{ clone_dataset.style_profile.overall.median_chars }} 字，
+        p90 {{ clone_dataset.style_profile.overall.p90_chars }} 字；
+        单字/短回复占比 {{ '%.0f' | format(clone_dataset.style_profile.overall.short_rate * 100) }}%。
+    </p>
+    {% endif %}
+    <p class="ui-note">保留语料时只能创建私有角色并指定所属账号；未完成入库的数据 24 小时内自动清理。</p>
+</div>
+{% endif %}
+
 <div class="ui-grid ui-grid--aside">
     <!-- 左侧锚点导航 -->
     <aside class="anchor-nav">
@@ -89,7 +110,7 @@
                 {# display:none 必须留内联：脚本用 style.display 切换 #}
                 <label class="ui-field" id="account-select-label" style="{% if (profile.visibility or 'private') == 'public' %}display:none;{% endif %}">
                     <span class="ui-label">所属账号</span>
-                    <select class="ui-select" name="account_id">
+                    <select class="ui-select" name="account_id" {% if clone_dataset %}required{% endif %}>
                         <option value="">请选择账号</option>
                         {% for acc in accounts.values() %}
                         <option value="{{ acc.id }}">{{ acc.name or acc.id }}</option>
@@ -119,6 +140,14 @@
             <label class="ui-field">
                 <span class="ui-label">核心价值观 <small class="field-hint">(每行一个)</small></span>
                 <textarea class="ui-textarea" name="persona_core_values" rows="3">{% if profile.persona and profile.persona.core_values %}{{ profile.persona.core_values | join('\n') }}{% endif %}</textarea>
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">外貌描述 <small class="field-hint">(英文，用于图片人物一致性；无证据可留空)</small></span>
+                <textarea class="ui-textarea" name="persona_appearance" rows="2">{{ profile.persona.appearance if profile.persona else '' }}</textarea>
+            </label>
+            <label class="ui-field">
+                <span class="ui-label">人物关系 <small class="field-hint">(JSON 对象数组，无证据保持 [])</small></span>
+                <textarea class="ui-textarea" name="persona_relationships" rows="3">{% if profile.persona and profile.persona.relationships %}{{ profile.persona.relationships | tojson }}{% else %}[]{% endif %}</textarea>
             </label>
         </section>
 

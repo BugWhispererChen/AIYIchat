@@ -111,14 +111,24 @@ class TestParser:
     def test_parse_message_filters(self) -> None:
         from app.chat_import.parser import _parse_message
 
-        # 超短消息
-        assert _parse_message({"content": "a", "sender": "x", "timestamp": "2024-03-15T14:23:01"}) is None
-        # 非文本标记
-        assert _parse_message({"content": "[红包]", "sender": "x", "timestamp": "2024-03-15T14:23:01"}) is None
+        # 单字回复是风格证据，不再丢弃
+        short = _parse_message({"content": "a", "sender": "x", "timestamp": "2024-03-15T14:23:01"})
+        assert short is not None and short.content == "a"
+        # 媒体占位保留为 media，供风格统计使用
+        media = _parse_message({"content": "[红包]", "sender": "x", "timestamp": "2024-03-15T14:23:01"})
+        assert media is not None and media.message_type == "media"
+        # 系统事件不属于任何一方
+        assert _parse_message({"content": "[系统消息]", "sender": "x", "timestamp": "2024-03-15T14:23:01"}) is None
         # 无 sender
         assert _parse_message({"content": "你好呀", "sender": "", "timestamp": "2024-03-15T14:23:01"}) is None
         # 非法时间戳类型
         assert _parse_message({"content": "你好呀", "sender": "x", "timestamp": []}) is None
+        # 字符串 "false" 不能被当成真值
+        target = _parse_message({
+            "content": "你好呀", "sender": "x",
+            "timestamp": "2024-03-15T14:23:01", "is_target": "false",
+        })
+        assert target is not None and target.is_target is False
 
 
 # ── analyzer ──────────────────────────────────────────────

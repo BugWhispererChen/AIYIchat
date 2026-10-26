@@ -84,6 +84,14 @@
             <textarea class="ui-textarea" name="extra_description" rows="3" placeholder="例如：她是一个90后程序员，性格温柔开朗，喜欢看动漫和打游戏..."></textarea>
         </label>
 
+        <label class="ui-field">
+            <span class="ui-cluster">
+                <input type="checkbox" name="store_clone_corpus" role="switch">
+                <span>保留脱敏情境片段 <small class="field-hint">(可选，用于运行期按情境检索“对方这样说时，角色曾怎样回复”；原始 JSON 仍会即时删除)</small></span>
+            </span>
+            <small class="field-hint">启用后仅保存精选、去重的对话上下文与目标回复；未完成入库的片段 24 小时自动过期。入库时必须选择“私有”并指定所属账号。</small>
+        </label>
+
         <div class="ui-cluster">
             <button type="submit" class="ui-btn ui-btn--primary">开始分析</button>
         </div>
@@ -91,5 +99,8 @@
 {% endcall %}
 {% endif %}
 
-<p class="u-mt-4"><a href="/admin/profiles">&larr; 返回角色列表</a></p>
+<p class="u-mt-4">
+    <a href="/admin/clone-feedback" class="ui-btn ui-btn--ghost">查看克隆反馈</a>
+    <a href="/admin/profiles">&larr; 返回角色列表</a>
+</p>
 {% endblock %}

@@ -109,6 +109,12 @@ class PromptProfileCreate(BaseModel):
     is_draft: bool = False
     # 绑定的表情包分组 ID 列表（空列表表示不发送表情包且 Prompt 不注入表情能力）
     sticker_group_ids: list[str] = Field(default_factory=list)
+    # 聊天记录克隆：运行期只读取此数据集版本；关闭只影响示例/角色经历，不删语料
+    clone_status: Literal["", "pending", "active", "failed"] = ""
+    clone_enabled: bool = False
+    clone_dataset_id: str = ""
+    clone_version: int = 0
+    clone_style_hint: str = ""
 
 
 class PromptProfileInDB(PromptProfileCreate):
@@ -130,6 +136,11 @@ class PromptProfileInDB(PromptProfileCreate):
         # 兼容旧数据：disable_reason / sticker_group_ids 可能不存在
         doc.setdefault("disable_reason", "")
         doc.setdefault("sticker_group_ids", [])
+        doc.setdefault("clone_status", "")
+        doc.setdefault("clone_enabled", False)
+        doc.setdefault("clone_dataset_id", "")
+        doc.setdefault("clone_version", 0)
+        doc.setdefault("clone_style_hint", "")
         return cls(**doc)
 
 
@@ -160,3 +171,8 @@ class PromptProfileUpdate(BaseModel):
     disable_reason: Optional[str] = None
     is_draft: Optional[bool] = None
     sticker_group_ids: Optional[list[str]] = None
+    clone_status: Optional[Literal["", "pending", "active", "failed"]] = None
+    clone_enabled: Optional[bool] = None
+    clone_dataset_id: Optional[str] = None
+    clone_version: Optional[int] = None
+    clone_style_hint: Optional[str] = None

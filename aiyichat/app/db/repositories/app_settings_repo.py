@@ -140,6 +140,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "topic_stall_detection_enabled",
         "proactive_yield_enabled",
         "profile_routine_enabled",
+        "clone_retrieval_enabled",
         "stream_gate_enabled", "stream_pacing_enabled",
         "stream_jitter_guard_enabled", "human_rhythm_enabled",
         # 反向代理头信任开关
@@ -159,6 +160,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "proactive_yield_hard_limit",
         "proactive_quiet_hour_start", "proactive_quiet_hour_end",
         "chat_import_chunk_size",
+        "clone_retrieval_topk", "clone_retrieval_max_chars",
         # 对话时间感知（单一时区源 + 标签阈值）
         "default_timezone_offset", "message_time_gap_minutes",
         "time_session_gap_hours", "time_reunion_gap_hours",
@@ -192,6 +194,7 @@ def _coerce_env_to_doc(raw: dict[str, str | None]) -> dict[str, Any]:
         "proactive_llm_temperature",
         "chat_temperature", "proactive_temperature", "focus_temperature",
         "emotion_temperature", "summary_temperature", "chat_import_temperature",
+        "clone_retrieval_min_score",
         # 节奏与复读的浮点参数
         "multi_message_delay_per_char", "multi_message_max_delay",
         "stream_max_total_delay_seconds", "stream_jitter_prefix_ratio",

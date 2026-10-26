@@ -41,6 +41,12 @@ class InjectionSnapshotInDB(BaseModel):
     # 人际关系网络：本轮注入的实体明细
     injected_entities: list[str] = Field(default_factory=list)  # 实体名列表
     entity_tokens: int = 0  # 实体注入段落 token 估算
+    # 克隆语料注入证据（只记 ID/分数/token，不复制片段正文）
+    clone_version: int = 0
+    clone_episode_ids: list[str] = Field(default_factory=list)
+    clone_episode_scores: list[float] = Field(default_factory=list)
+    clone_memory_fids: list[str] = Field(default_factory=list)
+    clone_tokens: int = 0
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -66,4 +72,9 @@ class InjectionSnapshotInDB(BaseModel):
         doc.setdefault("conversation_id", "")
         doc.setdefault("injected_entities", [])
         doc.setdefault("entity_tokens", 0)
+        doc.setdefault("clone_version", 0)
+        doc.setdefault("clone_episode_ids", [])
+        doc.setdefault("clone_episode_scores", [])
+        doc.setdefault("clone_memory_fids", [])
+        doc.setdefault("clone_tokens", 0)
         return cls(**doc)

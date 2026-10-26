@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set active_page = "profiles" %}
+{% block title %}克隆反馈{% endblock %}
+
+{% from "partials/_ui.html" import page_header %}
+
+{% block breadcrumb %}
+<a href="/admin/profiles">角色管理</a>
+<span class="sep">/</span>
+<span class="current">克隆反馈</span>
+{% endblock %}
+
+{% block content %}
+{{ page_header('克隆反馈', '用户对克隆回复“像/不像”的反馈；只用于离线评审，不直接在线改人格', '角色内容') }}
+
+<div class="ui-card">
+    <p class="ui-note">待评审 {{ pending }} 条，共展示最近 {{ items | length }} 条。用户修改后的回复仅作评审参考，需人工确认后才可进入后续偏好数据。</p>
+    {% if items %}
+    <div class="u-overflow-auto">
+        <table class="ui-table">
+            <thead>
+                <tr>
+                    <th>时间</th><th>评价</th><th>原因</th><th>版本</th><th>用户修改</th><th>状态</th><th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for item in items %}
+                <tr>
+                    <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ '像' if item.rating == 'like' else '不像' }}</td>
+                    <td>{{ item.reasons | join('、') or '—' }}</td>
+                    <td>v{{ item.clone_version }}</td>
+                    <td class="u-break-word">{{ item.edited_reply or '—' }}</td>
+                    <td>{{ {'pending': '待评审', 'reviewed': '已采纳', 'rejected': '已驳回'}.get(item.status, item.status) }}</td>
+                    <td>
+                        <form method="post" action="/admin/clone-feedback/{{ item.id }}/status" class="ui-cluster">
+                            <select class="ui-select" name="status">
+                                <option value="reviewed" {% if item.status == 'reviewed' %}selected{% endif %}>已采纳</option>
+                                <option value="rejected" {% if item.status == 'rejected' %}selected{% endif %}>已驳回</option>
+                                <option value="pending" {% if item.status == 'pending' %}selected{% endif %}>待评审</option>
+                            </select>
+                            <button class="ui-btn ui-btn--ghost" type="submit">更新</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="ui-note">暂无反馈。</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -552,7 +552,92 @@
             } else {
                 state.bubble.lastChild.textContent = '（本次没有收到回复，可能是额度已用尽）';
             }
+        } else if (!state.bubble.classList.contains('bubble-error')) {
+            addFeedbackActions(state.bubble);
         }
+    }
+
+    function addFeedbackActions(bubble) {
+        var serviceId = currentServiceId();
+        if (!serviceId || !bubble) return;
+        var bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px;opacity:.78';
+        var hint = document.createElement('span');
+        hint.textContent = '像本人吗？';
+        bar.appendChild(hint);
+
+        function postFeedback(rating, reasons, edited) {
+            return fetch('/api/web/clone/feedback', {
+                method: 'POST',
+                headers: authHeader({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    service_id: serviceId, rating: rating,
+                    reasons: reasons || [], edited_reply: edited || ''
+                })
+            }).then(function (resp) {
+                hint.textContent = resp.ok ? '已记录，谢谢反馈' : '暂时无法记录';
+                bar.replaceChildren(hint);
+            }).catch(function () {
+                hint.textContent = '暂时无法记录';
+                bar.replaceChildren(hint);
+            });
+        }
+
+        function showDislikeOptions() {
+            bar.replaceChildren(hint);
+            hint.textContent = '哪里不像？';
+            var selected = [];
+            var reasons = [
+                ['tone', '口吻'], ['length', '长短'],
+                ['memory', '记忆'], ['facts', '事实']
+            ];
+            var reasonWrap = document.createElement('span');
+            reasonWrap.style.cssText = 'display:inline-flex;gap:6px';
+            reasons.forEach(function (item) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = item[1];
+                btn.style.cssText = 'border:1px solid currentColor;border-radius:999px;background:transparent;color:inherit;cursor:pointer;padding:1px 7px';
+                btn.addEventListener('click', function () {
+                    var idx = selected.indexOf(item[0]);
+                    if (idx >= 0) selected.splice(idx, 1); else selected.push(item[0]);
+                    btn.style.fontWeight = idx >= 0 ? '400' : '600';
+                });
+                reasonWrap.appendChild(btn);
+            });
+            bar.appendChild(reasonWrap);
+            var edit = document.createElement('input');
+            edit.type = 'text';
+            edit.maxLength = 300;
+            edit.placeholder = '可选：更像本人会怎么说';
+            edit.style.cssText = 'flex:1 1 180px;min-width:140px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:transparent;color:inherit;padding:3px 8px;font-size:12px';
+            bar.appendChild(edit);
+            var submit = document.createElement('button');
+            submit.type = 'button';
+            submit.textContent = '提交';
+            submit.style.cssText = 'border:0;background:transparent;color:inherit;cursor:pointer;padding:0;font-weight:600';
+            submit.addEventListener('click', function () {
+                postFeedback('dislike', selected, edit.value.trim());
+            });
+            bar.appendChild(submit);
+        }
+
+        var like = document.createElement('button');
+        like.type = 'button';
+        like.textContent = '像';
+        like.style.cssText = 'border:0;background:transparent;color:inherit;cursor:pointer;padding:0';
+        like.addEventListener('click', function () { postFeedback('like', [], ''); });
+        var dislike = document.createElement('button');
+        dislike.type = 'button';
+        dislike.textContent = '不像';
+        dislike.style.cssText = 'border:0;background:transparent;color:inherit;cursor:pointer;padding:0';
+        dislike.addEventListener('click', showDislikeOptions);
+        var actions = document.createElement('span');
+        actions.style.cssText = 'display:inline-flex;gap:6px';
+        actions.appendChild(like);
+        actions.appendChild(dislike);
+        bar.appendChild(actions);
+        bubble.appendChild(bar);
     }
 
     async function send() {

@@ -145,6 +145,15 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="free",
     ),
     FeatureToggle(
+        key="clone_retrieval_enabled",
+        label="克隆语料动态检索",
+        desc="从聊天记录导入时保留的高质量情境片段中，按当前情境检索两组「对方这样说时，"
+        "角色曾怎样回复」作为风格参考。参考片段只放动态尾段，并要求模型模仿表达方式、"
+        "不得复述其中事实；关闭或未授权保留语料的角色完全不受影响。",
+        dependency="导入时需勾选「保留脱敏情境片段」；无向量时自动降级为字符与场景检索",
+        cost="free",
+    ),
+    FeatureToggle(
         key="embedding_enabled",
         label="语义记忆检索",
         desc=(

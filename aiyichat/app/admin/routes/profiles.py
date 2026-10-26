@@ -134,6 +134,69 @@ async def _render_detail(
     return _render(request, "profile_detail.html", ctx)
 
 
+@profiles_router.post("/profiles/{slug}/clone-toggle", response_class=HTMLResponse)
+async def profile_clone_toggle(
+    request: Request, slug: str, _s: str = Depends(require_admin)
+) -> HTMLResponse:
+    """按角色启停克隆语料检索；不删除语料，也不改版本。"""
+    profile = await _profile_repo.find_by_slug(slug)
+    if not profile:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    if profile.clone_status != "active":
+        raise HTTPException(status_code=400, detail="该角色没有可用的克隆语料")
+    form = await request.form()
+    enabled = form.get("enabled") == "on"
+    from app.models.profile import PromptProfileUpdate
+
+    await _profile_repo.update(
+        slug, PromptProfileUpdate(clone_enabled=enabled)
+    )
+    return await _render_detail(
+        request, slug,
+        success=f"克隆语料动态检索已{'开启' if enabled else '关闭'}",
+    )
+
+
+@profiles_router.post(
+    "/profiles/{slug}/clone-delete", response_class=HTMLResponse
+)
+async def profile_clone_delete(
+    request: Request, slug: str, _s: str = Depends(require_admin)
+) -> HTMLResponse:
+    """彻底撤回该角色的克隆语料与反馈，并清空 Profile 上的版本指针。"""
+    profile = await _profile_repo.find_by_slug(slug)
+    if not profile:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    form = await request.form()
+    if form.get("confirm") != "delete":
+        return await _render_detail(
+            request, slug, error="删除语料需要二次确认"
+        )
+
+    from app.db.repositories.clone_repo import (
+        CloneDatasetRepository,
+        CloneEpisodeRepository,
+        CloneFeedbackRepository,
+    )
+    from app.models.profile import PromptProfileUpdate
+
+    datasets = CloneDatasetRepository()
+    episodes = CloneEpisodeRepository()
+    await episodes.delete_by_profile(profile.id)
+    await datasets.delete_by_profile(profile.id)
+    await CloneFeedbackRepository().delete_by_profile(profile.id)
+    await _profile_repo.update(
+        slug,
+        PromptProfileUpdate(
+            clone_status="", clone_enabled=False, clone_dataset_id="",
+            clone_version=0, clone_style_hint="",
+        ),
+    )
+    return await _render_detail(
+        request, slug, success="克隆语料、角色经历与反馈已删除"
+    )
+
+
 @profiles_router.post(
     "/profiles/{slug}/reference-image/upload", response_class=HTMLResponse
 )

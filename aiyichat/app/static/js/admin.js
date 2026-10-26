@@ -392,6 +392,18 @@
         initSortableTables();
     });
 
+    /* ══ 页头按钮展开对应折叠面板：<button data-open-panel="#upload-panel"> ══ */
+    function initOpenPanels() {
+        document.querySelectorAll('[data-open-panel]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var panel = document.querySelector(btn.dataset.openPanel);
+                if (!panel) return;
+                panel.open = true;
+                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         initNavCollapse();
         initTabs();
@@ -399,6 +411,7 @@
         initFilters();
         initSortableTables();
         initCopyButtons();
+        initOpenPanels();
         guardForms();
         flashFromQuery();
     });

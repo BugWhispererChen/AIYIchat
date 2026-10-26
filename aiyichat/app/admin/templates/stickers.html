@@ -3,11 +3,13 @@
 {% set content_width = "ui-container--wide" %}
 {% block title %}表情包管理{% endblock %}
 
-{% from "partials/_ui.html" import page_header, alert, badge %}
+{% from "partials/_ui.html" import page_header, alert, badge, empty %}
 
 {% block content %}
 {{ page_header('表情包管理',
-               '管理 AI 对话中可发送的表情包库；发送能力需在「功能实验室」开启「表情包发送」', '角色内容') }}
+               '管理 AI 对话中可发送的表情包库；发送能力需在「功能实验室」开启「表情包发送」', '角色内容',
+               '<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" data-open-panel="#upload-panel">上传表情包</button>'
+               ~ '<button type="button" class="ui-btn ui-btn--outline ui-btn--sm" data-open-panel="#group-panel">分组管理</button>') }}
 
 {{ alert('error', request.query_params.get('error')) }}
 {% if not sticker_enabled %}
@@ -16,54 +18,134 @@
 </div>
 {% endif %}
 
-{# ── 分组管理区 ── #}
-<details {% if not groups %}open{% endif %} class="ui-card">
-    <summary class="ui-summary">+ 创建表情包分组</summary>
-    <form method="post" action="/admin/stickers/groups/create" class="inset-block ui-stack">
-        <div class="ui-grid ui-grid--2">
-            <label class="ui-field">
-                <span class="ui-label">分组名称（唯一）</span>
-                <input class="ui-input" type="text" name="name" placeholder="如：萌猫日常" required>
-            </label>
-            <label class="ui-field">
-                <span class="ui-label">分组说明</span>
-                <input class="ui-input" type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
-            </label>
-        </div>
-        <div class="ui-cluster">
-            <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">创建</button>
-        </div>
+{# ── 检索带：关键词 + 状态 + 排序，筛选条件随链接与回跳保留 ── #}
+<div class="ui-toolbar">
+    <form method="get" action="/admin/stickers" class="ui-cluster ui-cluster--fill">
+        {% if group_filter %}<input type="hidden" name="group" value="{{ group_filter }}">{% endif %}
+        <input class="ui-input" type="search" name="q" value="{{ q }}"
+               placeholder="搜索名称、标签或描述..." aria-label="搜索表情包">
+        <select class="ui-select" name="state" aria-label="按状态筛选">
+            <option value="all" {% if state_filter == 'all' %}selected{% endif %}>全部状态</option>
+            <option value="enabled" {% if state_filter == 'enabled' %}selected{% endif %}>已启用</option>
+            <option value="disabled" {% if state_filter == 'disabled' %}selected{% endif %}>已停用</option>
+            <option value="novector" {% if state_filter == 'novector' %}selected{% endif %}>无向量</option>
+        </select>
+        <select class="ui-select" name="sort" aria-label="排序方式">
+            <option value="default" {% if sort == 'default' %}selected{% endif %}>默认排序</option>
+            <option value="usage" {% if sort == 'usage' %}selected{% endif %}>按使用次数</option>
+            <option value="name" {% if sort == 'name' %}selected{% endif %}>按名称</option>
+        </select>
+        <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">搜索</button>
+        {% if q or state_filter != 'all' or sort != 'default' or group_filter %}
+        <a href="/admin/stickers" class="ui-btn ui-btn--ghost ui-btn--sm">重置</a>
+        {% endif %}
     </form>
-</details>
+    <span class="muted u-fs-80">
+        共 {{ filtered_total }} 张{% if filtered_total != total %}（全库 {{ total }} 张）{% endif %}
+    </span>
+</div>
 
-{% if groups %}
+{# ── 分组筛选：统一胶囊规格，当前分组高亮 ── #}
 <div class="ui-cluster">
-    <a href="/admin/stickers" class="ui-chip{% if not group_filter %} ui-chip--active{% endif %}">全部</a>
+    <a href="/admin/stickers{% if base_query %}?{{ base_query }}{% endif %}"
+       class="ui-chip{% if not group_filter %} ui-chip--active{% endif %}">全部
+        <span class="u-fs-80">{{ total }}</span>
+    </a>
     {% for g in groups %}
-    <div class="ui-card ui-chip-row{% if not g.enabled %} u-dim{% endif %}">
-        <a href="/admin/stickers?group={{ g.id }}" class="ui-chip-name">{{ g.name }}</a>
-        <span class="muted u-fs-80">{{ group_counts.get(g.id, 0) }} 张</span>
-        {% if not g.enabled %}{{ badge('已停用', 'line') }}{% endif %}
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0">
-            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
-                {{ '停用' if g.enabled else '启用' }}
-            </button>
-        </form>
-        <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete"
-              onsubmit="return confirm('删除后该分组内表情将转为未归组（仅后台可见不参与发送），确认删除？');" class="u-m0">
-            <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
-        </form>
-    </div>
+    <a href="/admin/stickers?group={{ g.id }}{% if base_query %}&{{ base_query }}{% endif %}"
+       class="ui-chip{% if group_filter == g.id %} ui-chip--active{% endif %}{% if not g.enabled %} u-dim{% endif %}"
+       {% if not g.enabled %}title="该分组已停用，组内表情不参与发送"{% endif %}>{{ g.name }}
+        <span class="u-fs-80">{{ group_counts.get(g.id, 0) }}</span>
+    </a>
     {% endfor %}
-    <a href="/admin/stickers?group=none" class="ui-chip{% if group_filter == 'none' %} ui-chip--active{% endif %}">
-        未归组 {{ group_counts.get('', 0) }} 张
+    <a href="/admin/stickers?group=none{% if base_query %}&{{ base_query }}{% endif %}"
+       class="ui-chip{% if group_filter == 'none' %} ui-chip--active{% endif %}">未归组
+        <span class="u-fs-80">{{ group_counts.get('', 0) }}</span>
     </a>
 </div>
-{% endif %}
 
-<details class="ui-card">
-    <summary class="ui-summary">+ 上传表情包</summary>
-    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data" class="inset-block ui-stack">
+{# ── 分组管理：创建 + 列表操作，默认收起 ── #}
+<details class="ui-card" id="group-panel"{% if panel == 'group' or not groups %} open{% endif %}>
+    <summary class="ui-summary">分组管理（{{ groups|length }} 个分组）</summary>
+    <div class="ui-stack u-mt-4">
+        <form method="post" action="/admin/stickers/groups/create" class="ui-stack">
+            <div class="ui-grid ui-grid--2">
+                <label class="ui-field">
+                    <span class="ui-label">分组名称（唯一）</span>
+                    <input class="ui-input" type="text" name="name" placeholder="如：萌猫日常" required>
+                </label>
+                <label class="ui-field">
+                    <span class="ui-label">分组说明</span>
+                    <input class="ui-input" type="text" name="description" placeholder="如：猫系日常表情，适合麦筱悠使用">
+                </label>
+            </div>
+            <div class="ui-cluster">
+                <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm u-mw-160">创建分组</button>
+            </div>
+        </form>
+
+        {% if groups %}
+        {% set group_return = return_url ~ ('&' if '?' in return_url else '?') ~ 'panel=group' %}
+        <div class="ui-table-wrap">
+            <table class="ui-table">
+                <colgroup>
+                    <col style="width: 18%;">
+                    <col style="width: 36%;">
+                    <col style="width: 10%;">
+                    <col style="width: 12%;">
+                    <col style="width: 24%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>名称</th>
+                        <th>说明</th>
+                        <th class="num">表情数</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in groups %}
+                    <tr>
+                        <td><strong>{{ g.name }}</strong></td>
+                        <td class="u-fs-85" title="{{ g.description or '无分组说明' }}">{{ g.description or '—' }}</td>
+                        <td class="num">{{ group_counts.get(g.id, 0) }}</td>
+                        <td>
+                            {% if g.enabled %}{{ badge('启用中', 'active') }}
+                            {% else %}{{ badge('已停用', 'line') }}{% endif %}
+                        </td>
+                        <td>
+                            <div class="ui-cluster ui-cluster--nowrap">
+                                <form method="post" action="/admin/stickers/groups/{{ g.id }}/toggle" class="u-m0">
+                                    <input type="hidden" name="next" value="{{ group_return }}">
+                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
+                                        {{ '停用' if g.enabled else '启用' }}
+                                    </button>
+                                </form>
+                                <form method="post" action="/admin/stickers/groups/{{ g.id }}/delete" class="u-m0"
+                                      data-confirm="删除后该分组内表情将转为未归组（仅后台可见，不参与发送），确认删除？"
+                                      data-danger>
+                                    <input type="hidden" name="next" value="{{ group_return }}">
+                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="ui-note">还没有分组。未归组表情仅后台可见，不参与发送。</p>
+        {% endif %}
+    </div>
+</details>
+
+{# ── 上传：默认收起；图库为空时自动展开 ── #}
+<details class="ui-card" id="upload-panel"{% if total == 0 or panel == 'upload' %} open{% endif %}>
+    <summary class="ui-summary">上传表情包</summary>
+    <form method="post" action="/admin/stickers/upload" enctype="multipart/form-data" class="ui-stack u-mt-4">
+        <input type="hidden" name="next" value="{{ return_url }}">
         <div class="ui-grid ui-grid--2">
             <label class="ui-field">
                 <span class="ui-label">图片文件（GIF / PNG / JPEG / WebP，≤2MB，GIF 保留动画）</span>
@@ -98,58 +180,81 @@
 </details>
 
 {% if not stickers %}
-<section class="ui-card">
-    <p class="muted">表情库为空。请上传表情包，或确认部署包中携带了预置资源（data/stickers/）且「启动自动导入」未被关闭。</p>
-</section>
+{{ empty('没有匹配的表情包' if total else '表情库为空',
+         '试试调整关键词或筛选条件' if total else '请上传表情包，或确认部署包中携带了预置资源（data/stickers/）且「启动自动导入」未被关闭。',
+         'sticker') }}
 {% else %}
 <div class="ui-grid ui-grid--asset">
     {% for s in stickers %}
-    <section class="ui-card{% if not s.enabled %} u-dim{% endif %}">
+    {% set ns = namespace(group_name='') %}
+    {% for g in groups %}{% if g.id == s.group_id %}{% set ns.group_name = g.name %}{% endif %}{% endfor %}
+    <section class="ui-card ui-asset-card{% if not s.enabled %} u-dim{% endif %}">
         <div class="ui-tile">
             {# 200 张图一次性解码会让整页迟迟不可用，交给浏览器按视口惰性加载 #}
-            <img class="ui-tile__thumb" src="{{ s.media_url }}" alt="{{ s.name }}" loading="lazy">
+            <img class="ui-tile__thumb" src="{{ s.media_url }}" alt="{{ s.name }}"
+                 title="{{ s.name }}" loading="lazy">
             <div class="ui-tile__body ui-stack ui-stack--tight">
-                <div class="ui-cluster">
-                    <strong class="u-break">{{ s.name }}</strong>
-                    {{ badge('上传' if s.source == 'upload' else '预置', 'ink' if s.source == 'upload' else 'line') }}
-                    {% set ns = namespace(group_name='') %}
-                    {% for g in groups %}{% if g.id == s.group_id %}{% set ns.group_name = g.name %}{% endif %}{% endfor %}
-                    {% if ns.group_name %}{{ badge(ns.group_name, 'amber') }}
-                    {% else %}{{ badge('未归组', 'line') }}{% endif %}
-                    {% if not s.enabled %}{{ badge('已停用', 'line') }}{% endif %}
+                <strong class="ui-asset-name" title="{{ s.name }}">{{ s.name }}</strong>
+                <div class="ui-cluster ui-asset-badges">
+                    <span title="分组：{{ ns.group_name or '未归组' }}">
+                        {% if ns.group_name %}{{ badge(ns.group_name) }}
+                        {% else %}{{ badge('未归组', 'line') }}{% endif %}
+                    </span>
+                    {% if not s.enabled %}
+                    <span title="已停用：不参与检索与发送">{{ badge('已停用', 'line') }}</span>
+                    {% endif %}
+                    {% if not s.embedding %}
+                    <span title="无向量：语义检索不可用，仅能按标签关键词匹配">{{ badge('无向量', 'line') }}</span>
+                    {% endif %}
                 </div>
-                {% if s.tags %}
-                <p class="ui-note">{{ s.tags | join(' / ') }}</p>
-                {% endif %}
-                {% if s.description %}
-                <p class="ui-note">{{ s.description[:60] }}</p>
-                {% endif %}
-                <p class="ui-note u-fs-75">
-                    使用 {{ s.usage_count }} 次{% if not s.embedding %} · 无向量{% endif %}
-                </p>
+                {# 固定保留标签与描述两行高度，缺字段也不会让卡片结构错位 #}
+                <p class="ui-note ui-asset-tags"
+                   title="标签：{{ s.tags | join(' / ') if s.tags else '无' }}">{{ s.tags | join(' / ') }}</p>
+                <p class="ui-note ui-asset-desc"
+                   title="描述：{{ s.description or '无' }}">{{ s.description }}</p>
             </div>
         </div>
         <div class="ui-tile__actions">
-            <form method="post" action="/admin/stickers/{{ s.id }}/set-group" class="u-m0 ui-cluster--fill">
-                <select class="ui-select ui-select--xs" name="group_id" onchange="this.form.submit()">
+            <form method="post" action="/admin/stickers/{{ s.id }}/set-group" class="u-m0">
+                <input type="hidden" name="next" value="{{ return_url }}">
+                <select class="ui-select ui-select--xs" name="group_id" onchange="this.form.submit()"
+                        aria-label="调整「{{ s.name }}」的分组"
+                        title="当前分组：{{ ns.group_name or '未归组' }}（点击调整）">
                     <option value="" {% if not s.group_id %}selected{% endif %}>未归组</option>
                     {% for g in groups %}
                     <option value="{{ g.id }}" {% if s.group_id == g.id %}selected{% endif %} {% if not g.enabled %}disabled{% endif %}>{{ g.name }}</option>
                     {% endfor %}
                 </select>
             </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/toggle" class="u-m0">
-                <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
-                    {{ '停用' if s.enabled else '启用' }}
-                </button>
-            </form>
-            <form method="post" action="/admin/stickers/{{ s.id }}/delete"
-                  onsubmit="return confirm('确认删除该表情包？');" class="u-m0">
-                <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
-            </form>
+            <div class="ui-asset-actions-row">
+                <span class="ui-note u-fs-75"
+                      title="来源：{{ '上传' if s.source == 'upload' else '预置' }} · 使用 {{ s.usage_count }} 次{% if not s.embedding %} · 无向量{% endif %}">{{ '上传' if s.source == 'upload' else '预置' }} · 使用 {{ s.usage_count }} 次</span>
+                <div class="ui-cluster ui-cluster--nowrap">
+                    <form method="post" action="/admin/stickers/{{ s.id }}/toggle" class="u-m0">
+                        <input type="hidden" name="next" value="{{ return_url }}">
+                        <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs">
+                            {{ '停用' if s.enabled else '启用' }}
+                        </button>
+                    </form>
+                    <form method="post" action="/admin/stickers/{{ s.id }}/delete" class="u-m0"
+                          data-confirm="确认删除该表情包？" data-danger>
+                        <input type="hidden" name="next" value="{{ return_url }}">
+                        <button type="submit" class="ui-btn ui-btn--ghost ui-btn--xs ui-btn--danger">删除</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </section>
     {% endfor %}
 </div>
+
+{% if total_pages > 1 %}
+<nav class="ui-pagination" aria-label="表情包分页">
+    {% for p in range(1, total_pages + 1) %}
+    <a href="/admin/stickers?{% if full_query %}{{ full_query }}&{% endif %}page={{ p }}"
+       class="{% if p == page %}is-current{% endif %}" title="第 {{ p }} 页">{{ p }}</a>
+    {% endfor %}
+</nav>
+{% endif %}
 {% endif %}
 {% endblock %}

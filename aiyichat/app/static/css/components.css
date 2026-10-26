@@ -368,13 +368,78 @@ table.ui-table th[aria-sort="descending"]::after { content: "↓"; }
     padding: var(--space-2) var(--space-3);
 }
 .ui-chip-name { font-weight: 600; font-size: .88rem; text-decoration: none; }
-/* 图库网格：比通用 tile 更窄，便于缩略图密集陈列 */
-.ui-grid--asset { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+/* 图库网格：比通用 tile 更窄，便于缩略图密集陈列；
+   stretch 让同一行卡片等高，卡片内部再把操作行压到底部 */
+.ui-grid.ui-grid--asset {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    align-items: stretch;
+}
 /* 弱化态：已停用的分组/表情，整块降透明但不隐藏 */
 .u-dim { opacity: .55; }
-/* 极小号的行内下拉/按钮，用于卡片内的就地操作 */
-.ui-select--xs { min-height: 28px; padding: 2px var(--space-2); font-size: .78rem; margin: 0; width: 100%; }
-.ui-btn--xs { height: 26px; padding: 0 var(--space-2); font-size: .78rem; }
+
+/* ── 表情包卡片：等高 + 固定信息行数 ─────────────────── */
+.ui-asset-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-4);
+}
+.ui-asset-card .ui-tile { flex: 1 1 auto; min-height: 0; }
+.ui-asset-card .ui-tile__thumb {
+    width: 88px; height: 88px;
+    padding: 4px;
+    object-fit: contain;
+    background: var(--surface-2);
+}
+.ui-asset-card .ui-tile__body { gap: var(--space-1); }
+/* 名称 / 标签 / 描述都只占固定行数，超出省略；完整内容见 title 悬浮提示 */
+.ui-asset-name,
+.ui-asset-tags,
+.ui-asset-desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    cursor: help;
+}
+.ui-asset-name { -webkit-line-clamp: 1; font-size: .9rem; }
+.ui-asset-tags { -webkit-line-clamp: 1; min-height: 1.5em; }
+.ui-asset-desc { -webkit-line-clamp: 2; min-height: 3em; }
+/* 行距统一交给 ui-stack 的 gap，避免信息越多间距越散 */
+.ui-asset-card .ui-tile__body > .ui-note { margin: 0; }
+/* 徽章行单行排布，不随名称长度换行 */
+.ui-asset-badges { flex-wrap: nowrap; gap: var(--space-1); overflow: hidden; }
+.ui-asset-badges > * { flex: none; }
+/* 操作区固定两行：分组下拉占满第一行，使用次数与按钮在第二行 */
+.ui-asset-card .ui-tile__actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    margin-top: auto;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+.ui-asset-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.ui-asset-actions-row .ui-note {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ui-asset-actions-row .ui-cluster { flex: none; }
+/* 表单做成固定 26px 的 flex 容器，避免表单默认行高把按钮行撑高 */
+.ui-asset-actions-row form { display: flex; align-items: center; height: 26px; }
+/* 极小号的行内下拉/按钮，用于卡片内的就地操作；
+   按钮用双类名提高优先级，压过后加载的 admin.css 里 [type="submit"] 的尺寸 */
+.ui-select--xs { height: 28px; min-height: 28px; padding: 2px var(--space-2); font-size: .78rem; margin: 0; width: 100%; }
+.ui-btn.ui-btn--xs { height: 26px; padding: 0 var(--space-2); font-size: .78rem; }
 
 /* 开关行：左侧文案、右侧开关，用于功能实验室一类的设置清单 */
 .ui-switch-row {

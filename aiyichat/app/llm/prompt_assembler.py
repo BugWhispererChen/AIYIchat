@@ -677,8 +677,7 @@ class PromptAssembler:
     def _render_routine_hint(profile, now_utc: datetime) -> str:
         """角色作息处境（C1）：仅当开关开启且该角色配了时段表时才产出一行文本。
 
-        时区取**角色自己的**作息时区（空则回落全局偏移）——作息属于角色的生活，
-        不该按对方时区算"角色在睡觉"。对话主链路仍用原有全局偏移，这里不动它。
+        作息时段与其他时间语义统一使用全局时区。
         结果只进动态尾段（独立 system 消息），绝不进 system 前缀，避免击穿前缀缓存。
         """
         if not settings.profile_routine_enabled:
@@ -686,7 +685,7 @@ class PromptAssembler:
         routine = getattr(profile, "life_routine", None)
         if routine is None or not getattr(routine, "segments", None):
             return ""
-        tz, _label = resolve_tz(getattr(routine, "timezone", "") or "", "")
+        tz, _label = resolve_tz()
         return render_routine_hint(routine, now_utc.astimezone(tz))
 
     @staticmethod

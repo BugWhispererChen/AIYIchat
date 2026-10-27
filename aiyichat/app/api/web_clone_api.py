@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.api.auth_api import (
     AuthError,
     require_account_service,
-    require_current_identity,
+    require_web_account,
 )
 from app.db.repositories.clone_repo import CloneFeedbackRepository
 from app.db.repositories.conversation_repo import ConversationRepository
@@ -42,7 +42,7 @@ async def submit_clone_feedback(
     message_id/profile_id。
     """
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
         service = await require_account_service(principal, payload.service_id)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

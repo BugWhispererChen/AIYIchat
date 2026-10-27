@@ -44,11 +44,9 @@ _RATE_DELETE = 3
 
 
 class ProfileUpdatePayload(BaseModel):
-    """资料更新请求体：只接受昵称 / 自我描述 / 时区三个字段。"""
+    """网页登录账号资料更新请求体。"""
 
     nickname: str = ""
-    self_description: str = ""
-    timezone: str = ""
 
 
 class PasswordChangePayload(BaseModel):
@@ -95,7 +93,7 @@ async def get_profile(request: Request) -> JSONResponse:
         return _error(exc)
     return JSONResponse(
         status_code=200,
-        content=account.profile_payload(principal.credential, principal.identity),
+        content=account.profile_payload(principal.credential, principal.account),
     )
 
 
@@ -106,10 +104,9 @@ async def update_profile(request: Request, payload: ProfileUpdatePayload) -> JSO
         principal = await _principal(request)
         _limit("account_write", principal, request, _RATE_WRITE)
         data = await account.update_profile(
-            principal.identity.id,
+            principal.credential,
+            principal.account_id,
             nickname=payload.nickname,
-            self_description=payload.self_description,
-            timezone_name=payload.timezone,
         )
     except (AuthError, RateLimited) as exc:
         return _error(exc)
@@ -187,7 +184,7 @@ async def get_quota(request: Request, order_limit: int = 20) -> JSONResponse:
         principal = await _principal(request)
     except AuthError as exc:
         return _error(exc)
-    account_id = principal.identity.account_id
+    account_id = principal.account_id
     quota = await QuotaRepository().find_by_account(account_id)
     bounded = max(1, min(order_limit, 50))
     orders = await OrderRepository().list_recent(account_id=account_id, limit=bounded)
@@ -211,7 +208,7 @@ async def get_data(request: Request) -> JSONResponse:
         return _error(exc)
     return JSONResponse(
         status_code=200,
-        content=await account.data_overview(principal.identity),
+        content=await account.data_overview(principal.account_id),
     )
 
 
@@ -224,7 +221,7 @@ async def get_memories(request: Request) -> JSONResponse:
         return _error(exc)
     return JSONResponse(
         status_code=200,
-        content={"items": await account.memories_payload(principal.identity)},
+        content={"items": await account.memories_payload(principal.account_id)},
     )
 
 
@@ -241,7 +238,7 @@ async def export_data(request: Request) -> Response:
     try:
         _limit("account_data", principal, request, _RATE_DATA)
         payload, truncated = await account.export_payload(
-            principal.credential, principal.identity
+            principal.credential, principal.account
         )
     except RateLimited as exc:
         return _error(exc)
@@ -268,7 +265,9 @@ async def clear_conversations(request: Request, payload: ConfirmPayload) -> JSON
         _limit("account_data", principal, request, _RATE_DATA)
         if not payload.confirm:
             raise AuthError("confirm_required", "请先确认清空对话记录的影响", 400)
-        stats = await account.clear_conversations(principal.identity)
+        stats = await account.clear_conversations(
+            principal.account_id, principal.username
+        )
     except (AuthError, RateLimited) as exc:
         return _error(exc)
     return JSONResponse(status_code=200, content=stats)
@@ -282,8 +281,10 @@ async def clear_memory(request: Request, service_id: str, payload: ConfirmPayloa
         _limit("account_data", principal, request, _RATE_DATA)
         if not payload.confirm:
             raise AuthError("confirm_required", "请先确认清空记忆的影响", 400)
-        service = await account.find_owned_service(principal.identity, service_id)
-        stats = await account.clear_memory(principal.identity, service)
+        service = await account.find_owned_service(principal.account_id, service_id)
+        stats = await account.clear_memory(
+            principal.account_id, principal.username, service
+        )
     except (AuthError, RateLimited) as exc:
         return _error(exc)
     return JSONResponse(status_code=200, content=stats)
@@ -303,7 +304,7 @@ async def delete_my_account(request: Request, payload: AccountDeletePayload) -> 
         ):
             raise AuthError("invalid_current_password", "当前密码不正确", 400)
         account.normalize_confirm_username(payload.username_confirm, principal.credential.username)
-        stats = await delete_account(principal.credential, principal.identity)
+        stats = await delete_account(principal.credential, principal.account_id)
     except (AuthError, RateLimited) as exc:
         return _error(exc)
     return JSONResponse(

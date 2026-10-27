@@ -1,11 +1,11 @@
 """C 端聊天渠道（Bot）自助管理的业务层。
 
-渠道是接入平台（QQ / 微信 / 网页）的实例，服务是「角色 × 渠道」的聊天单元。
-本模块集中处理可管理边界、配额、渠道身份复用、渠道 CRUD 与首个服务装配，
+渠道是接入平台（QQ / 微信 / 网页）的实例，服务 = 渠道 + 角色 + 身份。
+本模块集中处理可管理边界、配额、渠道 CRUD 与首个服务装配，
 HTTP 层只负责鉴权、参数与错误响应形状。
 
 安全边界：
-- 归属与来源一律由服务端写入，客户端只能提交名称、凭据与角色；
+- 归属与来源由服务端校验，客户端只能提交本账号身份、角色、名称与渠道凭据；
 - 管理员后台创建的 QQ / 微信渠道不进入 C 端管理面（统一 404）；
 - 凭据只写不读，响应由 API 层脱敏；
 - 删除渠道前保护「至少一个启用中的服务」。
@@ -13,7 +13,6 @@ HTTP 层只负责鉴权、参数与错误响应形状。
 
 import logging
 from typing import Literal, Optional
-from uuid import UUID
 
 from bson import ObjectId
 
@@ -23,16 +22,18 @@ from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.bot_config import BotConfigCreate, BotConfigInDB, BotConfigUpdate
-from app.models.identity import IdentityCreate, IdentityInDB
 from app.models.profile import PromptProfileInDB
-from app.models.service import ServiceCreate, ServiceInDB
+from app.models.service import ServiceInDB
 from app.services.service_cleanup import purge_service_memory
+from app.services.service_provisioning import (
+    ServiceProvisionError,
+    create_service,
+    has_external_service,
+)
 
 logger = logging.getLogger(__name__)
 
-_PLATFORM_LABELS = {"qq": "QQ", "wechat": "微信", "web": "网页"}
 _MAX_BOT_NAME_LEN = 40
-_MAX_SERVICE_NAME_LEN = 60
 
 
 class ChannelError(Exception):
@@ -78,34 +79,12 @@ def has_credentials(bot: BotConfigInDB) -> bool:
     return False
 
 
-def _is_uuid(value: str) -> bool:
-    """判断 platform_id 是否仍是占位 UUID（尚未绑定真实 openid）。"""
-    try:
-        UUID(str(value))
-        return True
-    except (ValueError, AttributeError, TypeError):
-        return False
-
-
 def _clean_name(value: str, *, field: str, max_len: int) -> str:
     """去除首尾空白并校验长度；空值由调用方决定是否允许。"""
     cleaned = value.strip()
     if len(cleaned) > max_len:
         raise ChannelError("invalid_name", f"{field}最多 {max_len} 个字符", 400)
     return cleaned
-
-
-def validate_timezone(tz_name: str) -> str:
-    """校验 IANA 时区名，合法返回空串，否则返回可读原因。"""
-    if not tz_name:
-        return ""
-    try:
-        from zoneinfo import ZoneInfo
-
-        ZoneInfo(tz_name)
-    except Exception:  # noqa: BLE001 - 名称非法与 tzdata 缺失同样归为不可用
-        return f"时区名称无效：{tz_name}"
-    return ""
 
 
 async def resolve_visible_profile(
@@ -130,22 +109,13 @@ async def resolve_visible_profile(
     return found
 
 
-async def web_quota(account_id: str, login_identity_id: str) -> dict:
-    """统一的渠道/服务配额口径。
-
-    渠道数：账号下可管理的渠道（含账号级 Web 渠道）。
-    服务数：挂在可管理渠道上的服务 + 登录账号名下的服务，按 service id 去重。
-    管理员专用渠道身份上的服务不计入，保留「管理员渠道不占网页名额」的语义。
-    """
+async def web_quota(account_id: str) -> dict:
+    """按账号可管理渠道统计自助渠道与服务配额。"""
     bots = await BotConfigRepository().list_by_account(account_id)
     managed = [b for b in bots if is_managed(b, account_id)]
     managed_ids = {b.id for b in managed}
     services = await ServiceRepository().list_by_account(account_id)
-    counted = {
-        svc.id
-        for svc in services
-        if svc.bot_id in managed_ids or svc.identity_id == login_identity_id
-    }
+    counted = {svc.id for svc in services if svc.bot_id in managed_ids}
     return {
         "limit": settings.web_max_services,
         "bots": len(managed),
@@ -153,11 +123,11 @@ async def web_quota(account_id: str, login_identity_id: str) -> dict:
     }
 
 
-async def _assert_create_quota(account_id: str, login_identity_id: str) -> dict:
+async def _assert_create_quota(account_id: str) -> dict:
     """创建前校验自助能力与配额。"""
     if settings.web_max_services <= 0:
         raise ChannelError("web_service_disabled", "自助服务功能未开放", 403)
-    quota = await web_quota(account_id, login_identity_id)
+    quota = await web_quota(account_id)
     limit = quota["limit"]
     if quota["bots"] >= limit:
         raise ChannelError(
@@ -172,34 +142,6 @@ async def _assert_create_quota(account_id: str, login_identity_id: str) -> dict:
             409,
         )
     return quota
-
-
-async def resolve_channel_identity(
-    account_id: str, platform: Literal["qq", "wechat"], username: str
-) -> tuple[IdentityInDB, bool]:
-    """取账号下该平台的渠道身份，没有则新建。
-
-    复用同一平台身份是为了让同一账号的多个同平台渠道都能服务同一个 openid：
-    引擎按 (identity_id, bot_id) 找服务，若每个渠道各建占位身份，同一发送者
-    只会命中其中一个渠道。返回 (身份, 是否本次新建)。
-    """
-    identities = await IdentityRepository().list_by_account(account_id, limit=200)
-    candidates = [i for i in identities if i.platform == platform]
-    bound = [i for i in candidates if not _is_uuid(i.platform_id)]
-    if bound:
-        return bound[0], False
-    if candidates:
-        return candidates[0], False
-    label = _PLATFORM_LABELS.get(platform, platform)
-    created = await IdentityRepository().create(
-        IdentityCreate(
-            account_id=account_id,
-            name=f"{username}（{label}）",
-            platform=platform,
-            nickname=username,
-        )
-    )
-    return created, True
 
 
 async def _delete_bot_record(bot: BotConfigInDB) -> None:
@@ -247,48 +189,33 @@ async def _create_bot_record(
     )
 
 
-def _default_service_name(profile_name: str, bot_name: str) -> str:
-    """服务默认名：角色 · 渠道，便于聊天页区分同名角色。"""
-    return f"{profile_name} · {bot_name}"[:_MAX_SERVICE_NAME_LEN]
-
-
 async def create_managed_bot(
     *,
     account_id: str,
-    login_identity_id: str,
-    username: str,
     platform: Literal["qq", "wechat", "web"],
     name: str,
+    identity_id: str,
     profile_id: str,
     service_name: str = "",
-    timezone: str = "",
     sandbox_mode: bool = True,
     app_id: str = "",
     app_secret: str = "",
 ) -> tuple[BotConfigInDB, ServiceInDB, PromptProfileInDB]:
-    """创建 C 端渠道，并同事务装配首个服务。"""
+    """创建 C 端渠道，并通过共享装配核心创建首个服务。"""
     clean_name = _clean_name(name, field="渠道名称", max_len=_MAX_BOT_NAME_LEN)
     if not clean_name:
         raise ChannelError("invalid_name", "请填写渠道名称", 400)
-
     profile = await resolve_visible_profile(account_id, profile_id)
-    tz_err = validate_timezone(timezone.strip())
-    if tz_err:
-        raise ChannelError("invalid_timezone", tz_err, 400)
-
     app_id = app_id.strip()
     app_secret = app_secret.strip()
     if platform == "qq" and bool(app_id) != bool(app_secret):
         raise ChannelError(
             "invalid_credentials", "AppID 与 AppSecret 需同时填写", 400
         )
-
-    await _assert_create_quota(account_id, login_identity_id)
+    await _assert_create_quota(account_id)
 
     bot: Optional[BotConfigInDB] = None
     service: Optional[ServiceInDB] = None
-    identity_created = False
-    identity_id = login_identity_id
     try:
         bot = await _create_bot_record(
             account_id=account_id,
@@ -298,46 +225,26 @@ async def create_managed_bot(
             app_secret=app_secret,
             sandbox_mode=sandbox_mode,
         )
-
-        if platform == "web":
-            identity_id = login_identity_id
-        else:
-            identity, identity_created = await resolve_channel_identity(
-                account_id, platform, username
-            )
-            identity_id = identity.id
-
-        service = await ServiceRepository().create(
-            ServiceCreate(
-                name=(
-                    _clean_name(
-                        service_name,
-                        field="服务名称",
-                        max_len=_MAX_SERVICE_NAME_LEN,
-                    )
-                    or _default_service_name(profile.name, bot.name)
-                ),
+        try:
+            result = await create_service(
                 account_id=account_id,
-                identity_id=identity_id,
                 bot_id=bot.id,
-                profile_id=profile.id,
-                timezone=timezone.strip(),
+                identity_id=identity_id,
+                profile_ref=profile.id,
+                name=service_name,
             )
-        )
+        except ServiceProvisionError as exc:
+            raise ChannelError(exc.code, exc.message, exc.status_code) from exc
+        service = result.service
 
-        # 并发兜底：插入后复核，超额则整体回滚
-        quota = await web_quota(account_id, login_identity_id)
+        quota = await web_quota(account_id)
         if quota["bots"] > quota["limit"] or quota["services"] > quota["limit"]:
             raise ChannelError(
                 "quota_exceeded", "渠道或服务数量已达上限，请刷新后重试", 409
             )
-
         logger.info(
             "C 端账号 %s 创建渠道 %s（%s）并装配服务 %s",
-            account_id,
-            bot.name,
-            platform,
-            service.name,
+            account_id, bot.name, platform, service.name,
         )
         return bot, service, profile
     except Exception:
@@ -345,8 +252,6 @@ async def create_managed_bot(
             await ServiceRepository().delete(service.id)
         if bot is not None:
             await _delete_bot_record(bot)
-        if identity_created:
-            await IdentityRepository().delete(identity_id)
         raise
 
 
@@ -391,14 +296,8 @@ async def get_managed_bot(account_id: str, bot_id: str) -> BotConfigInDB:
     return bot
 
 
-async def delete_managed_bot(
-    account_id: str, bot_id: str, login_identity_id: str = ""
-) -> int:
-    """删除 C 端渠道：级联删服务，保护最后一个活跃服务。
-
-    `login_identity_id` 是当前网页登录账号：账号下的渠道服务可能挂在别的身份上，
-    仅按账号统计会让登录账号失去最后一个活跃服务后被 no_service 锁死。
-    """
+async def delete_managed_bot(account_id: str, bot_id: str) -> int:
+    """删除渠道并级联删除服务，保护账号最后一个活跃服务。"""
     bot = await get_managed_bot(account_id, bot_id)
     repo = ServiceRepository()
     services = await repo.list_by_bot(bot.id)
@@ -412,23 +311,7 @@ async def delete_managed_bot(
             "至少需要保留一个启用中的服务才能继续聊天",
             409,
         )
-    if login_identity_id:
-        deleting_login_active = any(
-            svc.identity_id == login_identity_id and svc.is_active
-            for svc in services
-        )
-        own = await repo.list_by_identity(login_identity_id)
-        own_active_after = [
-            svc for svc in own if svc.bot_id != bot.id and svc.is_active
-        ]
-        if deleting_login_active and not own_active_after:
-            raise ChannelError(
-                "last_active_service",
-                "当前账号至少需要保留一个启用中的服务才能继续聊天",
-                409,
-            )
 
-    # 网页渠道使用登录账号，不能重置；只有 QQ / 微信渠道的专用身份才清理绑定
     identity_ids = (
         {svc.identity_id for svc in services} if bot.platform != "web" else set()
     )
@@ -441,27 +324,21 @@ async def delete_managed_bot(
         ) from exc
     for svc in services:
         await repo.delete(svc.id)
-
     await _delete_bot_record(bot)
 
     identity_repo = IdentityRepository()
     for identity_id in identity_ids:
-        remaining = await repo.count_by_identity(identity_id)
-        if remaining == 0:
+        if not await has_external_service(identity_id):
             await identity_repo.reset_platform_binding(identity_id, bot.id)
-
     try:
         from app.services.bot_qr_service import drop_qq_session
 
         drop_qq_session(bot.id)
     except Exception:  # noqa: BLE001 - 扫码会话清理失败不应阻断删除
         logger.warning("清理渠道 %s 的扫码会话失败", bot.id, exc_info=True)
-
     logger.info(
         "C 端账号 %s 删除渠道 %s，级联删除 %d 个服务",
-        account_id,
-        bot.name,
-        len(services),
+        account_id, bot.name, len(services),
     )
     return len(services)
 
@@ -469,29 +346,16 @@ async def delete_managed_bot(
 async def create_service_for_bot(
     *,
     account_id: str,
-    login_identity_id: str,
-    username: str,
     bot_id: str,
+    identity_id: str,
     profile_id: str,
     name: str = "",
-    timezone: str = "",
 ) -> tuple[ServiceInDB, PromptProfileInDB, BotConfigInDB]:
-    """在指定渠道上创建服务，供 /api/web/services 复用。"""
+    """在可管理渠道上创建服务，并在创建前后复核自助配额。"""
     if settings.web_max_services <= 0:
-        raise ChannelError("web_service_disabled", "自建服务功能未开放", 403)
-
+        raise ChannelError("web_service_disabled", "自助服务功能未开放", 403)
     bot = await get_managed_bot(account_id, bot_id)
-    if bot.platform != "web" and await ServiceRepository().count_by_bot(bot.id) > 0:
-        raise ChannelError(
-            "bot_has_service", "该渠道已有服务，一个渠道只允许创建一个服务", 409
-        )
-
-    profile = await resolve_visible_profile(account_id, profile_id)
-    tz_err = validate_timezone(timezone.strip())
-    if tz_err:
-        raise ChannelError("invalid_timezone", tz_err, 400)
-
-    quota = await web_quota(account_id, login_identity_id)
+    quota = await web_quota(account_id)
     if quota["services"] >= quota["limit"]:
         raise ChannelError(
             "service_quota_exceeded",
@@ -499,48 +363,34 @@ async def create_service_for_bot(
             409,
         )
 
-    identity_created = False
-    identity_id = login_identity_id
-    if bot.platform != "web":
-        identity, identity_created = await resolve_channel_identity(
-            account_id, bot.platform, username
-        )
-        identity_id = identity.id
-
+    service: Optional[ServiceInDB] = None
     try:
-        service = await ServiceRepository().create(
-            ServiceCreate(
-                name=(
-                    _clean_name(
-                        name, field="服务名称", max_len=_MAX_SERVICE_NAME_LEN
-                    )
-                    or _default_service_name(profile.name, bot.name)
-                ),
+        try:
+            result = await create_service(
                 account_id=account_id,
-                identity_id=identity_id,
                 bot_id=bot.id,
-                profile_id=profile.id,
-                timezone=timezone.strip(),
+                identity_id=identity_id,
+                profile_ref=profile_id,
+                name=name,
             )
-        )
-        quota_after = await web_quota(account_id, login_identity_id)
+        except ServiceProvisionError as exc:
+            raise ChannelError(exc.code, exc.message, exc.status_code) from exc
+        service = result.service
+        quota_after = await web_quota(account_id)
         if quota_after["services"] > quota_after["limit"]:
-            await ServiceRepository().delete(service.id)
             raise ChannelError(
                 "quota_exceeded", "服务数量已达上限，请刷新后重试", 409
             )
     except Exception:
-        if identity_created:
-            await IdentityRepository().delete(identity_id)
+        if service is not None:
+            await ServiceRepository().delete(service.id)
         raise
 
     logger.info(
         "C 端账号 %s 在渠道 %s 上创建服务 %s",
-        account_id,
-        bot.name,
-        service.name,
+        account_id, bot.name, service.name,
     )
-    return service, profile, bot
+    return service, result.profile, bot
 
 
 async def list_managed_bots(account_id: str) -> list[BotConfigInDB]:

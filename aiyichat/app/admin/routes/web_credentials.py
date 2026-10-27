@@ -16,7 +16,6 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
-from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
 from app.models.web_credential import CredentialStatus, WebCredentialInDB
@@ -37,23 +36,16 @@ def _list_redirect(filter_status: str = "pending", q: str = "", **params: str) -
 
 
 async def _build_rows(credentials: list[WebCredentialInDB]) -> list[dict[str, Any]]:
-    """为每条身份补齐身份与额度信息，供表格展示。
-
-    网页账号与所属账号是 1:1，故按身份关联的 identity 反查其账号额度即可。
-    """
+    """按凭据直接归属的账号补齐额度。"""
     rows: list[dict[str, Any]] = []
-    identities = IdentityRepository()
     quotas = QuotaRepository()
-    for ident in credentials:
-        identity = await identities.find_by_id(ident.identity_id) if ident.identity_id else None
-        quota = await quotas.find_by_account(identity.account_id) if identity else None
-        rows.append(
-            {
-                "credential": ident,
-                "identity": identity,
-                "quota": quota,
-            }
+    for credential in credentials:
+        quota = (
+            await quotas.find_by_account(credential.account_id)
+            if credential.account_id
+            else None
         )
+        rows.append({"credential": credential, "quota": quota})
     return rows
 
 
@@ -229,18 +221,15 @@ async def adjust_quota(
 ):
     """调整该网页账号所属账号的额度上限（保持已用量与有效期不变）。"""
     repo = WebCredentialRepository()
-    ident = await repo.find_by_id(credential_id)
-    if ident is None or not ident.identity_id:
+    credential = await repo.find_by_id(credential_id)
+    if credential is None or not credential.account_id:
         return _list_redirect("all", error="not_found")
-    identity = await IdentityRepository().find_by_id(ident.identity_id)
-    if identity is None:
-        return _list_redirect("all", error="no_account")
     quotas = QuotaRepository()
-    existing = await quotas.find_by_account(identity.account_id)
+    existing = await quotas.find_by_account(credential.account_id)
     if existing is None:
         return _list_redirect("all", error="no_quota")
     await quotas.create_or_update(
-        identity.account_id,
+        credential.account_id,
         AccountQuotaUpdate(
             text_quota=_scaled(existing.text_quota, text_limit),
             voice_quota=_scaled(existing.voice_quota, voice_limit),

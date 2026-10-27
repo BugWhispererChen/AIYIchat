@@ -42,7 +42,7 @@ class WebCredentialCreate(BaseModel):
     """创建网页账号。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    identity_id: str = ""  # 关联 identities.id；注册先占用户名，四件套建齐后回填
+    account_id: str = ""  # 直接关联 accounts.id；注册创建账号后回填
     username: str
     password_hash: str
     status: CredentialStatus = "pending"
@@ -70,7 +70,7 @@ class WebCredentialInDB(WebCredentialCreate):
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
         # 兼容存量数据：可选字段缺失时回落默认值
-        doc.setdefault("identity_id", "")
+        doc.setdefault("account_id", "")
         doc.setdefault("failed_count", 0)
         doc.setdefault("locked_until", None)
         doc.setdefault("reviewed_by", "")

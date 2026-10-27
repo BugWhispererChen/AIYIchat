@@ -1,5 +1,5 @@
-/* 聊天服务页：渠道、服务与角色三分区。
-   渠道 = 接入平台；服务 = 角色 × 渠道；角色数据由 web-roles.js 负责。 */
+/* 聊天服务页：渠道、服务与角色管理。
+   服务 = 渠道 + 角色 + 身份；网页登录只确定账号归属。 */
 (function () {
     'use strict';
 
@@ -16,6 +16,7 @@
     let bots = [];
     let services = [];
     let profiles = [];
+    let identities = [];
     let quota = { limit: 0, bots: 0, services: 0 };
     let canCreateBot = false;
     let canCreateService = false;
@@ -86,10 +87,11 @@
 
     /* ── 数据加载与概览 ───────────────────────────── */
     async function fetchAll() {
-        const [botRes, svcRes, profRes] = await Promise.all([
+        const [botRes, svcRes, profRes, identityRes] = await Promise.all([
             window.WebAuth.call('/api/web/bots'),
             window.WebAuth.call('/api/web/services'),
-            window.WebAuth.call('/api/web/profiles')
+            window.WebAuth.call('/api/web/profiles'),
+            window.WebAuth.call('/api/web/identities')
         ]);
         if (!botRes.ok) {
             show('err', botRes.detail || '渠道读取失败');
@@ -101,7 +103,9 @@
         canCreateService = !!botRes.data.can_create_service;
         services = svcRes.ok ? (svcRes.data.items || []) : [];
         profiles = profRes.ok ? (profRes.data.items || []) : [];
+        identities = identityRes.ok ? (identityRes.data.items || []) : [];
         if (!svcRes.ok) show('err', svcRes.detail || '服务读取失败');
+        if (!identityRes.ok) show('err', identityRes.detail || '身份读取失败');
         renderSummary();
         renderChannels();
         renderServices();
@@ -188,12 +192,59 @@
         select.disabled = !!editing;
     }
 
+    function identityUnavailable(identity, bot) {
+        if (identity.is_blocked) return '已停用';
+        if (!bot || bot.platform === 'web') return '';
+        if (identity.bound) return '已绑定平台账号';
+        if (identity.platform && identity.platform !== bot.platform) return '平台不一致';
+        if (identity.external_bot_id && identity.external_bot_id !== bot.id) return '已用于其他外部渠道';
+        if (identity.external_platform && identity.external_platform !== bot.platform) return '已用于其他平台';
+        return '';
+    }
+
+    function usableIdentities(bot) {
+        return identities.filter(function (identity) {
+            return !identityUnavailable(identity, bot);
+        });
+    }
+
+    function fillIdentitySelect(select, bot, selectedId, editing) {
+        if (!select) return;
+        clear(select);
+        identities.forEach(function (identity) {
+            const reason = identityUnavailable(identity, bot);
+            const option = document.createElement('option');
+            option.value = identity.id;
+            option.textContent = identity.name + (reason ? '（' + reason + '）' : '');
+            option.disabled = !!reason;
+            select.appendChild(option);
+        });
+        if (!identities.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = '暂无身份，请先在下方新建普通身份';
+            select.appendChild(option);
+        }
+        if (selectedId) select.value = selectedId;
+        if (!selectedId || select.selectedIndex < 0) {
+            const first = usableIdentities(bot)[0];
+            if (first) select.value = first.id;
+        }
+        select.disabled = !!editing;
+    }
+
     function syncEditors() {
         const botEditor = el('bot-editor');
         if (botEditor && !botEditor.hidden) {
             fillProfileSelect(el('bot-profile'), el('bot-profile').value);
+            fillIdentitySelect(
+                el('bot-identity'), { platform: botPlatform }, el('bot-identity').value, false
+            );
             const createBtn = el('bot-create-btn');
-            if (createBtn) createBtn.disabled = !activeProfiles().length;
+            if (createBtn) {
+                createBtn.disabled = !activeProfiles().length
+                    || !usableIdentities({ platform: botPlatform }).length;
+            }
         }
         const svcEditor = el('service-editor');
         if (svcEditor && !svcEditor.hidden) {
@@ -206,10 +257,19 @@
                 !!editingService,
                 editingService
             );
+            const selectedBot = bots.find(function (bot) { return bot.id === el('svc-bot').value; });
+            fillIdentitySelect(
+                el('svc-identity'),
+                selectedBot,
+                editingService ? editingService.identity_id : el('svc-identity').value,
+                !!editingService
+            );
             const saveBtn = el('svc-save-btn');
             if (saveBtn) {
                 saveBtn.disabled = !activeProfiles().length
-                    || (!editingService && !availableBotsForService());
+                    || (!editingService && (
+                        !availableBotsForService() || !usableIdentities(selectedBot).length
+                    ));
             }
         }
     }
@@ -529,6 +589,7 @@
                 ? '例如：QQ 工作助手'
                 : platform === 'wechat' ? '例如：微信助手' : '例如：网页助手';
         }
+        syncEditors();
     }
 
     function openBotCreate() {
@@ -536,12 +597,15 @@
         el('bot-edit').hidden = true;
         el('bot-editor').hidden = false;
         el('bot-name').value = '';
-        el('bot-tz').value = '';
         el('bot-sandbox').checked = true;
         setBotPlatform('qq');
         fillProfileSelect(el('bot-profile'), '');
+        fillIdentitySelect(el('bot-identity'), { platform: botPlatform }, '', false);
         const createBtn = el('bot-create-btn');
-        if (createBtn) createBtn.disabled = !activeProfiles().length;
+        if (createBtn) {
+            createBtn.disabled = !activeProfiles().length
+                || !usableIdentities({ platform: botPlatform }).length;
+        }
         el('bot-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
         el('bot-name').focus();
     }
@@ -549,14 +613,16 @@
     async function createBot() {
         const name = el('bot-name').value.trim();
         const profileId = el('bot-profile').value;
+        const identityId = el('bot-identity').value;
         if (!name) { show('err', '请填写渠道名称'); return; }
+        if (!identityId) { show('err', '请选择首个服务的身份'); return; }
         if (!profileId) { show('err', '请选择首个服务的角色'); return; }
 
         const payload = {
             platform: botPlatform,
             name: name,
+            identity_id: identityId,
             profile_id: profileId,
-            timezone: el('bot-tz').value.trim(),
             sandbox_mode: el('bot-sandbox').checked
         };
         const button = el('bot-create-btn');
@@ -659,13 +725,13 @@
             meta.className = 'u-muted u-fs-82';
             const parts = [
                 '扮演：' + (svc.profile_name || '（角色已失效）'),
+                '身份：' + (svc.identity_name || '（身份已失效）'),
                 '渠道：' + platformName(svc.bot_platform) + ' · ' + (svc.bot_name || '未命名渠道')
             ];
             if (svc.bot_manageable === false) parts.push('管理员渠道');
             if (svc.bot_state && svc.bot_state !== 'ready' && svc.bot_state !== 'online') {
                 parts.push('渠道' + stateLabel(svc.bot_state));
             }
-            if (svc.timezone) parts.push(svc.timezone);
             meta.textContent = parts.join(' · ');
             grow.appendChild(name);
             grow.appendChild(meta);
@@ -710,16 +776,22 @@
             !!svc,
             svc
         );
+        const selectedBot = bots.find(function (bot) {
+            return bot.id === el('svc-bot').value;
+        });
+        fillIdentitySelect(
+            el('svc-identity'), selectedBot, svc ? svc.identity_id : '', !!svc
+        );
         el('svc-name').value = svc ? svc.name : '';
-        el('svc-tz').value = svc ? (svc.timezone || '') : '';
 
         const title = el('service-editor').querySelector('.ui-card-title');
         if (title) title.textContent = svc ? '编辑服务：' + svc.name : '新建服务';
 
         const hasProfiles = activeProfiles().length > 0;
         const canPickBot = !!svc || availableBotsForService();
+        const canPickIdentity = !!svc || usableIdentities(selectedBot).length > 0;
         const saveBtn = el('svc-save-btn');
-        saveBtn.disabled = !hasProfiles || !canPickBot;
+        saveBtn.disabled = !hasProfiles || !canPickBot || !canPickIdentity;
         el('svc-bot-help').textContent = svc
             ? '服务创建后不可更换渠道；如需更换请删除后重建。'
             : canPickBot
@@ -735,8 +807,7 @@
         if (!profileId) { show('err', '请选择扮演的角色'); return; }
         const payload = {
             profile_id: profileId,
-            name: el('svc-name').value.trim(),
-            timezone: el('svc-tz').value.trim()
+            name: el('svc-name').value.trim()
         };
         let result;
         if (editingService) {
@@ -750,8 +821,11 @@
             );
         } else {
             const botId = el('svc-bot').value;
+            const identityId = el('svc-identity').value;
             if (!botId) { show('err', '请选择渠道'); return; }
+            if (!identityId) { show('err', '请选择身份'); return; }
             payload.bot_id = botId;
+            payload.identity_id = identityId;
             result = await window.WebAuth.call('/api/web/services', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -789,6 +863,39 @@
         await fetchAll();
     }
 
+    async function createIdentity() {
+        const name = el('identity-new-name').value.trim();
+        if (!name) { show('err', '请填写身份名称'); return; }
+        const button = el('identity-create-btn');
+        button.disabled = true;
+        let result;
+        try {
+            result = await window.WebAuth.call('/api/web/identities', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    nickname: el('identity-new-nickname').value.trim(),
+                    self_description: el('identity-new-desc').value.trim(),
+                    is_minor: el('identity-new-minor').checked
+                })
+            });
+        } finally {
+            button.disabled = false;
+        }
+        if (!result.ok) { show('err', result.detail || '创建身份失败'); return; }
+        el('identity-new-name').value = '';
+        el('identity-new-nickname').value = '';
+        el('identity-new-desc').value = '';
+        el('identity-new-minor').checked = false;
+        show('ok', '普通身份已创建，可用于任意渠道的服务。');
+        await fetchAll();
+        ['svc-identity', 'bot-identity'].forEach(function (id) {
+            const select = el(id);
+            if (select && !select.disabled) select.value = result.data.id;
+        });
+    }
+
     /* ── 事件绑定与首屏 ───────────────────────────── */
     document.querySelectorAll('[data-svc-tab]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -821,6 +928,8 @@
         editingService = null;
     });
     el('svc-save-btn').addEventListener('click', saveService);
+    el('svc-bot').addEventListener('change', syncEditors);
+    el('identity-create-btn').addEventListener('click', createIdentity);
 
     window.addEventListener('web-roles-updated', function () {
         fetchAll().catch(function (e) {

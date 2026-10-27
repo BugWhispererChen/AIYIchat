@@ -109,9 +109,7 @@ class ProactiveScheduler:
     def _is_quiet_hours(self, service: object = None, identity: object = None) -> bool:
         """判断当前是否处于免打扰时段（**对方本地时区**，配置驱动，默认 22:00-08:00）。
 
-        时区走解析链 service.timezone → user.timezone → 全局默认偏移：
-        用全局偏移判"深夜别打扰"，会给海外或上夜班的人在当地凌晨发消息，
-        既扰人，也暴露角色并不关心对方身在何处。
+        免打扰与对话时间感知统一使用全局 UTC 偏移。
 
         处于该时段时本轮跳过发送，等待下一轮扫描；白天恢复后自动触发。
         start == end 视为未启用免打扰。
@@ -120,10 +118,7 @@ class ProactiveScheduler:
         end = settings.proactive_quiet_hour_end
         if start == end:
             return False
-        tz, _label = resolve_tz(
-            getattr(service, "timezone", "") or "",
-            getattr(identity, "timezone", "") or "",
-        )
+        tz, _label = resolve_tz()
         hour = datetime.now(tz).hour
         if start > end:
             # 跨午夜场景（如 22~8）：>=start 或 <end 都视为免打扰
@@ -173,10 +168,7 @@ class ProactiveScheduler:
 
     def _counterparty_tz(self, service, identity):
         """对方本地时区（与免打扰共用同一条解析链，避免两处口径分叉）。"""
-        tz, _label = resolve_tz(
-            getattr(service, "timezone", "") or "",
-            getattr(identity, "timezone", "") or "",
-        )
+        tz, _label = resolve_tz()
         return tz
 
     async def _unanswered_streak(self, service, identity) -> int:
@@ -638,17 +630,12 @@ class ProactiveScheduler:
     ) -> tuple[datetime, str, str]:
         """获取对方本地时间与时间感知提示（关怀型/分享型共用）。
 
-        时区走解析链 service.timezone → user.timezone → 全局默认偏移，
-        与免打扰判定用同一个时区，避免出现"按 UTC+8 判定不深夜、
-        却按对方真实时区说这么晚还没睡"的自相矛盾。
+        与免打扰判定共用全局时区，避免不同时间语义互相矛盾。
 
         Returns:
             (对方本地当前时间, 时间段词汇, 该时间段的生成提示)
         """
-        tz, _label = resolve_tz(
-            getattr(service, "timezone", "") or "",
-            getattr(identity, "timezone", "") or "",
-        )
+        tz, _label = resolve_tz()
         identity_now = datetime.now(tz)
         current_hour = identity_now.hour
         if 0 <= current_hour < 5:

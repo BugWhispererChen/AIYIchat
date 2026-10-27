@@ -47,78 +47,35 @@ def _default_tz_offset():
 
 
 class TestResolveTz:
-    """时区解析链：service → user → 全局默认偏移。"""
+    """全系统只读取后台全局 UTC 偏移。"""
 
-    def test_service_timezone_wins(self) -> None:
-        """service.timezone 优先于 user.timezone。"""
-        tz, name = resolve_tz(
-            service_timezone="America/New_York", identity_timezone="Asia/Shanghai"
-        )
-        assert name == "America/New_York"
-
-    def test_user_timezone_when_service_empty(self) -> None:
-        """service 为空时回落 user.timezone。"""
-        tz, name = resolve_tz(service_timezone="", identity_timezone="Asia/Tokyo")
-        assert name == "Asia/Tokyo"
-
-    def test_fallback_to_global_offset(self) -> None:
-        """两者均空时回落全局默认偏移，展示名为 UTC+08:00。"""
+    def test_global_offset(self) -> None:
         tz, name = resolve_tz()
         assert name == "UTC+08:00"
+        assert tz.utcoffset(None) == timedelta(hours=8)
 
-    def test_invalid_name_falls_back(self) -> None:
-        """无效时区名静默回落固定偏移，不抛异常。"""
-        tz, name = resolve_tz(identity_timezone="Mars/Olympus")
-        assert name == "UTC+08:00"
+    def test_offset_change_takes_effect(self) -> None:
+        settings.default_timezone_offset = -5
+        tz, name = resolve_tz()
+        assert name == "UTC-05:00"
+        assert tz.utcoffset(None) == timedelta(hours=-5)
 
-    def test_invalid_name_warns_once(self) -> None:
-        """同一无效时区名只 warning 一次，避免日志洪水。"""
-        from app.conversation import time_context
-
-        time_context._warned_tz_names.discard("Mars/Olympus")
-        with patch.object(time_context.logger, "warning") as mock_warn:
-            resolve_tz(identity_timezone="Mars/Olympus")
-            resolve_tz(identity_timezone="Mars/Olympus")
-            resolve_tz(identity_timezone="Mars/Olympus")
-        assert mock_warn.call_count == 1
-
-    def test_tzdata_missing_falls_back(self) -> None:
-        """模拟 tzdata 缺失（ZoneInfo 抛异常）→ 回落固定偏移。"""
-        with patch("zoneinfo.ZoneInfo", side_effect=Exception("no tzdata")):
-            tz, name = resolve_tz(identity_timezone="America/New_York")
-        assert name == "UTC+08:00"
+    def test_offset_is_clamped(self) -> None:
+        settings.default_timezone_offset = 99
+        tz, name = resolve_tz()
+        assert name == "UTC+14:00"
+        assert tz.utcoffset(None) == timedelta(hours=14)
 
 
-class TestDstHandling:
-    """夏令时自动处理（America/New_York）。"""
-
-    def test_dst_spring_forward(self) -> None:
-        """2026-03-08 02:00 夏令时开始：UTC 差值不变，本地偏移从 -5 变为 -4。"""
-        # 夏令时切换前（EST, UTC-5）
-        before = build_context(identity_timezone="America/New_York")
-        # 直接验证 ZoneInfo 的偏移在切换点前后不同
-        from zoneinfo import ZoneInfo
-
-        tz = ZoneInfo("America/New_York")
-        est = datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc).astimezone(tz)
-        edt = datetime(2026, 3, 8, 7, 0, tzinfo=timezone.utc).astimezone(tz)
-        assert est.utcoffset() == timedelta(hours=-5)
-        assert edt.utcoffset() == timedelta(hours=-4)
-        # build_context 不报错
-        assert before.tz_name == "America/New_York"
+class TestUtcIdle:
+    """idle 始终按 UTC 差值计算。"""
 
     def test_idle_uses_utc_not_local(self) -> None:
-        """idle 按 UTC 差值计算，不受夏令时影响（本地“23 小时的一天”）。"""
-        # 夏令时切换当天：本地 01:00 → 03:00（跳过 02:00），UTC 差值仍为 1 小时
-        tz_name = "America/New_York"
-        # 本地 2026-03-08 01:00 EST = UTC 06:00
         last_msg = datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc)
-        # 本地 2026-03-08 03:00 EDT = UTC 07:00（本地看似过了 2 小时，实际 1 小时）
         now = datetime(2026, 3, 8, 7, 0, tzinfo=timezone.utc)
         with patch("app.conversation.time_context.datetime") as mock_dt:
             mock_dt.now.return_value = now
-            ctx = build_context(identity_timezone=tz_name, last_identity_msg_at=last_msg)
-        # idle 必须是 UTC 差值 1 小时，而非本地 2 小时
+            ctx = build_context(last_identity_msg_at=last_msg)
         assert ctx.idle_seconds == 3600.0
         assert ctx.idle_phrase == "1 小时"
 
@@ -172,12 +129,10 @@ class TestBuildContext:
         assert ctx.idle_seconds is None
         assert ctx.idle_phrase == ""
 
-    def test_service_overrides_user(self) -> None:
-        """service.timezone 覆盖 user.timezone，体现在 tz_name 上。"""
-        ctx = build_context(
-            service_timezone="Asia/Tokyo", identity_timezone="Asia/Shanghai"
-        )
-        assert ctx.tz_name == "Asia/Tokyo"
+    def test_build_uses_global_offset(self) -> None:
+        settings.default_timezone_offset = 9
+        ctx = build_context()
+        assert ctx.tz_name == "UTC+09:00"
 
 
 class TestRender:

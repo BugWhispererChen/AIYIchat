@@ -193,7 +193,7 @@ class TestCloneFeedback:
             ]))
             try:
                 with patch.object(
-                    web_clone_api, "require_current_identity",
+                    web_clone_api, "require_web_account",
                     AsyncMock(return_value=principal),
                 ), patch.object(
                     web_clone_api, "require_account_service",

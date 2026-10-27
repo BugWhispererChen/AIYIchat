@@ -84,8 +84,6 @@
         if (!r.ok) { show('err', r.detail || '账号资料读取失败'); return; }
         profileCache = r.data;
         el('f-nickname').value = r.data.nickname || '';
-        el('f-timezone').value = r.data.timezone || '';
-        el('f-desc').value = r.data.self_description || '';
 
         var meta = el('account-meta');
         meta.textContent = '';
@@ -96,9 +94,7 @@
 
     async function saveProfile() {
         var r = await WebAuth.call(API + '/profile', json('PUT', {
-            nickname: el('f-nickname').value,
-            self_description: el('f-desc').value,
-            timezone: el('f-timezone').value
+            nickname: el('f-nickname').value
         }));
         if (!r.ok) { show('err', r.detail || '资料保存失败'); return; }
         show('ok', '资料已保存。');

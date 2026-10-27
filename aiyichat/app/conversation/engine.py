@@ -7,7 +7,7 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional, cast
 
 from bson import ObjectId
 
@@ -346,7 +346,9 @@ class ConversationEngine:
                 identity.id, self.bot_id, platform_id
             )
         else:
-            # 1.3 未找到对方 → 尝试自动绑定 openid 到该 Bot 的服务对方
+            # 网页对话必须显式指定服务身份，只有外部渠道允许首条消息绑定
+            if platform not in ("qq", "wechat"):
+                return EngineResult(text=self._no_service_message())
             service = await self.service_repo.find_active_by_bot(self.bot_id)
             if service is None:
                 logger.info(
@@ -367,9 +369,10 @@ class ConversationEngine:
                     msg += f"\n原因：{identity.block_reason}"
                 return EngineResult(text=msg)
 
-            # 判断对方是否已绑定其他真实 openid
-            if not self._is_uuid(identity.platform_id):
-                # 已绑定其他真实平台对方，拒绝
+            # 普通身份可首次绑定；已有真实 openid 或外部平台不一致时拒绝
+            if getattr(identity, "platform", None) not in (None, platform) or (
+                identity.platform_id and not self._is_uuid(identity.platform_id)
+            ):
                 logger.info(
                     "Bot=%s service already bound to platform_id=%s, "
                     "rejecting new openid=%s",
@@ -377,9 +380,11 @@ class ConversationEngine:
                 )
                 return EngineResult(text="该Bot的服务已绑定其他对方。")
 
-            # 绑定真实 openid 到管理员预创建的对方
             await self.identity_repo.bind_platform_id(
-                identity.id, platform_id, nickname
+                identity.id,
+                platform_id,
+                nickname,
+                platform=cast(Literal["qq", "wechat"], platform),
             )
             # 同步记录该 Bot 下的 openid 映射（主动消息按 Bot 路由发送目标）
             await self.identity_repo.bind_bot_openid(

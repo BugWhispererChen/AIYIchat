@@ -23,6 +23,7 @@ from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.identity_repo import IdentityRepository
+from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
@@ -126,6 +127,22 @@ async def _approve(username: str) -> str:
     assert credential is not None
     assert await auth_service.approve(credential.id, "admin") is True
     return credential.id
+
+
+async def _service_for_username(username: str):
+    credential = await WebCredentialRepository().find_by_username(username)
+    assert credential is not None
+    services = await ServiceRepository().list_by_account(credential.account_id)
+    assert len(services) == 1
+    return services[0]
+
+
+async def _identity_for_username(username: str):
+    credential = await WebCredentialRepository().find_by_username(username)
+    assert credential is not None
+    identities = await IdentityRepository().list_by_account(credential.account_id)
+    assert len(identities) == 1
+    return identities[0]
 
 
 class _FakeEngine:
@@ -294,7 +311,8 @@ class TestAuthApiFlow:
                     assert resp.status_code == 200
                     body = resp.json()
                     assert body["username"] == "streamer"
-                    assert body["bot_id"] == WEB_BOT_ID
+                    assert body["account_id"]
+                    assert "identity_id" not in body and "bot_id" not in body
                     assert body["quota"]["text"]["limit"] == auth_service.FREE_TEXT_LIMIT
 
                     assert (await client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})).status_code == 200
@@ -457,8 +475,8 @@ class TestChatStreamAuthorization:
 
         _with_fake_engine(flow)
 
-    def test_impersonation_403(self) -> None:
-        """带 A 的令牌但传他人 platform_id / 未授权 bot_id → 403。"""
+    def test_legacy_fields_cannot_select_service(self) -> None:
+        """旧 platform_id/bot_id 被忽略，只有账号下的 service_id 决定对话目标。"""
 
         async def flow() -> None:
             app = await _setup_app("t_stream_imp")
@@ -468,20 +486,29 @@ class TestChatStreamAuthorization:
                     await _approve("usera")
                     token = await _login(client, "usera")
                     headers = {"Authorization": f"Bearer {token}"}
+                    service = await _service_for_username("usera")
 
                     resp = await client.post(
                         "/api/conversations/chat/stream",
                         json={"bot_id": WEB_BOT_ID, "platform_id": "userb", "text": "hi"},
                         headers=headers,
                     )
-                    assert resp.status_code == 403
+                    assert resp.status_code == 400
+                    assert _FakeEngine.calls == []
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"bot_id": "someone-else-bot", "platform_id": "usera", "text": "hi"},
+                        json={
+                            "service_id": service.id,
+                            "bot_id": "someone-else-bot",
+                            "platform_id": "userb",
+                            "text": "hi",
+                        },
                         headers=headers,
                     )
-                    assert resp.status_code == 403
-                    assert _FakeEngine.calls == []  # 冒充请求不得进入引擎
+                    assert resp.status_code == 200
+                    assert _FakeEngine.calls[0]["service_id"] == service.id
+                    assert _FakeEngine.calls[0]["identity_id"] == service.identity_id
+                    assert _FakeEngine.calls[0]["bot_id"] == service.bot_id
             finally:
                 mongo._db = None
 
@@ -498,8 +525,13 @@ class TestChatStreamAuthorization:
                     ident_id = await _approve("banned")
                     token = await _login(client, "banned")
                     headers = {"Authorization": f"Bearer {token}"}
+                    service = await _service_for_username("banned")
                     assert (
-                        await client.post("/api/conversations/chat/stream", json={"text": "hi"}, headers=headers)
+                        await client.post(
+                            "/api/conversations/chat/stream",
+                            json={"text": "hi", "service_id": service.id},
+                            headers=headers,
+                        )
                     ).status_code == 200
                     await auth_service.set_disabled(ident_id, True, "admin", "违规")
                     _FakeEngine.calls = []
@@ -525,20 +557,21 @@ class TestChatStreamAuthorization:
                     await _approve("alice")
                     await _approve("bob")
                     token_a = await _login(client, "alice")
+                    service = await _service_for_username("alice")
+                    credential = await WebCredentialRepository().find_by_username("alice")
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"text": "hello"},
+                        json={"text": "hello", "service_id": service.id},
                         headers={"Authorization": f"Bearer {token_a}"},
                     )
                     assert resp.status_code == 200
-                    assert "data: echo|web|alice|" in resp.text
                     call = _FakeEngine.calls[0]
                     assert call["platform"] == "web"
-                    assert call["platform_id"] == "alice"
-                    assert call["bot_id"] == WEB_BOT_ID
-                    # 两个注册身份的会话与身份互不可见：各自独立 user/service
-                    identity_a = await IdentityRepository().find_by_platform("web", "alice")
-                    identity_b = await IdentityRepository().find_by_platform("web", "bob")
+                    assert call["platform_id"] == credential.id
+                    assert call["bot_id"] == service.bot_id
+                    assert call["identity_id"] == service.identity_id
+                    identity_a = await _identity_for_username("alice")
+                    identity_b = await _identity_for_username("bob")
                     assert identity_a.id != identity_b.id and identity_a.account_id != identity_b.account_id
             finally:
                 mongo._db = None
@@ -551,8 +584,9 @@ class TestChatStreamAuthorization:
         class _FakeConvRepo:
             """替身对话仓库：按归属返回固定对话，避免构造完整对话文档。"""
 
-            def __init__(self, owner_id: str) -> None:
+            def __init__(self, owner_id: str, service_id: str) -> None:
                 self.owner_id = owner_id
+                self.service_id = service_id
 
             async def find_by_id(self, conversation_id: str) -> Any:
                 if conversation_id == "missing":
@@ -560,7 +594,11 @@ class TestChatStreamAuthorization:
                 return type(
                     "Conv",
                     (),
-                    {"id": conversation_id, "identity_id": self.owner_id, "service_id": ""},
+                    {
+                        "id": conversation_id,
+                        "identity_id": self.owner_id,
+                        "service_id": self.service_id,
+                    },
                 )()
 
         async def flow() -> None:
@@ -571,28 +609,32 @@ class TestChatStreamAuthorization:
                     await _register(client, "intruder")
                     await _approve("owner")
                     await _approve("intruder")
-                    owner = await IdentityRepository().find_by_platform("web", "owner")
-                    other = await IdentityRepository().find_by_platform("web", "intruder")
+                    owner = await _identity_for_username("owner")
+                    other = await _identity_for_username("intruder")
+                    service_owner = await _service_for_username("owner")
+                    service_other = await _service_for_username("intruder")
                     token = await _login(client, "owner")
                     headers = {"Authorization": f"Bearer {token}"}
 
-                    # 他人 identity_id → 403
-                    resp = await client.get(f"/api/conversations?identity_id={other.id}", headers=headers)
-                    assert resp.status_code == 403
-                    # 自己的 identity_id → 200（无数据时为空列表）
-                    resp = await client.get(f"/api/conversations?identity_id={owner.id}", headers=headers)
-                    assert resp.status_code == 200 and resp.json() == []
-                    # 他人 service_id → 404（按"服务不存在"处理，不泄露存在性）
-                    svc_b = (await _services_of(other.id))[0].id
-                    resp = await client.get(f"/api/conversations?service_id={svc_b}", headers=headers)
+                    resp = await client.get(
+                        f"/api/conversations?service_id={service_other.id}", headers=headers
+                    )
                     assert resp.status_code == 404
+                    resp = await client.get(
+                        f"/api/conversations?service_id={service_owner.id}", headers=headers
+                    )
+                    assert resp.status_code == 200 and resp.json() == []
 
                     original = conversations_api._conv_repo
-                    conversations_api._conv_repo = _FakeConvRepo(other.id)  # type: ignore[assignment]
+                    conversations_api._conv_repo = _FakeConvRepo(  # type: ignore[assignment]
+                        other.id, service_other.id
+                    )
                     try:
                         resp = await client.get("/api/conversations/conv-x/messages", headers=headers)
                         assert resp.status_code == 403
-                        conversations_api._conv_repo = _FakeConvRepo(owner.id)  # type: ignore[assignment]
+                        conversations_api._conv_repo = _FakeConvRepo(  # type: ignore[assignment]
+                            owner.id, service_owner.id
+                        )
                         resp = await client.get("/api/conversations/conv-x/messages", headers=headers)
                         assert resp.status_code == 200
                         assert (await client.get("/api/conversations/missing/messages", headers=headers)).status_code == 404
@@ -717,9 +759,10 @@ class TestChatStreamPayloadCleaning:
                     await _register(client, "cleaner")
                     await _approve("cleaner")
                     token = await _login(client, "cleaner")
+                    service = await _service_for_username("cleaner")
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"text": "拍一张"},
+                        json={"text": "拍一张", "service_id": service.id},
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     assert resp.status_code == 200, resp.text
@@ -769,9 +812,10 @@ class TestChatStreamPayloadCleaning:
                     await _register(client, "gated")
                     await _approve("gated")
                     token = await _login(client, "gated")
+                    service = await _service_for_username("gated")
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"text": "再说一次"},
+                        json={"text": "再说一次", "service_id": service.id},
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     assert resp.status_code == 200, resp.text
@@ -814,9 +858,10 @@ class TestChatStreamPayloadCleaning:
                     await _register(client, "mediabot")
                     await _approve("mediabot")
                     token = await _login(client, "mediabot")
+                    service = await _service_for_username("mediabot")
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"text": "来张图"},
+                        json={"text": "来张图", "service_id": service.id},
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     assert resp.status_code == 200, resp.text
@@ -859,9 +904,10 @@ class TestChatStreamPayloadCleaning:
                     await _register(client, "boom")
                     await _approve("boom")
                     token = await _login(client, "boom")
+                    service = await _service_for_username("boom")
                     resp = await client.post(
                         "/api/conversations/chat/stream",
-                        json={"text": "hi"},
+                        json={"text": "hi", "service_id": service.id},
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     body = resp.text

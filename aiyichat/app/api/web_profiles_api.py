@@ -1,8 +1,8 @@
 """C 端网页账号自助角色管理 API。
 
 安全边界：
-- 全部端点先经 `require_current_identity` 解析会话身份，客户端不能指定归属账号；
-- 身份只能创建/读写 `visibility="private"` 且 `account_id=本人账号` 的角色，
+- 全部端点先经 `require_web_account` 解析会话身份，客户端不能指定归属账号；
+- 账号只能创建/读写 `visibility="private"` 且 `account_id=本人账号` 的角色，
   公共角色只读，他人的私有角色不可见（列表按可见性过滤）；
 - 数量受 `settings.web_max_profiles` 约束，创建文本先过内容安全检查；
 - slug 由服务端生成，避免占用公共命名空间与保留名。
@@ -19,7 +19,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.api.auth_api import AuthError, WebPrincipal, _error, require_current_identity
+from app.api.auth_api import AuthError, WebAccountPrincipal, _error, require_web_account
 from app.config import settings
 from app.conversation.safety_checker import SafetyAction, get_safety_checker
 from app.db.repositories.profile_repo import ProfileRepository
@@ -185,7 +185,7 @@ async def _resolve_profile(profile_id: str) -> Optional[PromptProfileInDB]:
 
 
 async def _require_owned_profile(
-    principal: WebPrincipal, profile_id: str
+    principal: WebAccountPrincipal, profile_id: str
 ) -> tuple[Optional[PromptProfileInDB], Optional[JSONResponse]]:
     """取回归本人的私有角色；不存在或不属于本人时返回对应错误响应。"""
     profile = await _resolve_profile(profile_id)
@@ -206,7 +206,7 @@ async def _require_owned_profile(
 async def list_web_profiles(request: Request) -> JSONResponse:
     """列出可用角色：公共角色（只读）+ 本人自建私有角色（含已停用的）。"""
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -230,7 +230,7 @@ async def list_web_profiles(request: Request) -> JSONResponse:
 async def get_web_profile(request: Request, profile_id: str) -> JSONResponse:
     """角色详情：公共角色返回脱敏后的可读字段，私有角色仅本人可见完整描述。"""
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -255,7 +255,7 @@ async def get_web_profile(request: Request, profile_id: str) -> JSONResponse:
 async def create_web_profile(request: Request, payload: WebProfilePayload) -> JSONResponse:
     """创建私有角色：长度与内容校验 → 配额校验 → 服务端写入归属字段。"""
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -297,7 +297,7 @@ async def update_web_profile(
 ) -> JSONResponse:
     """整体替换本人私有角色的可编辑字段。"""
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -338,7 +338,7 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
     但身份可随时启用回来；因此这里不做服务引用拦截，拦截放在删除路径。
     """
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 
@@ -363,7 +363,7 @@ async def toggle_web_profile(request: Request, profile_id: str) -> JSONResponse:
 async def delete_web_profile(request: Request, profile_id: str) -> JSONResponse:
     """物理删除本人私有角色（释放配额）；仍被服务引用时要求先处理服务。"""
     try:
-        principal = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
 

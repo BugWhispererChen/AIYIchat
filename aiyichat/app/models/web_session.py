@@ -49,11 +49,7 @@ class WebSessionInDB(WebSessionCreate):
         return expires_at <= datetime.now(timezone.utc)
 
     def is_valid_for(self, credential_status: str) -> bool:
-        """会话有效性判定：未过期且身份仍处于指定状态。
-
-        管理员禁用/删除身份后，即使 token 未过期也必须立即失效，故状态由调用方传入
-        而非在会话内缓存。
-        """
+        """会话有效性判定：未过期且网页凭据仍处于指定状态。"""
         return not self.expired and credential_status == "active"
 
     @property

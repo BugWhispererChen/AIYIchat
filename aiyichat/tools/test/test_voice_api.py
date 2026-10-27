@@ -10,7 +10,6 @@ import pytest
 
 from app.config import settings
 from app.db import mongo
-from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.services.captcha_service import captcha_service
 from app.utils.rate_limit import account_limiter, login_limiter, register_limiter
 from tools.test.test_api_auth import (
@@ -21,6 +20,7 @@ from tools.test.test_api_auth import (
     _client,
     _login,
     _register,
+    _service_for_username,
     _setup_app,
 )
 
@@ -124,7 +124,8 @@ def test_voice_upload_streams_user_text_and_reply(monkeypatch) -> None:
                 await _register(client, "voiceuser")
                 await _approve("voiceuser")
                 token = await _login(client, "voiceuser")
-                resp = await _post_voice(client, token)
+                service = await _service_for_username("voiceuser")
+                resp = await _post_voice(client, token, service_id=service.id)
                 assert resp.status_code == 200, resp.text
                 payloads = _payloads(resp.text)
                 assert payloads[0] == "[USER_TEXT]你好", payloads
@@ -170,7 +171,8 @@ def test_empty_transcript_422(monkeypatch) -> None:
                 await _register(client, "voiceempty")
                 await _approve("voiceempty")
                 token = await _login(client, "voiceempty")
-                resp = await _post_voice(client, token)
+                service = await _service_for_username("voiceempty")
+                resp = await _post_voice(client, token, service_id=service.id)
                 assert resp.status_code == 422, resp.text
         finally:
             mongo._db = None
@@ -186,9 +188,11 @@ def test_invalid_mime_415() -> None:
                 await _register(client, "voicemime")
                 await _approve("voicemime")
                 token = await _login(client, "voicemime")
+                service = await _service_for_username("voicemime")
                 resp = await client.post(
                     "/api/conversations/chat/voice/stream",
                     files={"audio": ("voice.txt", b"not-audio", "text/plain")},
+                    data={"service_id": service.id},
                     headers={"Authorization": f"Bearer {token}"},
                 )
                 assert resp.status_code == 415, resp.text
@@ -244,8 +248,9 @@ def test_voice_rate_limit_429(monkeypatch) -> None:
                 await _register(client, "voicerate")
                 await _approve("voicerate")
                 token = await _login(client, "voicerate")
-                first = await _post_voice(client, token)
-                second = await _post_voice(client, token)
+                service = await _service_for_username("voicerate")
+                first = await _post_voice(client, token, service_id=service.id)
+                second = await _post_voice(client, token, service_id=service.id)
                 assert first.status_code == 200, first.text
                 assert second.status_code == 429, second.text
         finally:
@@ -267,12 +272,9 @@ def test_history_messages_include_media_fields() -> None:
                 await _register(client, "historyuser")
                 await _approve("historyuser")
                 token = await _login(client, "historyuser")
-                cred = await WebCredentialRepository().find_by_username(
-                    "historyuser"
-                )
-                assert cred is not None and cred.identity_id
+                service = await _service_for_username("historyuser")
                 conv = await ConversationRepository().create(
-                    cred.identity_id, "profile-1", "service-1"
+                    service.identity_id, "profile-1", service.id
                 )
                 await MessageRepository().create(
                     conversation_id=conv.id,

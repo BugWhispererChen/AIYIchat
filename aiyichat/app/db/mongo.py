@@ -148,11 +148,13 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     Args:
         db: 数据库对象
     """
-    # 身份：按 platform + platform_id 唯一，按 account_id 索引
+    # 普通身份允许空绑定；仅非空 QQ/微信外部绑定要求 platform + platform_id 唯一
     await _safe_create_index(
         db.identities,
         [("platform", 1), ("platform_id", 1)],
         unique=True,
+        name="identity_external_binding_unique",
+        partialFilterExpression={"platform_id": {"$gt": ""}},
     )
     await _safe_create_index(db.identities, "account_id")
     # Bot：按 account_id 索引
@@ -162,6 +164,13 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     # 对话服务：按 account_id、identity_id + bot_id 索引
     await _safe_create_index(db.services, "account_id")
     await _safe_create_index(db.services, [("identity_id", 1), ("bot_id", 1)])
+    await _safe_create_index(
+        db.services,
+        "single_service_bot_id",
+        unique=True,
+        name="service_single_bot_unique",
+        partialFilterExpression={"single_service_bot_id": {"$type": "string"}},
+    )
     # 账号额度：按 account_id 唯一
     await _safe_create_index(db.account_quotas, "account_id", unique=True)
     # 角色：按 slug 唯一，按 visibility + account_id 索引
@@ -232,9 +241,9 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         [("event_type", 1), ("created_at", -1)],
     )
     await _safe_create_index(db.safety_events, "created_at")
-    # C 端网页凭据：用户名唯一（注册原子占位），按 identity_id 与 status+created_at 索引
+    # C 端网页凭据：用户名唯一（注册原子占位），按账号与状态索引
     await _safe_create_index(db.web_credentials, "username", unique=True)
-    await _safe_create_index(db.web_credentials, "identity_id")
+    await _safe_create_index(db.web_credentials, "account_id")
     await _safe_create_index(
         db.web_credentials,
         [("status", 1), ("created_at", -1)],

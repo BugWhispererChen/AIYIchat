@@ -2,7 +2,7 @@
 
 展示主动消息（沉默召回 + 事件跟进）的发送记录与效果统计，
 让原本"黑盒"运行的主动关怀能力可观测：发送量、成功率、阶段分布；
-同时支持配置免打扰时段、身份时区与分享型消息比例（保存即热生效）。
+同时支持配置免打扰时段与分享型消息比例；时区由全局功能设置统一维护。
 """
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -127,22 +127,15 @@ async def proactive_page(
 async def save_quiet_hours(
     quiet_start: int = Form(22),
     quiet_end: int = Form(8),
-    tz_offset: int = Form(8),
     _s: str = Depends(require_admin),
 ) -> RedirectResponse:
-    """保存免打扰时段与身份时区：落库 -> 热重载（调度器运行时读取，无需重启）。
-
-    时区只写单一源 default_timezone_offset，对话时间感知与主动关怀共用它，
-    避免运营改了主动关怀时区后对话侧仍用旧时区。
-    """
+    """保存免打扰时段；时区由全局功能设置统一维护。"""
     from app.config import settings
     from app.db.repositories.app_settings_repo import AppSettingsRepository
 
-    tz = max(-12, min(14, tz_offset))
     await AppSettingsRepository().upsert({
         "proactive_quiet_hour_start": max(0, min(23, quiet_start)),
         "proactive_quiet_hour_end": max(0, min(23, quiet_end)),
-        "default_timezone_offset": tz,
     })
     await settings.reload()
 

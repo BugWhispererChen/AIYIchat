@@ -1,18 +1,13 @@
 """C 端网页账号的注册、登录与治理编排。
 
-设计要点（对应执行计划第二节与第五节 P2/P3）：
-- 注册必须原子建齐 Account→Quota→User→Service 四件套：流式链路没有自动绑定分支，
-  引擎要求 User 与 Service 均已存在，且 `_quota_precheck` 在额度记录缺失时直接拒发。
-- 用户名占位依赖 `web_credentials.username` 唯一索引，四件套建齐后才回填 `identity_id`，
-  中途失败必须回滚已写文档（含删除身份，避免用户名被永久占死）。
-- 凭据与业务身份分离：密码哈希只进 `web_credentials`，不进会被 prompt 消费的 user 对象。
+网页凭据直接归属账号；对话身份仅由服务引用，不参与登录会话解析。
 """
 
 import asyncio
 import logging
 import re
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from bson.errors import InvalidId
@@ -23,14 +18,12 @@ from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
-from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
-from app.models.service import ServiceCreate
 from app.models.identity import IdentityCreate
 from app.models.web_credential import (
     PRIVACY_VERSION,
@@ -41,6 +34,7 @@ from app.models.web_credential import (
     normalize_username,
 )
 from app.models.web_session import WebSessionCreate, WebSessionInDB
+from app.services.service_provisioning import create_service
 from app.utils.password_hashing import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -108,14 +102,10 @@ class LoginResult:
 
 @dataclass
 class SessionResult:
-    """令牌解析产物：凭据、关联身份与承载它的会话记录。
-
-    账号中心需要会话 ID 来区分"当前设备"与"其他设备"，故单独返回 session；
-    只需要凭据与身份的旧调用方继续用 `resolve_token`。
-    """
+    """令牌解析产物：凭据、账号归属与登录会话。"""
 
     credential: WebCredentialInDB
-    identity_id: str
+    account_id: str
     session: WebSessionInDB
 
 
@@ -125,9 +115,6 @@ class _Draft:
 
     credential_id: str = ""
     account_id: str = ""
-    identity_id: str = ""
-    service_id: str = ""
-    extras: list[str] = field(default_factory=list)
 
 
 def _utcnow() -> datetime:
@@ -204,12 +191,7 @@ async def resolve_default_profile_id() -> str:
 
 
 async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
-    """取该账号的网页载体 Bot，没有则按需创建。
-
-    优先复用账号名下未停用的 `platform="web"` Bot（管理员可在账号详情页建多个）；
-    其次回落到系统载体 Bot（存量部署）；两者都没有时自动创建一个账号级 Bot，
-    使注册与新建服务不再依赖全局配置。
-    """
+    """取账号自有网页渠道，没有则创建；不为新服务借用系统渠道。"""
     repo = BotConfigRepository()
     own = [b for b in await repo.list_by_account(account_id) if b.platform == "web"]
     usable = [b for b in own if not b.is_blocked]
@@ -218,19 +200,6 @@ async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
     if own:
         # 全部被管理员停用：不自动复活，避免绕过停用
         raise AuthError("web_bot_blocked", "网页服务已停用，请联系管理员", 503)
-
-    system_bot_id = settings.web_bot_id.strip()
-    if system_bot_id:
-        bot = await repo.find_by_id(system_bot_id)
-        if bot is None:
-            raise AuthError(
-                "web_bot_not_found", "网页服务配置异常（系统 Bot 不存在），请联系管理员", 503
-            )
-        if bot.is_blocked:
-            raise AuthError("web_bot_blocked", "网页服务已停用，请联系管理员", 503)
-        if bot.platform != "web":
-            raise AuthError("web_bot_platform", "系统 Bot 平台不是 web，请联系管理员", 503)
-        return bot.id
 
     created = await repo.create(
         BotConfigCreate(
@@ -278,11 +247,7 @@ async def build_free_quota(account_id: str) -> tuple[AccountQuotaUpdate, str]:
 
 
 async def rollback(draft: _Draft) -> None:
-    """回滚注册途中已写入的文档。
-
-    账号级联删除覆盖 User/Service/Quota；身份单独删除，否则用户名会被永久占死、
-    身份再也无法注册。回滚自身失败只告警，不掩盖原始异常。
-    """
+    """回滚注册途中已写入的账号数据与网页凭据。"""
     try:
         if draft.account_id:
             await AccountRepository().delete_cascade(draft.account_id)
@@ -290,7 +255,7 @@ async def rollback(draft: _Draft) -> None:
             await WebCredentialRepository().delete_by_id(draft.credential_id)
     except Exception:  # noqa: BLE001 - 回滚失败不能覆盖原始异常
         logger.exception(
-            "注册回滚失败，遗留脏数据需人工清理: account_id=%s identity_id=%s",
+            "注册回滚失败，遗留脏数据需人工清理: account_id=%s credential_id=%s",
             draft.account_id,
             draft.credential_id,
         )
@@ -303,10 +268,8 @@ async def _purge_rejected(credential: WebCredentialInDB) -> None:
     其业务四件套与会话可安全级联清除。
     """
     await WebSessionRepository().delete_by_credential(credential.id)
-    if credential.identity_id:
-        identity = await IdentityRepository().find_by_id(credential.identity_id)
-        if identity is not None:
-            await AccountRepository().delete_cascade(identity.account_id)
+    if credential.account_id:
+        await AccountRepository().delete_cascade(credential.account_id)
     await WebCredentialRepository().delete_by_id(credential.id)
 
 
@@ -362,12 +325,14 @@ async def register(
 
     draft = _Draft(credential_id=credential.id)
     try:
-        profile_slug = await resolve_default_profile_id()
+        profile_ref = await resolve_default_profile_id()
 
         account = await AccountRepository().create(
-            AccountCreate(name=f"web:{name}", remark="C 端网页账号自助注册")
+            AccountCreate(name=name, remark="C 端网页账号自助注册")
         )
         draft.account_id = account.id
+        if not await credentials.set_account_id(credential.id, account.id):
+            raise AuthError("register_failed", "账号归属写入失败，请稍后重试", 500)
         bot_id = await ensure_account_web_bot(account.id, name="网页助手")
 
         quota_update, quota_source = await build_free_quota(account.id)
@@ -377,25 +342,17 @@ async def register(
             IdentityCreate(
                 account_id=account.id,
                 name=name,
-                platform_id=name,  # 非 UUID：_is_uuid 判定会自动拒绝把 QQ openid 绑到该身份
-                platform="web",
                 nickname=name,
             )
         )
-        draft.identity_id = identity.id
-
-        service = await ServiceRepository().create(
-            ServiceCreate(
-                name="默认服务",
-                account_id=account.id,
-                identity_id=identity.id,
-                bot_id=bot_id,
-                profile_id=profile_slug,
-            )
+        await create_service(
+            account_id=account.id,
+            bot_id=bot_id,
+            identity_id=identity.id,
+            profile_ref=profile_ref,
+            name="默认服务",
         )
-        draft.service_id = service.id
 
-        await credentials.set_identity_id(credential.id, identity.id)
         if not settings.web_register_require_review:
             await credentials.set_status(credential.id, "active", reviewed_by="system", review_note=f"免审注册（额度来源：{quota_source}）", review=True)
     except AuthError:
@@ -463,11 +420,7 @@ async def login(*, username: str, password: str, ip: str = "", user_agent: str =
 
 
 async def resolve_session(token: str) -> SessionResult:
-    """由会话令牌解析出凭据、关联身份与会话记录。
-
-    令牌缺失/过期/被 TTL 回收、账号非 active、身份已被删除或 identity_id 未回填，
-    一律抛 AuthError(401)，由依赖层转成 401/403。
-    """
+    """由会话令牌解析凭据、账号归属与会话记录。"""
     ensure_web_enabled()
     session = await WebSessionRepository().find_by_token(token)
     if session is None or session.expired:
@@ -477,17 +430,20 @@ async def resolve_session(token: str) -> SessionResult:
         raise AuthError("unauthorized", "登录状态已失效，请重新登录", 401)
     if credential.status != "active":
         raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
-    if not credential.identity_id:
+    if not credential.account_id:
         raise AuthError("unauthorized", "账号数据不完整，请重新登录", 401)
     # 滑动过期：每次成功访问顺延
     await WebSessionRepository().touch(session.token, settings.web_session_hours)
-    return SessionResult(credential=credential, identity_id=credential.identity_id, session=session)
+    return SessionResult(
+        credential=credential,
+        account_id=credential.account_id,
+        session=session,
+    )
 
 
-async def resolve_token(token: str) -> tuple[WebCredentialInDB, str]:
-    """由会话令牌解析出身份与其关联身份 ID（供 `require_current_identity` 使用）。"""
-    result = await resolve_session(token)
-    return result.credential, result.identity_id
+async def resolve_token(token: str) -> WebCredentialInDB:
+    """由会话令牌解析网页凭据。"""
+    return (await resolve_session(token)).credential
 
 
 async def logout(token: str) -> bool:

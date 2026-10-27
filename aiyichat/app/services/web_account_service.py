@@ -1,8 +1,8 @@
 """C 端账号中心的业务编排：资料、会话、额度、数据与隐私、注销。
 
 设计要点：
-- 归属一律由会话令牌反查（`require_web_account` 传入 credential/identity），本模块不接受
-  客户端给的 account_id / identity_id；
+- 归属一律由会话令牌反查（`require_web_account` 传入 credential/account），本模块不接受
+  客户端给的 account_id；对话身份仅从账号服务读取；
 - 长期记忆与对话按 `ServiceInDB.context_key` 归属：设了共享组时该 key 是组 ID，
   多个身份共用一份上下文，任何"清空"动作都必须先确认组内没有别人的服务；
 - 注销按"先锁账号、再删数据"的顺序执行：凭据一旦删除，用户名立即释放且旧令牌全部失效，
@@ -14,13 +14,11 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
-from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 
 from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.conversation_repo import ConversationRepository
-from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.injection_snapshot_repo import InjectionSnapshotRepository
 from app.db.repositories.media_repo import (
     MediaRepository,
@@ -32,9 +30,8 @@ from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
-from app.models.identity import IdentityInDB, IdentityUpdate
+from app.models.account import AccountInDB, AccountUpdate
 from app.models.order import OrderInDB
 from app.models.profile import PromptProfileInDB
 from app.models.quota import AccountQuotaInDB, QuotaEntry
@@ -48,7 +45,6 @@ logger = logging.getLogger(__name__)
 
 # 资料字段上限：昵称进对话上下文与后台列表，自我描述直接进 prompt，均需硬上限防文档膨胀
 _MAX_NICKNAME = 30
-_MAX_DESCRIPTION = 600
 # 导出消息条数上限：单账号可能有数万条消息，全量导出会把内存与响应体打爆
 _MAX_EXPORT_MESSAGES = 20000
 # 记忆事实展示上限：账号中心只做"看得见 + 可清空"，不做记忆编辑器
@@ -79,65 +75,36 @@ def _clean_text(raw: str, limit: int, empty_code: str, empty_msg: str,
     return text
 
 
-def validate_timezone(raw: str) -> str:
-    """校验 IANA 时区名；空串表示"跟随系统默认"，非法名称直接拒绝。"""
-    name = (raw or "").strip()
-    if not name:
-        return ""
-    try:
-        ZoneInfo(name)
-    except Exception:  # noqa: BLE001 - 名称非法与 tzdata 缺失同样不可用
-        raise AuthError("invalid_timezone", "时区名称无效，例如 Asia/Shanghai", 400) from None
-    return name
-
-
 # ── 资料 ────────────────────────────────────────────────
 
 
-def profile_payload(credential: WebCredentialInDB, identity: IdentityInDB) -> dict[str, Any]:
-    """组装账号中心所需的身份资料（不含任何凭据字段）。"""
+def profile_payload(credential: WebCredentialInDB, account: AccountInDB) -> dict[str, Any]:
+    """组装网页登录账号资料，不包含对话身份字段。"""
     return {
         "username": credential.username,
-        "nickname": identity.nickname,
-        "self_description": identity.self_description,
-        "timezone": identity.timezone,
+        "nickname": account.name,
         "status": credential.status,
         "created_at": _iso(credential.created_at),
-        "last_active_at": _iso(identity.last_active_at),
+        "last_active_at": _iso(account.updated_at),
     }
 
 
 async def update_profile(
-    identity_id: str, *, nickname: str, self_description: str, timezone_name: str
+    credential: WebCredentialInDB, account_id: str, *, nickname: str
 ) -> dict[str, Any]:
-    """更新昵称 / 自我描述 / 时区：只允许这三个字段进入 IdentityUpdate。
-
-    用户名与归属账号不可改；platform/platform_id 是引擎路由依据，接受客户端入参会
-    让网页账号被改绑到别人的 openid 上。
-    """
+    """更新账号显示昵称，不修改任何服务身份。"""
     clean_nickname = _clean_text(
         nickname, _MAX_NICKNAME,
         "invalid_nickname", "昵称不能为空",
         "invalid_nickname", f"昵称最长 {_MAX_NICKNAME} 字",
     )
-    clean_description = (self_description or "").strip()
-    clean_description = _CONTROL_CHARS_RE.sub("", clean_description)
-    if len(clean_description) > _MAX_DESCRIPTION:
-        raise AuthError("invalid_description", f"自我描述最长 {_MAX_DESCRIPTION} 字", 400)
-    tz = validate_timezone(timezone_name)
-
-    identity = await IdentityRepository().update(
-        identity_id,
-        IdentityUpdate(nickname=clean_nickname, self_description=clean_description, timezone=tz),
+    account = await AccountRepository().update(
+        account_id, AccountUpdate(name=clean_nickname)
     )
-    if identity is None:
-        raise AuthError("identity_not_found", "账号数据异常，请重新登录", 401)
-    credential = await WebCredentialRepository().find_by_identity_id(identity.id)
-    if credential is None:
-        raise AuthError("identity_not_found", "账号数据异常，请重新登录", 401)
-    logger.info("网页账号 %s 更新账号资料（昵称=%s，时区=%s）", credential.username,
-                clean_nickname, tz or "系统默认")
-    return profile_payload(credential, identity)
+    if account is None:
+        raise AuthError("account_not_found", "账号数据异常，请重新登录", 404)
+    logger.info("网页账号 %s 更新账号昵称", credential.username)
+    return profile_payload(credential, account)
 
 
 # ── 登录设备 ────────────────────────────────────────────
@@ -272,30 +239,46 @@ async def _profile_name(profile_ref: str) -> str:
     return profile.name if profile else "（角色已失效）"
 
 
-async def _group_is_exclusive(service: ServiceInDB, identity_id: str) -> bool:
-    """共享组是否只服务于当前身份：组内有他人服务时，其对话与记忆不能连带删除。"""
+async def _group_is_exclusive(service: ServiceInDB, account_id: str) -> bool:
+    """共享组内是否全部属于当前账号。"""
     if not service.share_group_id:
         return True
     peers = await ServiceRepository().list_by_share_group(service.share_group_id)
-    return all(peer.identity_id == identity_id for peer in peers)
+    return all(peer.account_id == account_id for peer in peers)
 
 
-async def _owned_services(identity: IdentityInDB) -> list[ServiceInDB]:
-    """取当前身份名下的服务（对话服务），按创建时间正序。"""
-    services = await ServiceRepository().list_by_identity(identity.id)
+async def _owned_services(account_id: str) -> list[ServiceInDB]:
+    """取账号下全部服务，按创建时间正序。"""
+    services = await ServiceRepository().list_by_account(account_id)
     services.sort(key=lambda s: s.created_at)
     return services
 
 
-async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
-    """数据概览：对话/消息/记忆总量与按服务的分布。"""
-    services = await _owned_services(identity)
-    conversations = await ConversationRepository().list_by_identity(identity.id)
+async def _owned_conversations(
+    account_id: str, services: list[ServiceInDB]
+) -> list[Any]:
+    """按服务及账号独占共享组汇总会话。"""
+    keys = {svc.id for svc in services}
+    for svc in services:
+        if svc.share_group_id and await _group_is_exclusive(svc, account_id):
+            keys.add(svc.share_group_id)
+    repo = ConversationRepository()
+    conversations: dict[str, Any] = {}
+    for key in sorted(keys):
+        for conv in await repo.list_by_service(key):
+            conversations[conv.id] = conv
+    return sorted(
+        conversations.values(), key=lambda c: c.last_message_at, reverse=True
+    )
+
+
+async def data_overview(account_id: str) -> dict[str, Any]:
+    """按账号汇总对话、消息与记忆。"""
+    services = await _owned_services(account_id)
+    conversations = await _owned_conversations(account_id, services)
     conv_by_key: dict[str, list[Any]] = {}
-    total_messages = 0
     for conv in conversations:
         conv_by_key.setdefault(conv.service_id, []).append(conv)
-        total_messages += conv.message_count
 
     memory_repo = ServiceMemoryRepository()
     rows: list[dict[str, Any]] = []
@@ -304,7 +287,9 @@ async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
         memory = await memory_repo.find_by_service(svc.context_key)
         facts = len(memory.facts) if memory else 0
         fact_total += facts
-        convs = conv_by_key.get(svc.context_key, [])
+        convs = conv_by_key.get(svc.id, [])
+        if svc.context_key != svc.id:
+            convs += conv_by_key.get(svc.context_key, [])
         rows.append(
             {
                 "id": svc.id,
@@ -314,7 +299,8 @@ async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
                 "conversation_count": len(convs),
                 "message_count": sum(c.message_count for c in convs),
                 "memory_facts": facts,
-                "shared": bool(svc.share_group_id) and not await _group_is_exclusive(svc, identity.id),
+                "shared": bool(svc.share_group_id)
+                and not await _group_is_exclusive(svc, account_id),
                 "memory_updated_at": _iso(memory.updated_at) if memory else "",
             }
         )
@@ -322,22 +308,21 @@ async def data_overview(identity: IdentityInDB) -> dict[str, Any]:
         "counts": {
             "services": len(services),
             "conversations": len(conversations),
-            "messages": total_messages,
+            "messages": sum(c.message_count for c in conversations),
             "facts": fact_total,
         },
         "services": rows,
     }
 
 
-async def memories_payload(identity: IdentityInDB) -> list[dict[str, Any]]:
-    """按服务列出长期记忆明细（排除向量与评分内部字段）。"""
+async def memories_payload(account_id: str) -> list[dict[str, Any]]:
+    """按账号列出各服务的长期记忆明细。"""
     repo = ServiceMemoryRepository()
     items: list[dict[str, Any]] = []
-    for svc in await _owned_services(identity):
+    for svc in await _owned_services(account_id):
         memory = await repo.find_by_service(svc.context_key)
-        if memory is None:
-            continue
-        items.append(_memory_item(svc, memory))
+        if memory is not None:
+            items.append(_memory_item(svc, memory))
     return items
 
 
@@ -371,24 +356,22 @@ def _memory_item(service: ServiceInDB, memory: ServiceMemoryInDB) -> dict[str, A
     }
 
 
-async def clear_conversations(identity: IdentityInDB) -> dict[str, int]:
-    """清空本人全部对话记录：消息 → 注入快照 → 对话 → 关联媒体。
-
-    按 identity_id 取数而非按 service_id，共享组下别人的会话不会被误删。
-    """
-    conv_repo = ConversationRepository()
-    conv_ids = await conv_repo.list_ids_by_identity(identity.id)
-    if not conv_ids:
+async def clear_conversations(account_id: str, username: str) -> dict[str, int]:
+    """清空账号自有服务及账号独占共享组的全部对话。"""
+    services = await _owned_services(account_id)
+    conversations = await _owned_conversations(account_id, services)
+    if not conversations:
         return {"conversations": 0, "messages": 0, "snapshots": 0, "media": 0}
+    conv_ids = [conv.id for conv in conversations]
     messages = await MessageRepository().list_by_conversation_ids(conv_ids)
     media_ids = media_ids_from_message_docs(messages)
     msg_deleted = await MessageRepository().delete_by_conversation_ids(conv_ids)
     snap_deleted = await InjectionSnapshotRepository().delete_by_conversation_ids(conv_ids)
-    conv_deleted = await conv_repo.delete_by_ids(conv_ids)
+    conv_deleted = await ConversationRepository().delete_by_ids(conv_ids)
     media_deleted = await MediaRepository().delete_by_ids(media_ids)
     logger.info(
         "网页账号 %s 清空对话记录：会话 %d / 消息 %d / 快照 %d / 媒体 %d",
-        identity.nickname or identity.id, conv_deleted, msg_deleted, snap_deleted, media_deleted,
+        username, conv_deleted, msg_deleted, snap_deleted, media_deleted,
     )
     return {
         "conversations": conv_deleted,
@@ -398,11 +381,13 @@ async def clear_conversations(identity: IdentityInDB) -> dict[str, int]:
     }
 
 
-async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str, Any]:
-    """清空某个服务的长期记忆（含其注入快照）；共享组含他人服务时拒绝。"""
-    if not await _group_is_exclusive(service, identity.id):
+async def clear_memory(
+    account_id: str, username: str, service: ServiceInDB
+) -> dict[str, Any]:
+    """清空账号服务记忆；共享组含其他账号服务时拒绝。"""
+    if not await _group_is_exclusive(service, account_id):
         raise AuthError(
-            "shared_context", "该服务与其他渠道身份共享上下文，请联系管理员处理", 409
+            "shared_context", "该服务与其他账号共享上下文，请联系管理员处理", 409
         )
     key = service.context_key
     memory = await ServiceMemoryRepository().find_by_service(key)
@@ -411,9 +396,14 @@ async def clear_memory(identity: IdentityInDB, service: ServiceInDB) -> dict[str
     snapshots = await InjectionSnapshotRepository().delete_by_service_ids([key])
     logger.info(
         "网页账号 %s 清空服务「%s」的记忆：事实 %d，快照 %d",
-        identity.nickname or identity.id, service.name, facts, snapshots,
+        username, service.name, facts, snapshots,
     )
-    return {"service_id": service.id, "facts": facts, "deleted": bool(deleted), "snapshots": snapshots}
+    return {
+        "service_id": service.id,
+        "facts": facts,
+        "deleted": bool(deleted),
+        "snapshots": snapshots,
+    }
 
 
 def _owned_profile_payload(profile: PromptProfileInDB) -> dict[str, Any]:
@@ -435,25 +425,24 @@ def _owned_profile_payload(profile: PromptProfileInDB) -> dict[str, Any]:
 
 
 async def export_payload(
-    credential: WebCredentialInDB, identity: IdentityInDB
+    credential: WebCredentialInDB, account: AccountInDB
 ) -> tuple[dict[str, Any], bool]:
     """组装个人数据包：账号资料、额度、发放记录、服务、自建角色、对话与记忆。
 
     Returns:
         (导出数据, 消息是否被截断)
     """
-    account_id = identity.account_id
+    account_id = account.id
     quota = await QuotaRepository().find_by_account(account_id)
     orders = await OrderRepository().list_recent(account_id=account_id, limit=50)
-    services = await _owned_services(identity)
+    services = await _owned_services(account_id)
     profiles = [
         _owned_profile_payload(p)
         for p in await ProfileRepository().list_by_account(account_id)
         if p.visibility == "private" and not p.is_draft
     ]
 
-    conv_repo = ConversationRepository()
-    conversations = await conv_repo.list_by_identity(identity.id)
+    conversations = await _owned_conversations(account_id, services)
     messages = await MessageRepository().list_by_conversation_ids(
         [c.id for c in conversations], limit=_MAX_EXPORT_MESSAGES
     )
@@ -512,11 +501,9 @@ async def export_payload(
         "exported_at": _iso(datetime.now(timezone.utc)),
         "account": {
             "username": credential.username,
-            "nickname": identity.nickname,
-            "self_description": identity.self_description,
-            "timezone": identity.timezone,
+            "nickname": account.name,
             "registered_at": _iso(credential.created_at),
-            "last_active_at": _iso(identity.last_active_at),
+            "last_active_at": _iso(account.updated_at),
             "consent": {
                 "terms_version": credential.consent.terms_version,
                 "terms_accepted_at": _iso(credential.consent.terms_accepted_at),
@@ -532,7 +519,6 @@ async def export_payload(
                 "name": svc.name,
                 "profile_id": svc.profile_id,
                 "is_active": svc.is_active,
-                "timezone": svc.timezone,
                 "created_at": _iso(svc.created_at),
             }
             for svc in services
@@ -548,31 +534,9 @@ async def export_payload(
 
 
 async def delete_account(
-    credential: WebCredentialInDB, identity: IdentityInDB
+    credential: WebCredentialInDB, account_id: str
 ) -> dict[str, Any]:
-    """立即硬删除账号：凭据 → 周边记录 → 账号级联。
-
-    安全前置：账号下若还挂着其他身份（QQ / 微信或管理员补建的网页账号）或其他身份的服务，
-    一律拒绝——级联删除按 account_id 清扫，会把它们的数据一起抹掉。
-
-    Raises:
-        AuthError: 存在其他关联身份/服务（409），或级联删除异常（500）
-    """
-    account_id = identity.account_id
-    identities = await IdentityRepository().list_by_account(account_id)
-    if len(identities) != 1 or identities[0].id != identity.id:
-        raise AuthError(
-            "linked_identity_exists",
-            "该账号还关联了其他渠道身份，请联系管理员处理后再注销",
-            409,
-        )
-    services = await ServiceRepository().list_by_account(account_id)
-    if any(svc.identity_id != identity.id for svc in services):
-        raise AuthError(
-            "linked_identity_exists",
-            "该账号还关联了其他渠道身份的服务，请联系管理员处理后再注销",
-            409,
-        )
+    """注销网页登录账号并级联删除其账号内全部业务数据。"""
 
     stats: dict[str, int] = {}
     try:
@@ -581,7 +545,7 @@ async def delete_account(
         # 正是"两份实现各删各的"让后台删账号漏掉了那些集合。
         stats.update(
             await AccountRepository().delete_cascade(
-                account_id, credential_id=credential.id, identity_id=identity.id
+                account_id, credential_id=credential.id
             )
         )
     except Exception as exc:  # noqa: BLE001 - 注销失败必须回 500 并留完整现场
@@ -598,10 +562,10 @@ async def delete_account(
     return stats
 
 
-async def find_owned_service(identity: IdentityInDB, service_id: str) -> ServiceInDB:
-    """取回归本人的服务；不存在或属于他人一律 404（不区分，避免枚举他人服务 ID）。"""
+async def find_owned_service(account_id: str, service_id: str) -> ServiceInDB:
+    """取回账号服务；不存在或属于其他账号均返回 404。"""
     svc = await ServiceRepository().find_by_id(service_id)
-    if svc is None or svc.account_id != identity.account_id or svc.identity_id != identity.id:
+    if svc is None or svc.account_id != account_id:
         raise AuthError("service_not_found", "服务不存在", 404)
     return svc
 

@@ -57,8 +57,8 @@ class WebBotCreatePayload(BaseModel):
     platform: Literal["qq", "wechat", "web"]
     name: str
     profile_id: str
+    identity_id: str = ""  # 鉴权后由装配核心判必填
     service_name: str = ""
-    timezone: str = ""
     sandbox_mode: bool = True
     app_id: str = ""
     app_secret: str = ""
@@ -142,8 +142,8 @@ def _service_brief(
         "bot_name": bot.name,
         "bot_manageable": True,
         "bot_state": web_channel_service.compute_state(bot),
+        "identity_id": svc.identity_id,
         "is_active": svc.is_active,
-        "timezone": svc.timezone,
         "created_at": svc.created_at.isoformat(),
     }
 
@@ -160,14 +160,14 @@ async def list_web_bots(request: Request) -> JSONResponse:
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
 
-    account_id = principal.identity.account_id
+    account_id = principal.account_id
     bots = await web_channel_service.list_managed_bots(account_id)
     services = await _service_repo.list_by_account(account_id)
     by_bot: dict[str, list[ServiceInDB]] = {}
     for svc in services:
         by_bot.setdefault(svc.bot_id, []).append(svc)
 
-    quota = await web_channel_service.web_quota(account_id, principal.identity.id)
+    quota = await web_channel_service.web_quota(account_id)
     limit = quota["limit"]
     can_bot = limit > 0 and quota["bots"] < limit and quota["services"] < limit
     can_service = limit > 0 and quota["services"] < limit
@@ -194,17 +194,15 @@ async def create_web_bot(
     if limited is not None:
         return limited
 
-    account_id = principal.identity.account_id
+    account_id = principal.account_id
     try:
         bot, service, profile = await web_channel_service.create_managed_bot(
             account_id=account_id,
-            login_identity_id=principal.identity.id,
-            username=principal.credential.username,
             platform=payload.platform,
             name=payload.name,
+            identity_id=payload.identity_id,
             profile_id=payload.profile_id,
             service_name=payload.service_name,
-            timezone=payload.timezone,
             sandbox_mode=payload.sandbox_mode,
             app_id=payload.app_id,
             app_secret=payload.app_secret,
@@ -236,7 +234,7 @@ async def update_web_bot(
 
     try:
         bot = await web_channel_service.update_managed_bot(
-            account_id=principal.identity.account_id,
+            account_id=principal.account_id,
             bot_id=bot_id,
             name=payload.name,
             app_id=payload.app_id,
@@ -262,7 +260,7 @@ async def delete_web_bot(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         deleted = await web_channel_service.delete_managed_bot(
-            principal.identity.account_id, bot_id, principal.identity.id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -284,7 +282,7 @@ async def create_qq_qrcode(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         bot = await web_channel_service.get_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -319,7 +317,7 @@ async def poll_qq_qrcode(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         bot = await web_channel_service.get_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -348,7 +346,7 @@ async def create_wechat_qrcode(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         bot = await web_channel_service.get_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -387,7 +385,7 @@ async def poll_wechat_qrcode(
 
     try:
         bot = await web_channel_service.get_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)
@@ -411,7 +409,7 @@ async def logout_wechat(request: Request, bot_id: str) -> JSONResponse:
 
     try:
         bot = await web_channel_service.get_managed_bot(
-            principal.identity.account_id, bot_id
+            principal.account_id, bot_id
         )
     except ChannelError as exc:
         return _channel_error(exc)

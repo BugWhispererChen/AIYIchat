@@ -1,5 +1,3 @@
-from typing import Optional
-
 import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -8,17 +6,17 @@ from pydantic import BaseModel, Field
 
 from app.api.auth_api import (
     AuthError,
-    WebPrincipal,
+    WebAccountPrincipal,
     require_account_service,
-    require_current_identity,
+    require_web_account,
 )
 from app.config import settings
 from app.db.repositories.conversation_repo import ConversationRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.conversation import ConversationInDB
 from app.models.service import ServiceInDB
-from app.models.web_credential import normalize_username
 from app.services.voice_input import (
     ALLOWED_AUDIO_TYPES,
     MAX_TRANSCRIPT_CHARS,
@@ -43,32 +41,23 @@ _MAX_CHAT_CHARS = 4000
 
 
 class StreamChatRequest(BaseModel):
-    """流式对话请求体。
+    """流式对话请求体：显式选择服务，身份与渠道均由服务端解析。"""
 
-    `platform` / `platform_id` / `nickname` / `bot_id` 仅为旧客户端保留字段，
-    服务端一律忽略，身份与渠道由 Bearer 会话令牌反查。
-    `service_id` 用于在同一账号的多个服务间指定当前伙伴（网页端角色切换）。
-    """
-
-    bot_id: str = ""
-    platform: str = "web"
-    platform_id: str = ""
     # 上限保护：一条消息就能塞进整本小说的话，提示词与计费都会被拖爆
     text: str = Field(max_length=_MAX_CHAT_CHARS)
-    nickname: str = ""
-    service_id: str = ""
+    service_id: str = ""  # 鉴权后强制校验，避免未登录请求先返回 422
 
 
-async def _require_current_identity_or_401(request: Request) -> WebPrincipal:
-    """解析网页会话身份，失败转 HTTPException。"""
+async def _require_web_account_or_401(request: Request) -> WebAccountPrincipal:
+    """解析网页登录账号，失败转 HTTPException。"""
     try:
-        return await require_current_identity(request)
+        return await require_web_account(request)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 async def _require_account_service_http(
-    principal: WebPrincipal, service_id: str
+    principal: WebAccountPrincipal, service_id: str
 ) -> ServiceInDB:
     """按账号归属校验服务，失败转 HTTPException。"""
     try:
@@ -78,59 +67,34 @@ async def _require_account_service_http(
 
 
 async def _resolve_stream_target(
-    principal: WebPrincipal,
+    principal: WebAccountPrincipal,
     *,
     service_id: str,
-    bot_id: str = "",
 ) -> tuple[str, str, str, str, str]:
-    """解析流式对话目标。
-
-    返回 (bot_id, engine_identity_id, service_id, platform_id, nickname)。
-    显式服务必须同账号；显式 bot_id 必须是当前身份或所选服务的 Bot。
-    文本流与语音流共用这一处口径，避免两条入口的越权校验出现漂移。
-    """
-    svc: Optional[ServiceInDB] = None
-    if service_id.strip():
-        svc = await _require_account_service_http(
-            principal, service_id.strip()
-        )
-    allowed_bot_ids = {principal.bot_id}
-    if svc is not None:
-        allowed_bot_ids.add(svc.bot_id)
-    if bot_id and bot_id not in allowed_bot_ids:
-        logger.warning(
-            "越权尝试：登录账号 %s 试图指定未授权的 bot_id=%s",
-            principal.username,
-            bot_id,
-        )
-        raise HTTPException(status_code=403, detail="无权使用该 Bot")
-
-    resolved_bot_id = svc.bot_id if svc is not None else principal.bot_id
-    engine_identity_id = svc.identity_id if svc is not None else ""
-    resolved_service_id = svc.id if svc is not None else ""
-    platform_id = principal.username
-    # 昵称一律取会话身份（账号中心可改），不接受客户端入参
-    nickname = principal.nickname or principal.username
-    if not resolved_bot_id or not platform_id:
-        raise HTTPException(status_code=400, detail="缺少可用的对话服务")
+    """返回所选服务的 Bot、身份及网页渠道调用方信息。"""
+    if not service_id.strip():
+        raise HTTPException(status_code=400, detail="请选择对话服务")
+    svc = await _require_account_service_http(principal, service_id.strip())
+    if not svc.is_active:
+        raise HTTPException(status_code=409, detail="该服务已停用")
+    identity = await IdentityRepository().find_by_id(svc.identity_id)
+    if identity is None or identity.account_id != principal.account_id:
+        raise HTTPException(status_code=404, detail="服务身份不存在")
+    if identity.is_blocked:
+        raise HTTPException(status_code=409, detail="服务身份已停用")
     return (
-        resolved_bot_id,
-        engine_identity_id,
-        resolved_service_id,
-        platform_id,
-        nickname,
+        svc.bot_id,
+        svc.identity_id,
+        svc.id,
+        principal.credential.id,
+        identity.nickname or identity.name or principal.nickname,
     )
 
 
 async def _conversation_readable(
-    conv: ConversationInDB, principal: WebPrincipal
+    conv: ConversationInDB, principal: WebAccountPrincipal
 ) -> bool:
-    """会话是否对当前网页渠道身份可读：本人会话，或同账号任一服务的会话。
-
-    共享组会话的 `service_id` 存的是组 key，按组内服务反查归属账号。
-    """
-    if conv.identity_id == principal.identity_id:
-        return True
+    """会话必须挂在当前账号的服务或共享组上。"""
     if not conv.service_id:
         return False
     svc = await _service_repo.find_by_id(conv.service_id)
@@ -141,34 +105,16 @@ async def _conversation_readable(
 
 
 @conversations_router.get("")
-async def list_conversations(
-    request: Request,
-    identity_id: Optional[str] = None,
-    service_id: Optional[str] = None,
-):
-    """获取对话列表，可按服务 ID 过滤。
-
-    始终要求 Bearer 会话：只允许访问本账号的数据，入参 identity_id 与令牌身份
-    不符即 403；service_id 按账号归属校验，同账号的渠道服务（QQ/微信）也可回看。
-    """
-    principal = await _require_current_identity_or_401(request)
-    if identity_id is not None and identity_id != principal.identity_id:
-        raise HTTPException(status_code=403, detail="无权访问该数据")
-    if service_id is not None:
-        await _require_account_service_http(principal, service_id)
-    identity_id = principal.identity_id
-    if service_id:
-        # 服务设置共享组时，补充组 key 下的共享会话（含加入前的自身历史）
-        convs = await _conv_repo.list_by_service(service_id)
-        service = await _service_repo.find_by_id(service_id)
-        if service and service.share_group_id:
-            convs += await _conv_repo.list_by_service(service.share_group_id)
-            convs.sort(key=lambda c: c.last_message_at, reverse=True)
-    elif identity_id:
-        convs = await _conv_repo.list_by_identity(identity_id)
-    else:
-        # 简单实现：不带过滤条件时返回空列表（生产环境应分页）
-        return []
+async def list_conversations(request: Request, service_id: str = ""):
+    """列出所选服务的会话；共享组会话按同一账号归属补充。"""
+    principal = await _require_web_account_or_401(request)
+    if not service_id.strip():
+        raise HTTPException(status_code=400, detail="请选择对话服务")
+    service = await _require_account_service_http(principal, service_id)
+    convs = await _conv_repo.list_by_service(service.id)
+    if service.share_group_id:
+        convs += await _conv_repo.list_by_service(service.share_group_id)
+        convs.sort(key=lambda c: c.last_message_at, reverse=True)
     return [
         {
             "id": c.id,
@@ -189,7 +135,7 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
 
     始终要求 Bearer 会话，并且只允许读取本人或同账号服务名下的对话。
     """
-    principal = await _require_current_identity_or_401(request)
+    principal = await _require_web_account_or_401(request)
     conv = await _conv_repo.find_by_id(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -259,27 +205,14 @@ async def chat_stream(req: StreamChatRequest, request: Request):
     """
     from app.conversation.engine import ConversationEngine
 
-    principal = await _require_current_identity_or_401(request)
-    # 显式传入却不匹配 → 视为冒充尝试：拒绝并留审计日志（比静默忽略更能暴露攻击）
-    if req.platform_id and normalize_username(req.platform_id) != principal.username:
-        logger.warning(
-            "越权尝试：登录账号 %s 试图以 platform_id=%s 冒充他人会话",
-            principal.username,
-            req.platform_id,
-        )
-        raise HTTPException(status_code=403, detail="登录状态异常，请重新登录")
-
+    principal = await _require_web_account_or_401(request)
     (
         bot_id,
         engine_identity_id,
         service_id,
         platform_id,
         nickname,
-    ) = await _resolve_stream_target(
-        principal,
-        service_id=req.service_id,
-        bot_id=req.bot_id,
-    )
+    ) = await _resolve_stream_target(principal, service_id=req.service_id)
     platform = "web"
 
     engine = ConversationEngine(bot_id=bot_id)
@@ -317,7 +250,7 @@ async def chat_voice_stream(
     语音额度只按 AI 语音回复扣，这里的 ASR 不额外扣语音额度；但 ASR 是外部
     计费调用，所以在转写之前先做账号级限流与服务归属校验。
     """
-    principal = await _require_current_identity_or_401(request)
+    principal = await _require_web_account_or_401(request)
     if not settings.asr_enabled:
         raise HTTPException(status_code=503, detail="语音输入未启用")
     try:

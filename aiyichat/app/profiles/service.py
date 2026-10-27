@@ -64,10 +64,7 @@ def _parse_life_routine(form) -> ProfileLifeRoutine:
                 phrase=str(raw_phrase).strip(),
             )
         )
-    return ProfileLifeRoutine(
-        timezone=str(form.get("routine_timezone", "") or "").strip(),
-        segments=segments,
-    )
+    return ProfileLifeRoutine(segments=segments)
 
 
 class ProfileService:

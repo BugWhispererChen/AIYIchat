@@ -23,9 +23,14 @@ from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.models.account import AccountCreate, AccountUpdate
 from app.models.bot_config import BotConfigCreate, BotConfigInDB, BotConfigUpdate
 from app.models.quota import AccountQuotaUpdate, QuotaEntry
-from app.models.service import ServiceCreate, ServiceUpdate
-from app.models.identity import IdentityCreate, IdentityUpdate
-from app.conversation.time_context import COMMON_TIMEZONES, resolve_tz
+from app.models.service import ServiceUpdate
+from app.models.identity import IdentityCreate
+from app.services.service_provisioning import (
+    ServiceProvisionError,
+    create_service,
+    has_external_service,
+    resolve_visible_profile,
+)
 from app.utils.redaction import mask_secret
 
 accounts_router = APIRouter(tags=["admin"])
@@ -92,6 +97,7 @@ async def _account_detail_with_error(
             "identity": identity,
             "bot": bot,
             "profile": profile,
+            "profile_ref": profile.id if profile else svc.profile_id,
         })
     return _render(request, "account_detail.html", {
         "account": account,
@@ -100,7 +106,6 @@ async def _account_detail_with_error(
         "identities": identities,
         "bots": _bot_views(bots),
         "profiles": profiles,
-        "common_timezones": COMMON_TIMEZONES,
         "active_page": "accounts",
         "error": error,
     })
@@ -193,6 +198,7 @@ async def account_detail(
             "identity": identity,
             "bot": bot,
             "profile": profile,
+            "profile_ref": profile.id if profile else svc.profile_id,
         })
 
     quota_templates = await _quota_template_repo.list_all()
@@ -205,8 +211,6 @@ async def account_detail(
         "bots": _bot_views(bots),
         "profiles": profiles,
         "quota_templates": quota_templates,
-        # 身份时区下拉（常用 IANA 列表 + 手动输入）
-        "common_timezones": COMMON_TIMEZONES,
         "active_page": "accounts",
     })
 
@@ -286,15 +290,18 @@ async def account_identity_create(
 ) -> Response:
     """在账号下创建身份。platform_id 由系统自动生成。"""
     form = await request.form()
-    platform = str(form.get("platform", "qq")).strip()
-    if platform not in ("qq", "wechat", "web"):
-        platform = "qq"
+    platform = str(form.get("platform", "")).strip()
+    if platform not in ("", "qq", "wechat"):
+        return await _account_detail_with_error(
+            request, account_id, "身份外部平台仅支持 QQ 或微信，普通身份请留空"
+        )
 
     await _identity_repo.create(
         IdentityCreate(
             account_id=account_id,
             name=str(form.get("name", "")).strip(),
-            platform=platform,  # type: ignore[arg-type]
+            platform=platform or None,  # type: ignore[arg-type]
+            platform_id=str(uuid.uuid4()) if platform else "",
             nickname=str(form.get("nickname", "")).strip(),
             self_description=str(form.get("self_description", "")).strip(),
             is_minor=form.get("is_minor") == "on",
@@ -325,41 +332,6 @@ async def account_identity_delete(
         )
     # 身份名下还有网页凭据/会话/主动关怀记录：只删一行等于留下可登录的凭据
     await _identity_repo.delete_cascade(identity_id)
-    return RedirectResponse(
-        url=f"/admin/accounts/{account_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-@accounts_router.post(
-    "/accounts/{account_id}/identities/{identity_id}/timezone",
-    response_class=HTMLResponse,
-)
-async def account_identity_set_timezone(
-    request: Request,
-    account_id: str,
-    identity_id: str,
-    _s: str = Depends(require_admin),
-) -> Response:
-    """设置身份时区（IANA 名，空串回落全局默认偏移）。
-
-    校验失败时返回错误提示而不落库，避免无效时区名导致运行时静默回落
-    且运营无从感知。校验通过 resolve_tz 试解析，不依赖 tzdata 是否已装。
-    """
-    form = await request.form()
-    # 手动输入优先于下拉选择（运营可能输入下拉列表之外的合法 IANA 名）
-    tz_name = str(form.get("timezone_custom", "")).strip() or str(
-        form.get("timezone", "")
-    ).strip()
-    if tz_name:
-        # 试解析：无效名会静默回落，这里主动检测并提示运营
-        resolved, resolved_name = resolve_tz(identity_timezone=tz_name)
-        if resolved_name != tz_name:
-            return await _account_detail_with_error(
-                request, account_id,
-                f"时区名「{tz_name}」无效或无法识别，请使用 IANA 标准名（如 Asia/Shanghai）",
-            )
-    await _identity_repo.update(identity_id, IdentityUpdate(timezone=tz_name))
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -578,72 +550,26 @@ async def account_service_create(
     account_id: str,
     _s: str = Depends(require_admin),
 ) -> Response:
-    """为账号添加对话服务，名称自动生成：{身份}-{角色}-{Bot名称}。"""
+    """通过共享装配核心为账号添加对话服务。"""
     form = await request.form()
     identity_id = str(form.get("identity_id", "")).strip()
     bot_id = str(form.get("bot_id", "")).strip()
     profile_id = str(form.get("profile_id", "")).strip()
-
+    name = str(form.get("name", "")).strip()
     if not all([identity_id, bot_id, profile_id]):
-        return RedirectResponse(
-            url=f"/admin/accounts/{account_id}",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    # 1:1 约束：一个渠道只允许创建一个服务。
-    # 网页渠道是载体通道，允许一个渠道承载多个服务（与 C 端自助建服务一致）。
-    bot = await _bot_config_repo.find_by_id(bot_id)
-    if bot is None or bot.platform != "web":
-        existing_bot_svc = await _service_repo.count_by_bot(bot_id)
-        if existing_bot_svc > 0:
-            return await _account_detail_with_error(
-                request, account_id, "该渠道已有服务，一个渠道只允许创建一个服务",
-            )
-
-    # 检查引用的实体是否被禁用
-    identity = await _identity_repo.find_by_id(identity_id)
-    # 检查身份是否已绑定真实平台账号（非UUID表示已有真实身份绑定，新身份将无法使用该渠道）
-    if identity:
-        try:
-            uuid.UUID(identity.platform_id)
-        except (ValueError, AttributeError):
-            return await _account_detail_with_error(
-                request, account_id,
-                "该身份已绑定真实平台账号，无法创建新服务。请选择未绑定的身份或新建身份。",
-            )
-    if identity and identity.is_blocked:
         return await _account_detail_with_error(
-            request, account_id, "该身份已被禁用，无法创建服务",
+            request, account_id, "渠道、身份与角色均为必选项"
         )
-    if bot and bot.is_blocked:
-        return await _account_detail_with_error(
-            request, account_id, "该渠道已被禁用，无法创建服务",
+    try:
+        await create_service(
+            account_id=account_id,
+            bot_id=bot_id,
+            identity_id=identity_id,
+            profile_ref=profile_id,
+            name=name,
         )
-    profile = await _profile_repo.find_by_slug(profile_id)
-    if profile is None:
-        profile = await _profile_repo.find_by_id(profile_id)
-    if profile and not profile.is_active:
-        return await _account_detail_with_error(
-            request, account_id, "该角色已被禁用，无法创建服务",
-        )
-
-    # 自动生成服务名称：{身份}-{角色}-{渠道名称}
-    name = "-".join(
-        p for p in [
-            identity.name or identity.platform_id if identity else "",
-            profile.name if profile else "",
-            bot.name if bot else "",
-        ] if p
-    )
-
-    service = ServiceCreate(
-        name=name,
-        account_id=account_id,
-        identity_id=identity_id,
-        bot_id=bot_id,
-        profile_id=profile_id,
-    )
-    await _service_repo.create(service)
+    except ServiceProvisionError as exc:
+        return await _account_detail_with_error(request, account_id, exc.message)
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -662,16 +588,28 @@ async def account_service_edit(
 ) -> Response:
     """编辑对话服务。"""
     form = await request.form()
+    current = await _service_repo.find_by_id(service_id)
+    if current is None or current.account_id != account_id:
+        return await _account_detail_with_error(request, account_id, "服务不存在")
     is_active = form.get("is_active") == "on"
-    # 禁用时记录原因，启用时清空
     disable_reason = str(form.get("disable_reason", "")).strip() if not is_active else ""
     profile_id = str(form.get("profile_id", "")).strip() or None
+    if profile_id:
+        try:
+            profile = await resolve_visible_profile(account_id, profile_id)
+        except ServiceProvisionError as exc:
+            return await _account_detail_with_error(request, account_id, exc.message)
+        profile_id = profile.id
+    name = str(form.get("name", "")).strip()
+    if len(name) > 60:
+        return await _account_detail_with_error(
+            request, account_id, "服务名称最多 60 个字符"
+        )
     share_group_id = str(form.get("share_group_id", "")).strip()
 
     # 共享组约束校验：仅允许同账号、同角色的服务共享，避免人设错乱
     if share_group_id:
-        current = await _service_repo.find_by_id(service_id)
-        target_profile = profile_id or (current.profile_id if current else "")
+        target_profile = profile_id or current.profile_id
         members = await _service_repo.list_by_share_group(share_group_id)
         for m in members:
             if m.id == service_id:
@@ -683,7 +621,7 @@ async def account_service_edit(
                 )
 
     update = ServiceUpdate(
-        name=str(form.get("name", "")).strip() or None,
+        name=name or None,
         profile_id=profile_id,
         is_active=is_active,
         disable_reason=disable_reason,
@@ -712,6 +650,8 @@ async def account_service_delete(
     """
     # 先查询服务，获取共享组与关联的 identity_id，用于后续保护判断与释放绑定
     service = await _service_repo.find_by_id(service_id)
+    if service is None or service.account_id != account_id:
+        return await _account_detail_with_error(request, account_id, "服务不存在")
 
     # 级联删除服务自身 key 下的数据（加入共享组前的历史仍挂在服务自身 ID 下）
     conv_ids = await _conv_repo.list_ids_by_service(service_id)
@@ -735,11 +675,9 @@ async def account_service_delete(
 
     # 释放身份绑定：若该身份无其他服务，重置 platform_id 为 UUID（恢复可绑定状态）
     if service:
-        remaining = await _service_repo.count_by_identity(service.identity_id)
-        if remaining == 0:
-            await _identity_repo.update(
-                service.identity_id,
-                IdentityUpdate(platform_id=str(uuid.uuid4())),
+        if not await has_external_service(service.identity_id):
+            await _identity_repo.reset_platform_binding(
+                service.identity_id, service.bot_id
             )
 
     return RedirectResponse(

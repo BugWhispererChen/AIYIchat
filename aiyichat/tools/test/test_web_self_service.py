@@ -131,6 +131,31 @@ def _h(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _default_identity(client: AsyncClient, token: str):
+    resp = await client.get("/api/web/identities", headers=_h(token))
+    assert resp.status_code == 200, resp.text
+    items = [item for item in resp.json()["items"] if not item["platform"]]
+    assert len(items) == 1
+    return items[0]
+
+
+async def _default_identity_model(client: AsyncClient, token: str):
+    me = await client.get("/api/auth/me", headers=_h(token))
+    assert me.status_code == 200
+    identities = await IdentityRepository().list_by_account(me.json()["account_id"])
+    identities = [identity for identity in identities if identity.platform is None]
+    assert len(identities) == 1
+    return identities[0]
+
+
+async def _default_service(client: AsyncClient, token: str):
+    me = await client.get("/api/auth/me", headers=_h(token))
+    assert me.status_code == 200
+    services = await ServiceRepository().list_by_account(me.json()["account_id"])
+    assert len(services) == 1
+    return services[0]
+
+
 def _profile_body(name: str = "阿禾") -> dict[str, Any]:
     return {"name": name, "category": "original", "persona": {"background": "山间书院的学徒"}}
 
@@ -331,8 +356,11 @@ class TestWebProfileSelfService:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
+                    identity = await _default_identity(c, a)
                     svc = await c.post(
-                        "/api/web/services", json={"profile_id": pid}, headers=_h(a)
+                        "/api/web/services",
+                        json={"profile_id": pid, "identity_id": identity["id"]},
+                        headers=_h(a),
                     )
                     assert svc.status_code == 201, svc.text
                     assert (await c.delete(f"/api/web/profiles/{pid}", headers=_h(a))).status_code == 409
@@ -356,7 +384,7 @@ class TestWebProfileSelfService:
 class TestWebServiceSelfService:
     """自助服务（伙伴）管理。"""
 
-    def test_create_binds_system_bot_and_forces_owner(self) -> None:
+    def test_create_uses_account_bot_and_forces_owner(self) -> None:
         async def flow() -> None:
             app = await _setup_app("svc_create")
             try:
@@ -364,24 +392,34 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     me = await c.get("/api/auth/me", headers=_h(a))
                     assert me.status_code == 200
+                    identity = await _default_identity(c, a)
+                    default_service = await _default_service(c, a)
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
                     resp = await c.post(
                         "/api/web/services",
-                        json={"profile_id": pid, "name": "我的阿禾", "account_id": "x"},
+                        json={
+                            "profile_id": pid,
+                            "identity_id": identity["id"],
+                            "name": "我的阿禾",
+                            "account_id": "x",
+                        },
                         headers=_h(a),
                     )
                     assert resp.status_code == 201, resp.text
                     saved = await ServiceRepository().find_by_id(resp.json()["id"])
                     assert saved is not None
-                    assert saved.bot_id == WEB_BOT_ID
+                    assert saved.bot_id == default_service.bot_id
                     assert saved.profile_id == pid
-                    assert saved.account_id == (await ProfileRepository().find_by_id(pid)).account_id
-                    assert saved.identity_id == me.json()["identity_id"]
+                    assert saved.account_id == me.json()["account_id"]
+                    assert saved.identity_id == identity["id"]
 
-                    # 伪造 bot_id 不再被静默忽略：不属于本账号的渠道一律 404
                     forged = await c.post(
                         "/api/web/services",
-                        json={"profile_id": pid, "bot_id": "x"},
+                        json={
+                            "profile_id": pid,
+                            "identity_id": identity["id"],
+                            "bot_id": "x",
+                        },
                         headers=_h(a),
                     )
                     assert forged.status_code == 404, forged.text
@@ -398,7 +436,12 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     b = await _signup(c, "bob")
                     pid = (await c.post("/api/web/profiles", json=_profile_body("阿禾"), headers=_h(a))).json()["id"]
-                    resp = await c.post("/api/web/services", json={"profile_id": pid}, headers=_h(b))
+                    identity = await _default_identity(c, b)
+                    resp = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": pid, "identity_id": identity["id"]},
+                        headers=_h(b),
+                    )
                     assert resp.status_code == 404
             finally:
                 mongo._db = None
@@ -413,7 +456,12 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
                     assert (await c.post(f"/api/web/profiles/{pid}/toggle", headers=_h(a))).status_code == 200
-                    resp = await c.post("/api/web/services", json={"profile_id": pid}, headers=_h(a))
+                    identity = await _default_identity(c, a)
+                    resp = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": pid, "identity_id": identity["id"]},
+                        headers=_h(a),
+                    )
                     assert resp.status_code == 409
             finally:
                 mongo._db = None
@@ -428,13 +476,26 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     b = await _signup(c, "bob")
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
+                    identity = await _default_identity(c, a)
                     # 注册已自带 1 个服务，再建 2 个到上限 3
                     ids = []
                     for name in ("甲", "乙"):
-                        r = await c.post("/api/web/services", json={"profile_id": pid, "name": name}, headers=_h(a))
+                        r = await c.post(
+                            "/api/web/services",
+                            json={
+                                "profile_id": pid,
+                                "identity_id": identity["id"],
+                                "name": name,
+                            },
+                            headers=_h(a),
+                        )
                         assert r.status_code == 201, r.text
                         ids.append(r.json()["id"])
-                    over = await c.post("/api/web/services", json={"profile_id": pid}, headers=_h(a))
+                    over = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": pid, "identity_id": identity["id"]},
+                        headers=_h(a),
+                    )
                     assert over.status_code == 409
 
                     # Bob 无法读写 Alice 的服务
@@ -462,19 +523,16 @@ class TestWebServiceSelfService:
 
         _run(flow())
 
-    def test_login_identity_keeps_last_active_service(self) -> None:
-        """账号内另有渠道服务时，也不能让当前登录账号失去最后一个活跃服务。"""
+    def test_last_active_guard_uses_account_not_login_identity(self) -> None:
+        """其他身份仍有活跃服务时可删除，最后剩余一个账号服务时才阻断。"""
 
         async def flow() -> None:
             app = await _setup_app("svc_login_last")
             try:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
-                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
-                    identity = await IdentityRepository().find_by_id(me["identity_id"])
-                    assert identity is not None
+                    identity = await _default_identity_model(c, a)
                     own = await ServiceRepository().list_by_identity(identity.id)
-                    assert own
                     target = own[0]
                     qq_identity = await IdentityRepository().create(
                         IdentityCreate(
@@ -483,7 +541,7 @@ class TestWebServiceSelfService:
                             platform_id="openid-qq",
                         )
                     )
-                    await ServiceRepository().create(
+                    qq_service = await ServiceRepository().create(
                         ServiceCreate(
                             account_id=identity.account_id,
                             identity_id=qq_identity.id,
@@ -491,18 +549,15 @@ class TestWebServiceSelfService:
                             profile_id=target.profile_id,
                         )
                     )
-                    # 账号还有活跃 QQ 服务，但登录账号只剩这一个网页服务 → 两种操作都必须拒绝
-                    resp = await c.put(
-                        f"/api/web/services/{target.id}",
-                        json={"is_active": False},
-                        headers=_h(a),
-                    )
-                    assert resp.status_code == 409, resp.text
-                    assert resp.json()["code"] == "last_active_service"
                     resp = await c.delete(
                         f"/api/web/services/{target.id}", headers=_h(a)
                     )
+                    assert resp.status_code == 200, resp.text
+                    resp = await c.delete(
+                        f"/api/web/services/{qq_service.id}", headers=_h(a)
+                    )
                     assert resp.status_code == 409, resp.text
+                    assert resp.json()["code"] == "last_active_service"
             finally:
                 mongo._db = None
 
@@ -516,8 +571,7 @@ class TestWebServiceSelfService:
             try:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
-                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
-                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    identity = await _default_identity_model(c, a)
                     assert identity is not None
                     services = await ServiceRepository().list_by_identity(identity.id)
                     target = services[0]
@@ -562,8 +616,7 @@ class TestWebServiceSelfService:
             try:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
-                    me = (await c.get("/api/auth/me", headers=_h(a))).json()
-                    identity = await IdentityRepository().find_by_id(me["identity_id"])
+                    identity = await _default_identity_model(c, a)
                     assert identity is not None
                     services = await ServiceRepository().list_by_identity(identity.id)
                     keeper = services[0]
@@ -650,7 +703,12 @@ class TestChatHonoursServiceSelection:
                     a = await _signup(c, "alice")
                     b = await _signup(c, "bob")
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
-                    mine = await c.post("/api/web/services", json={"profile_id": pid}, headers=_h(a))
+                    identity = await _default_identity(c, a)
+                    mine = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": pid, "identity_id": identity["id"]},
+                        headers=_h(a),
+                    )
                     assert mine.status_code == 201
                     sid = mine.json()["id"]
 
@@ -686,8 +744,7 @@ class TestCrossChannelAccess:
         self, client: AsyncClient, token: str
     ) -> tuple[str, str, str]:
         """在当前账号下建 QQ Bot + QQ 身份 + 服务，返回 (service_id, bot_id, identity_id)。"""
-        me = (await client.get("/api/auth/me", headers=_h(token))).json()
-        web_identity = await IdentityRepository().find_by_id(me["identity_id"])
+        web_identity = await _default_identity_model(client, token)
         assert web_identity is not None
         qq_bot = await BotConfigRepository().create(
             BotConfigCreate(account_id=web_identity.account_id, name="QQ助手", platform="qq")
@@ -814,17 +871,25 @@ class TestCrossChannelAccess:
                 async with _client(app) as c:
                     token = await _signup(c, "alice")
                     await self._seed_channel_service(c, token)
+                    identity = await _default_identity(c, token)
                     # 注册自带 1 个，再加 2 个到本人上限 3；渠道服务不占名额
                     for name in ("甲", "乙"):
                         resp = await c.post(
                             "/api/web/services",
-                            json={"profile_id": PUBLIC_SLUG, "name": name},
+                            json={
+                                "profile_id": PUBLIC_SLUG,
+                                "identity_id": identity["id"],
+                                "name": name,
+                            },
                             headers=_h(token),
                         )
                         assert resp.status_code == 201, resp.text
                     over = await c.post(
                         "/api/web/services",
-                        json={"profile_id": PUBLIC_SLUG},
+                        json={
+                            "profile_id": PUBLIC_SLUG,
+                            "identity_id": identity["id"],
+                        },
                         headers=_h(token),
                     )
                     assert over.status_code == 409
@@ -844,26 +909,32 @@ class TestCrossChannelAccess:
                 async with _client(app) as c:
                     token = await _signup(c, "alice")
                     me = (await c.get("/api/auth/me", headers=_h(token))).json()
-                    identity = await IdentityRepository().find_by_id(me["identity_id"])
-                    assert identity is not None
-                    own_bot = await BotConfigRepository().create(
+                    identity = await _default_identity(c, token)
+                    await BotConfigRepository().create(
                         BotConfigCreate(
-                            account_id=identity.account_id, name="账号网页Bot", platform="web"
+                            account_id=me["account_id"], name="账号网页Bot", platform="web"
                         )
                     )
 
                     resp = await c.post(
                         "/api/web/services",
-                        json={"profile_id": PUBLIC_SLUG, "name": "新伙伴"},
+                        json={
+                            "profile_id": PUBLIC_SLUG,
+                            "identity_id": identity["id"],
+                            "name": "新伙伴",
+                        },
                         headers=_h(token),
                     )
                     assert resp.status_code == 201, resp.text
                     saved = await ServiceRepository().find_by_id(resp.json()["id"])
-                    assert saved is not None and saved.bot_id == own_bot.id
+                    account_bots = await BotConfigRepository().list_by_account(me["account_id"])
+                    assert saved is not None
+                    assert saved.bot_id in {bot.id for bot in account_bots}
+                    assert saved.bot_id != WEB_BOT_ID
 
-                    # 默认服务随之切到账号自有 Bot
                     me_after = (await c.get("/api/auth/me", headers=_h(token))).json()
-                    assert me_after["bot_id"] == own_bot.id
+                    assert me_after["account_id"] == me["account_id"]
+                    assert "bot_id" not in me_after
             finally:
                 mongo._db = None
 

@@ -58,7 +58,6 @@ class AccountRepository:
         account_id: str,
         *,
         credential_id: str | None = None,
-        identity_id: str | None = None,
     ) -> dict[str, int]:
         """级联删除账号及其关联数据（凭据→周边记录→媒体/快照→消息→对话→记忆→服务→身份→Bot→额度→角色→账号）。
 
@@ -79,9 +78,6 @@ class AccountRepository:
             doc["id"]
             async for doc in db.identities.find({"account_id": account_id}, {"id": 1})
         ]
-        # 注销路径已知身份 ID，容错并入（极端情况下 identities 文档缺 account_id）
-        if identity_id and identity_id not in identity_ids:
-            identity_ids.append(identity_id)
 
         # 微信上下文 token 按 bot_id 存：bot 一删就查不到归属，必须在预扫描阶段取 ID
         bot_ids: list[str] = [
@@ -140,9 +136,9 @@ class AccountRepository:
         cred_ids: list[str] = [
             doc["id"]
             async for doc in db.web_credentials.find(
-                {"identity_id": {"$in": identity_ids}}, {"id": 1}
+                {"account_id": account_id}, {"id": 1}
             )
-        ] if identity_ids else []
+        ]
         if credential_id and credential_id not in cred_ids:
             cred_ids.append(credential_id)
 

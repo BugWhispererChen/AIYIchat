@@ -564,7 +564,7 @@ def _temporal_expected(routine: Any, anchor_utc: datetime) -> dict[str, Any]:
     from app.conversation.time_context import resolve_tz
     from app.llm.prompt_assembler import _WEEKDAYS
 
-    tz, _label = resolve_tz(routine.timezone or "", "")
+    tz, _label = resolve_tz()
     local = anchor_utc.astimezone(tz)
     segment = current_segment(routine, local)
     # 与生产渲染口径对齐：activity 全空时 `render_routine_hint` 返回空串，等同"不该有"

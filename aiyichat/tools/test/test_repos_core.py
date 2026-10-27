@@ -151,7 +151,7 @@ class TestAccountRepository:
             )
 
             # 周边集合：凭据 + 会话 + 订单 + 主动记录 + 安全事件
-            await db.web_credentials.insert_one({"id": "cred-1", "identity_id": "u-1"})
+            await db.web_credentials.insert_one({"id": "cred-1", "account_id": acc.id})
             await db.web_sessions.insert_one({"id": "s-1", "credential_id": "cred-1"})
             await db.orders.insert_one({"id": "o-1", "account_id": acc.id})
             await db.proactive_records.insert_one({"id": "pr-1", "identity_id": "u-1"})
@@ -214,7 +214,7 @@ class TestAccountRepository:
             repo = AccountRepository()
             acc = await repo.create(AccountCreate(name="半删账号"))
             await db.identities.insert_one({"id": "u-9", "account_id": acc.id})
-            await db.web_credentials.insert_one({"id": "cred-9", "identity_id": "u-9"})
+            await db.web_credentials.insert_one({"id": "cred-9", "account_id": acc.id})
             await db.web_sessions.insert_one({"credential_id": "cred-9"})
             await db.services.insert_one({"id": "svc-9", "account_id": acc.id})
             await db.conversations.insert_one({"service_id": "svc-9"})

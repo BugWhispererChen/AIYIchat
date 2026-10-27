@@ -8,23 +8,22 @@ from pydantic import BaseModel, Field
 
 
 class IdentityCreate(BaseModel):
-    """创建身份。"""
+    """账号下的对话身份；平台字段仅描述 QQ/微信外部绑定。"""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     account_id: str
     name: str = ""
-    platform_id: str = Field(default_factory=lambda: str(uuid4()))
-    platform: Literal["qq", "wechat", "web"] = "qq"
+    platform_id: str = ""
+    platform: Literal["qq", "wechat"] | None = None
     nickname: str = ""
     self_description: str = ""  # 自我描述，供 LLM 参考
-    timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空串回落全局默认偏移
     is_minor: bool = False  # 是否为未成年人（启用防沉迷与内容限制）
     is_blocked: bool = False  # 是否被禁用
     block_reason: str = ""  # 禁用原因
 
 
 class IdentityInDB(IdentityCreate):
-    """数据库中的身份记录。"""
+    """数据库中的身份对象。"""
 
     account_id: str = ""  # 兼容旧数据：允许空值作为默认值
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -42,9 +41,13 @@ class IdentityInDB(IdentityCreate):
         if doc is None:
             raise ValueError("Document is None")
         doc["_id"] = str(doc["_id"])
-        # 兼容旧数据：self_description / is_blocked / block_reason / is_minor 可能不存在
+        # 旧 web 身份在读取时即转为无平台绑定的普通身份，原 id 与业务引用不变
+        if doc.get("platform") == "web":
+            doc["platform"] = None
+            doc["platform_id"] = ""
+        doc.setdefault("platform", None)
+        doc.setdefault("platform_id", "")
         doc.setdefault("self_description", "")
-        doc.setdefault("timezone", "")
         doc.setdefault("is_minor", False)
         doc.setdefault("is_blocked", False)
         doc.setdefault("block_reason", "")
@@ -58,10 +61,9 @@ class IdentityUpdate(BaseModel):
     account_id: str | None = None
     name: str | None = None
     platform_id: str | None = None
-    platform: Literal["qq", "wechat", "web"] | None = None
+    platform: Literal["qq", "wechat"] | None = None
     nickname: str | None = None
     self_description: str | None = None
-    timezone: str | None = None  # IANA 时区名，空串回落全局默认偏移
     is_minor: bool | None = None
     is_blocked: bool | None = None
     block_reason: str | None = None

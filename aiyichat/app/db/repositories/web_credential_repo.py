@@ -47,20 +47,18 @@ class WebCredentialRepository:
             return None
         return WebCredentialInDB.from_mongo(doc)
 
-    async def find_by_identity_id(self, identity_id: str) -> Optional[WebCredentialInDB]:
-        """按关联身份 ID 查询身份。"""
-        doc = await self._collection().find_one({"identity_id": identity_id})
-        if doc is None:
-            return None
-        return WebCredentialInDB.from_mongo(doc)
+    async def find_by_account_id(self, account_id: str) -> list[WebCredentialInDB]:
+        """查询账号下的网页登录凭据。"""
+        cursor = self._collection().find({"account_id": account_id})
+        return [WebCredentialInDB.from_mongo(doc) async for doc in cursor]
 
-    async def set_identity_id(self, credential_id: str, identity_id: str) -> bool:
-        """注册四件套建齐后回填关联身份 ID。"""
+    async def set_account_id(self, credential_id: str, account_id: str) -> bool:
+        """注册创建账号后回填归属。"""
         result = await self._collection().update_one(
             {"id": credential_id},
-            {"$set": {"identity_id": identity_id, "updated_at": datetime.now(timezone.utc)}},
+            {"$set": {"account_id": account_id, "updated_at": datetime.now(timezone.utc)}},
         )
-        return result.modified_count > 0
+        return result.matched_count > 0
 
     async def set_status(
         self,

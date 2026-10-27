@@ -35,20 +35,9 @@
                 <div class="ui-grid ui-grid--3">
                     <div class="ui-field">
                         <label for="f-nickname">昵称</label>
-                        <input class="ui-input" id="f-nickname" maxlength="30" placeholder="对话角色如何称呼你">
-                        <div class="ui-help">最长 30 字，用于列表与对话中的称呼。</div>
+                        <input class="ui-input" id="f-nickname" maxlength="30" placeholder="账号显示昵称">
+                        <div class="ui-help">最长 30 字，仅用于账号展示，不修改服务身份。</div>
                     </div>
-                    <div class="ui-field">
-                        <label for="f-timezone">时区</label>
-                        <input class="ui-input" id="f-timezone" maxlength="60" placeholder="例如 Asia/Shanghai">
-                        <div class="ui-help">影响时间感知与主动问候；留空跟随系统默认。</div>
-                    </div>
-                </div>
-                <div class="ui-field">
-                    <label for="f-desc">自我描述</label>
-                    <textarea class="ui-textarea" id="f-desc" maxlength="600"
-                              placeholder="介绍一下自己，AI 角色会据此调整说话方式"></textarea>
-                    <div class="ui-help">这段内容会进入对话上下文，最长 600 字。</div>
                 </div>
                 <div class="ui-cluster ui-cluster--bar">
                     <button type="button" class="ui-btn ui-btn--primary" id="profile-save">保存资料</button>

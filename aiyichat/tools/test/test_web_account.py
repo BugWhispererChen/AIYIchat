@@ -39,7 +39,7 @@ from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
 from app.models.bot_config import BotConfigCreate
-from app.models.identity import IdentityCreate
+from app.models.identity import IdentityCreate, IdentityUpdate
 from app.models.injection_snapshot import InjectionSnapshotInDB
 from app.models.order import OrderCreate
 from app.models.proactive_record import ProactiveRecord
@@ -154,12 +154,13 @@ async def _login(client: AsyncClient, username: str, password: str = PASSWORD) -
 
 
 async def _identity_of(username: str) -> Any:
-    """取该网页渠道身份关联的 identity（测试里直接操作底层数据用）。"""
+    """取账号的默认普通身份，供底层数据构造使用。"""
     credential = await WebCredentialRepository().find_by_username(username)
-    assert credential is not None and credential.identity_id
-    identity = await IdentityRepository().find_by_id(credential.identity_id)
-    assert identity is not None
-    return identity
+    assert credential is not None and credential.account_id
+    identities = await IdentityRepository().list_by_account(credential.account_id)
+    identities = [identity for identity in identities if identity.platform is None]
+    assert len(identities) == 1
+    return identities[0]
 
 
 async def _seed_full_data(username: str) -> dict[str, Any]:
@@ -279,7 +280,7 @@ class TestAccountAccess:
                     identity = await _identity_of("nosvc")
                     assert await ServiceRepository().delete_by_account(identity.account_id) > 0
 
-                    assert (await c.get("/api/auth/me", headers=_h(token))).status_code == 403
+                    assert (await c.get("/api/auth/me", headers=_h(token))).status_code == 200
                     profile = await c.get("/api/web/account/profile", headers=_h(token))
                     assert profile.status_code == 200, profile.text
                     assert profile.json()["username"] == "nosvc"
@@ -312,13 +313,14 @@ class TestProfileModule:
                     assert resp.status_code == 200, resp.text
                     body = resp.json()
                     assert body["nickname"] == "阿梨"
-                    assert body["self_description"] == "在读研究生"
-                    assert body["timezone"] == "Asia/Shanghai"
+                    assert "self_description" not in body and "timezone" not in body
                     assert body["username"] == "alice"
 
                     identity = await _identity_of("alice")
-                    assert identity.nickname == "阿梨"
-                    assert identity.platform == "web"
+                    assert identity.nickname == "alice"
+                    assert identity.platform is None
+                    account = await AccountRepository().find_by_id(identity.account_id)
+                    assert account is not None and account.name == "阿梨"
             finally:
                 await _teardown()
 
@@ -337,43 +339,45 @@ class TestProfileModule:
                     assert empty.status_code == 400
                     assert empty.json()["code"] == "invalid_nickname"
 
-                    bad_tz = await c.put(
+                    long_name = await c.put(
                         "/api/web/account/profile", headers=_h(token),
-                        json={"nickname": "阿波", "timezone": "Mars/Unknown"},
+                        json={"nickname": "字" * 31},
                     )
-                    assert bad_tz.status_code == 400
-                    assert bad_tz.json()["code"] == "invalid_timezone"
-
-                    long_desc = await c.put(
-                        "/api/web/account/profile", headers=_h(token),
-                        json={"nickname": "阿波", "self_description": "字" * 601},
-                    )
-                    assert long_desc.status_code == 400
-                    assert long_desc.json()["code"] == "invalid_description"
+                    assert long_name.status_code == 400
+                    assert long_name.json()["code"] == "invalid_nickname"
             finally:
                 await _teardown()
 
         _run(flow())
 
-    def test_nickname_flows_into_chat(self) -> None:
-        """改完昵称，聊天链路必须用新称呼，且不再接受客户端伪造 nickname。"""
+    def test_chat_nickname_comes_from_service_identity(self) -> None:
+        """账号昵称与服务身份昵称分离，聊天只使用后者。"""
         async def flow() -> None:
             app = await _setup_app("acct_nick_chat")
             try:
                 async with _client(app) as c:
                     token = await _signup(c, "carol")
+                    identity = await _identity_of("carol")
+                    await IdentityRepository().update(
+                        identity.id, IdentityUpdate(nickname="身份昵称")
+                    )
                     await c.put(
                         "/api/web/account/profile", headers=_h(token),
-                        json={"nickname": "小卡"},
+                        json={"nickname": "账号昵称"},
                     )
+                    service = (await ServiceRepository().list_by_identity(identity.id))[0]
                     _RecordingEngine.calls = []
                     await c.post(
                         "/api/conversations/chat/stream",
                         headers=_h(token),
-                        json={"text": "在吗", "nickname": "冒充者"},
+                        json={
+                            "text": "在吗",
+                            "nickname": "冒充者",
+                            "service_id": service.id,
+                        },
                     )
                     assert _RecordingEngine.calls
-                    assert _RecordingEngine.calls[0]["nickname"] == "小卡"
+                    assert _RecordingEngine.calls[0]["nickname"] == "身份昵称"
             finally:
                 await _teardown()
 
@@ -755,7 +759,7 @@ class TestDeleteAccount:
 
         _run(flow())
 
-    def test_blocks_when_other_identity_exists(self) -> None:
+    def test_delete_with_multiple_identities_purges_account(self) -> None:
         async def flow() -> None:
             app = await _setup_app("acct_del_multi")
             try:
@@ -769,10 +773,10 @@ class TestDeleteAccount:
                     resp = await c.post("/api/web/account/delete", headers=_h(token),
                                         json={"current_password": PASSWORD,
                                               "username_confirm": "omar"})
-                    assert resp.status_code == 409, resp.text
-                    assert resp.json()["code"] == "linked_identity_exists"
-                    # 被拒后账号完好
-                    assert (await c.get("/api/web/account/profile", headers=_h(token))).status_code == 200
+                    assert resp.status_code == 200, resp.text
+                    assert await AccountRepository().find_by_id(identity.account_id) is None
+                    assert await IdentityRepository().list_by_account(identity.account_id) == []
+                    assert (await c.get("/api/web/account/profile", headers=_h(token))).status_code == 401
             finally:
                 await _teardown()
 

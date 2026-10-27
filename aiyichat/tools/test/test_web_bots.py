@@ -9,7 +9,6 @@
 
 import asyncio
 import base64
-import uuid
 from typing import Any
 from unittest.mock import patch
 
@@ -127,9 +126,32 @@ async def _public_profile_id() -> str:
 async def _account_id(client: AsyncClient, token: str) -> str:
     me = await client.get("/api/auth/me", headers=_h(token))
     assert me.status_code == 200
-    identity = await IdentityRepository().find_by_id(me.json()["identity_id"])
-    assert identity is not None
-    return identity.account_id
+    return str(me.json()["account_id"])
+
+
+async def _identity_id(client: AsyncClient, token: str) -> str:
+    resp = await client.get("/api/web/identities", headers=_h(token))
+    assert resp.status_code == 200, resp.text
+    items = [item for item in resp.json()["items"] if not item["platform"]]
+    assert len(items) == 1
+    return str(items[0]["id"])
+
+
+async def _bot_payload(
+    client: AsyncClient,
+    token: str,
+    platform: str,
+    name: str,
+    profile_id: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    return {
+        "platform": platform,
+        "name": name,
+        "profile_id": profile_id,
+        "identity_id": await _identity_id(client, token),
+        **fields,
+    }
 
 
 def _run(coro: Any) -> None:
@@ -219,7 +241,7 @@ class TestWebBotCreate:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={"platform": "web", "name": "工作助手", "profile_id": pid},
+                        json=await _bot_payload(client, token, "web", "工作助手", pid),
                         headers=_h(token),
                     )
                     assert created.status_code == 201, created.text
@@ -227,12 +249,18 @@ class TestWebBotCreate:
                     bot = body["bot"]
                     assert bot["platform"] == "web" and bot["origin"] == "web"
                     assert bot["service_count"] == 1
-                    assert body["service"]["name"] == "林语 · 工作助手"
+                    assert body["service"]["name"] == "alice · 林语 · 工作助手"
 
+                    identity_id = await _identity_id(client, token)
                     for name in ("第二个服务", "第三个服务"):
                         resp = await client.post(
                             "/api/web/services",
-                            json={"profile_id": pid, "name": name, "bot_id": bot["id"]},
+                            json={
+                                "profile_id": pid,
+                                "identity_id": identity_id,
+                                "name": name,
+                                "bot_id": bot["id"],
+                            },
                             headers=_h(token),
                         )
                         assert resp.status_code == 201, resp.text
@@ -253,10 +281,10 @@ class TestWebBotCreate:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={
-                            "platform": "qq", "name": "QQ助手", "profile_id": pid,
-                            "app_id": "app-1", "app_secret": "secret-1",
-                        },
+                        json=await _bot_payload(
+                            client, token, "qq", "QQ助手", pid,
+                            app_id="app-1", app_secret="secret-1",
+                        ),
                         headers=_h(token),
                     )
                     assert created.status_code == 201, created.text
@@ -268,7 +296,11 @@ class TestWebBotCreate:
 
                     duplicate = await client.post(
                         "/api/web/services",
-                        json={"profile_id": pid, "bot_id": bot["id"]},
+                        json={
+                            "profile_id": pid,
+                            "identity_id": await _identity_id(client, token),
+                            "bot_id": bot["id"],
+                        },
                         headers=_h(token),
                     )
                     assert duplicate.status_code == 409
@@ -297,7 +329,7 @@ class TestWebBotCreate:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={"platform": "qq", "name": "待绑定", "profile_id": pid},
+                        json=await _bot_payload(client, token, "qq", "待绑定", pid),
                         headers=_h(token),
                     )
                     assert created.status_code == 201, created.text
@@ -318,10 +350,10 @@ class TestWebBotCreate:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={
-                            "platform": "qq", "name": "QQ助手", "profile_id": pid,
-                            "app_id": "app-1", "app_secret": "secret-1",
-                        },
+                        json=await _bot_payload(
+                            client, token, "qq", "QQ助手", pid,
+                            app_id="app-1", app_secret="secret-1",
+                        ),
                         headers=_h(token),
                     )
                     assert created.status_code == 201, created.text
@@ -351,7 +383,8 @@ class TestWebBotCreate:
                     ) is None
                     identity = await identity_repo.find_by_id(service.identity_id)
                     assert identity is not None
-                    uuid.UUID(identity.platform_id)  # 已重置为新的占位 UUID
+                    assert identity.platform is None
+                    assert identity.platform_id == ""
                     assert bot["id"] not in identity.bot_openids
             finally:
                 mongo._db = None
@@ -372,13 +405,13 @@ class TestWebBotQuotaAndProtection:
                     settings.web_max_services = 2
                     first = await client.post(
                         "/api/web/bots",
-                        json={"platform": "web", "name": "渠道一", "profile_id": pid},
+                        json=await _bot_payload(client, token, "web", "渠道一", pid),
                         headers=_h(token),
                     )
                     assert first.status_code == 201, first.text
                     second = await client.post(
                         "/api/web/bots",
-                        json={"platform": "web", "name": "渠道二", "profile_id": pid},
+                        json=await _bot_payload(client, token, "web", "渠道二", pid),
                         headers=_h(token),
                     )
                     assert second.status_code == 409
@@ -387,7 +420,7 @@ class TestWebBotQuotaAndProtection:
                     settings.web_max_services = 0
                     disabled = await client.post(
                         "/api/web/bots",
-                        json={"platform": "web", "name": "渠道三", "profile_id": pid},
+                        json=await _bot_payload(client, token, "web", "渠道三", pid),
                         headers=_h(token),
                     )
                     assert disabled.status_code == 403
@@ -437,7 +470,7 @@ class TestWebBotQrFlows:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={"platform": "qq", "name": "待绑定", "profile_id": pid},
+                        json=await _bot_payload(client, alice, "qq", "待绑定", pid),
                         headers=_h(alice),
                     )
                     assert created.status_code == 201, created.text
@@ -501,7 +534,7 @@ class TestWebBotQrFlows:
                     pid = await _public_profile_id()
                     created = await client.post(
                         "/api/web/bots",
-                        json={"platform": "qq", "name": "待绑定", "profile_id": pid},
+                        json=await _bot_payload(client, alice, "qq", "待绑定", pid),
                         headers=_h(alice),
                     )
                     assert created.status_code == 201, created.text
@@ -604,7 +637,7 @@ class TestWebBotQrFlows:
                     ):
                         created = await client.post(
                             "/api/web/bots",
-                            json={"platform": "wechat", "name": "微信助手", "profile_id": pid},
+                            json=await _bot_payload(client, alice, "wechat", "微信助手", pid),
                             headers=_h(alice),
                         )
                         assert created.status_code == 201, created.text

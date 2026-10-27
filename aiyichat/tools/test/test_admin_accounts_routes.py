@@ -120,7 +120,7 @@ class TestAccountsCrud:
                     await db.identities.insert_one({"id": "adm-u-1", "account_id": acc_id})
                     await db.services.insert_one({"id": "adm-svc", "account_id": acc_id})
                     await db.web_credentials.insert_one(
-                        {"id": "adm-cred", "identity_id": "adm-u-1"}
+                        {"id": "adm-cred", "account_id": acc_id}
                     )
                     await db.web_sessions.insert_one({"credential_id": "adm-cred"})
                     await db.orders.insert_one({"id": "adm-order", "account_id": acc_id})
@@ -386,11 +386,12 @@ class TestAccountServices:
                 acc_id = await _seed_account()
                 uid, bid, slug = await self._seed_entities(acc_id)
                 async with _client(app) as client:
-                    # 缺少字段直接重定向
+                    # 缺少字段显示明确错误，不再静默重定向
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services", data={"identity_id": uid}
                     )
-                    assert resp.status_code == 303
+                    assert resp.status_code == 200
+                    assert "渠道、身份与角色均为必选项" in resp.text
 
                     # 正常创建
                     resp = await client.post(
@@ -399,6 +400,9 @@ class TestAccountServices:
                     )
                     assert resp.status_code == 303
                     assert await ServiceRepository().count_by_bot(bid) == 1
+                    created = (await ServiceRepository().list_by_bot(bid))[0]
+                    profile = await ProfileRepository().find_by_slug(slug)
+                    assert created.profile_id == profile.id
 
                     # 1 Bot = 1 Service 约束
                     resp = await client.post(
@@ -438,7 +442,7 @@ class TestAccountServices:
                         data={"identity_id": uid4, "bot_id": bid4, "profile_id": slug4},
                     )
                     assert resp.status_code == 200
-                    assert "该渠道已被禁用" in resp.text
+                    assert "该渠道已被停用" in resp.text
 
                     # 被禁用的角色
                     uid5, bid5, slug5 = await self._seed_entities(acc_id)
@@ -448,7 +452,7 @@ class TestAccountServices:
                         data={"identity_id": uid5, "bot_id": bid5, "profile_id": slug5},
                     )
                     assert resp.status_code == 200
-                    assert "该角色已被禁用" in resp.text
+                    assert "所选角色已被停用" in resp.text
             finally:
                 await _teardown_app(app)
 
@@ -495,9 +499,10 @@ class TestAccountServices:
                     assert edited.disable_reason == "暂停使用"
 
                     # 加入合法共享组（同账号同角色成员）
+                    profile = await ProfileRepository().find_by_slug(slug)
                     partner = await svc_repo.create(ServiceCreate(
                         account_id=acc_id, identity_id="u-p", bot_id="b-p",
-                        profile_id=slug, share_group_id="grp-2",
+                        profile_id=profile.id, share_group_id="grp-2",
                     ))
                     resp = await client.post(
                         f"/admin/accounts/{acc_id}/services/{svc1.id}/edit",
@@ -530,10 +535,10 @@ class TestAccountServices:
                     assert resp.status_code == 303
                     assert await conv_repo.list_by_service("grp-2") == []
 
-                    # 删除后身份绑定被释放（platform_id 重置为 UUID）
+                    # 删除最后一个外部渠道服务后恢复为无绑定普通身份
                     released = await IdentityRepository().find_by_id(uid)
                     assert released is not None
-                    uuid.UUID(released.platform_id)  # 不抛异常即为 UUID
+                    assert released.platform is None and released.platform_id == ""
 
                     # 清理另一个账号的服务
                     resp = await client.post(

@@ -60,6 +60,7 @@ def _time_awareness_on(monkeypatch) -> None:
     用例，在自己内部再 patch 一次即可覆盖本夹具。
     """
     monkeypatch.setattr(settings, "message_time_enabled", True)
+    monkeypatch.setattr(settings, "default_timezone_offset", 0)
 
 
 class TestExpectationTable:
@@ -110,19 +111,14 @@ class TestExpectationTable:
         # 命中小时数钉死：上课 8~11 (4) + 上班 14~17 (4) + 就寝 22~23/0~5 (8)
         assert sum(1 for e in off if e["expected"]) == 16
 
-    def test_custom_routine_timezone_is_honoured(self) -> None:
-        """期待值走生产 `resolve_tz`：非 UTC 作息时区也要按角色本地时判定。
-
-        尺子内置表把时区钉为 UTC（已知局限，结论不外推），这里用一张 Asia/Shanghai 的
-        表单独钉住"期望计算确实按作息时区换算"，免得那条路径从没被量过。
-        """
+    def test_global_offset_changes_expected_time(self) -> None:
+        """全局 UTC 偏移变化会同步改变作息期待时刻。"""
         routine = ProfileLifeRoutine(
-            timezone="Asia/Shanghai",
             segments=[ProfileLifeSegment(start_hour=9, end_hour=10, activity="早会")],
         )
-        # 01:05 UTC = 09:05 上海 → 命中；02:05 UTC = 10:05 上海 → end 不含，不命中
-        assert R._temporal_expected(routine, _anchor(1))["expected_activity"] == "早会"
-        assert R._temporal_expected(routine, _anchor(2))["expected_activity"] == ""
+        with patch.object(settings, "default_timezone_offset", 8):
+            assert R._temporal_expected(routine, _anchor(1))["expected_activity"] == "早会"
+            assert R._temporal_expected(routine, _anchor(2))["expected_activity"] == ""
 
 
 class TestInjectionFlip:
@@ -203,10 +199,10 @@ class TestExtraction:
             anchor = _anchor(9)
             messages = R._build_messages(case, anchor)
             temporal = R._temporal_metrics(case, messages, "", anchor)
-        # 服务时区 UTC+8 → 【当前时刻】是 17:05；作息时区 UTC → 作支行是 09:05
+        # 全局 UTC+8 同时作用于消息时刻与作支行
         assert temporal["message_clock"] == "17:05" == temporal["message_clock_expected"]
         assert temporal["message_clock_ok"] is True and temporal["message_date_ok"] is True
-        assert temporal["routine_clock"] == "09:05" == temporal["routine_clock_expected"]
+        assert temporal["routine_clock"] == "17:05" == temporal["routine_clock_expected"]
         assert temporal["routine_clock_ok"] is True
         assert temporal["phase"] == _day_phase(17) == "下午"
         assert temporal["clock_consistent"] is True
@@ -252,10 +248,10 @@ class TestContradictionWords:
         ):
             anchor = _anchor(17)
             messages = R._build_messages(case, anchor)
-            # 17:05 UTC → 服务侧 01:05（凌晨档）；作息侧仍是「上班」
+            # 17:05 UTC → 全局 01:05（凌晨档），作息同步变为「就寝」
             temporal = R._temporal_metrics(case, messages, "早上好呀 [IMG:晨光]", anchor)
         assert temporal["phase"] == "凌晨"
-        assert temporal["expected_activity"] == "上班"
+        assert temporal["expected_activity"] == "就寝"
         assert temporal["contradictions"] == ["早上好"]
         assert temporal["contradiction"] is True
 

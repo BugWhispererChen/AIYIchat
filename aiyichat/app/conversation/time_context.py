@@ -1,54 +1,11 @@
-"""时间上下文中枢：为对话引擎提供统一的时区解析与时间渲染。
+"""时间上下文中枢：全系统使用后台配置的唯一 UTC 偏移。"""
 
-设计要点（对照方案 §3.1 / §4.5）：
-- 时区解析链：service.timezone → user.timezone → settings.default_timezone_offset
-- IANA 名走 zoneinfo.ZoneInfo（自动处理夏令时）；无效名/缺 tzdata 时静默回落
-  固定偏移，绝不抛异常，且同一名称只 warning 一次（避免日志洪水）
-- 唯一时间源：所有 now 取自 TimeContext.now_utc = datetime.now(timezone.utc)，
-  禁止各处散落 datetime.now()
-- naive 归一：统一 _ensure_aware（按 UTC），消除 prompt_assembler/context_manager/
-  scheduler 三处重复实现
-
-本模块仅依赖标准库，不依赖 jionlp（P2 的归一化封装见 time_normalizer.py）。
-"""
-
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, tzinfo
 
 from app.config import settings
 
-logger = logging.getLogger(__name__)
-
-# 已警告过的无效时区名（同一名称只 warning 一次，避免日志洪水）
-_warned_tz_names: set[str] = set()
-
-# 星期名（weekday() 索引 0~6）
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
-
-# 常用 IANA 时区（供后台身份详情页下拉；手动输入仍允许任意合法名）
-COMMON_TIMEZONES: tuple[str, ...] = (
-    "Asia/Shanghai",
-    "Asia/Taipei",
-    "Asia/Hong_Kong",
-    "Asia/Singapore",
-    "Asia/Tokyo",
-    "Asia/Seoul",
-    "Asia/Bangkok",
-    "Asia/Dubai",
-    "Europe/London",
-    "Europe/Paris",
-    "Europe/Berlin",
-    "Europe/Moscow",
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Los_Angeles",
-    "America/Sao_Paulo",
-    "Australia/Sydney",
-    "Pacific/Auckland",
-    "UTC",
-)
 
 
 def ensure_aware(dt: datetime) -> datetime:
@@ -64,34 +21,8 @@ def _fallback_tz() -> timezone:
     return timezone(timedelta(hours=offset))
 
 
-def resolve_tz(
-    service_timezone: str = "", identity_timezone: str = ""
-) -> tuple[tzinfo, str]:
-    """解析时区：service → user → 全局默认偏移，逐级回落，绝不抛异常。
-
-    Args:
-        service_timezone: 服务级 IANA 时区名（空串表示未设置）
-        user_timezone: 对方级 IANA 时区名（空串表示未设置）
-
-    Returns:
-        (tzinfo, 展示名)。IANA 解析成功时展示名为原名（如 "Asia/Shanghai"），
-        回落固定偏移时展示名为 "UTC+08:00"。
-    """
-    for name in (service_timezone, identity_timezone):
-        name = (name or "").strip()
-        if not name:
-            continue
-        try:
-            from zoneinfo import ZoneInfo
-
-            return ZoneInfo(name), name
-        except Exception:
-            # 无效名 / Windows 缺 tzdata / 其他异常：静默回落，只 warning 一次
-            if name not in _warned_tz_names:
-                _warned_tz_names.add(name)
-                logger.warning(
-                    "时区名无效或 tzdata 缺失，回落默认偏移: %s", name
-                )
+def resolve_tz() -> tuple[tzinfo, str]:
+    """返回后台全局配置的 UTC 偏移。"""
     tz = _fallback_tz()
     return tz, _offset_label(tz)
 
@@ -165,21 +96,10 @@ class TimeContext:
 
 
 def build_context(
-    service_timezone: str = "",
-    identity_timezone: str = "",
     last_identity_msg_at: datetime | None = None,
 ) -> TimeContext:
-    """构建单轮时间上下文。
-
-    Args:
-        service_timezone: 服务级 IANA 时区名（空串回落对方级）
-        user_timezone: 对方级 IANA 时区名（空串回落全局默认偏移）
-        last_user_msg_at: 上一条真实对方消息时间（用于 idle 计算；None 表示无历史）
-
-    Returns:
-        TimeContext（idle_seconds 为 None 时 idle_phrase 为空串）
-    """
-    tz, tz_name = resolve_tz(service_timezone, identity_timezone)
+    """以全局时区和唯一 UTC 时间源构建单轮时间上下文。"""
+    tz, tz_name = resolve_tz()
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(tz)
 

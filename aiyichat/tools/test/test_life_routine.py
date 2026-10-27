@@ -8,6 +8,8 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
+
 from app.admin.routes import features  # noqa: F401  （确保开关清单模块已加载）
 from app.config import settings
 from app.conversation.life_routine import current_segment, render_routine_hint
@@ -23,8 +25,14 @@ from tools.test.time_replay import frozen_clock
 MONDAY_1420 = datetime(2026, 10, 19, 14, 20, tzinfo=timezone.utc)
 
 
-def _routine(*segments: ProfileLifeSegment, timezone_name: str = "UTC") -> ProfileLifeRoutine:
-    return ProfileLifeRoutine(timezone=timezone_name, segments=list(segments))
+@pytest.fixture(autouse=True)
+def _global_utc():
+    with patch.object(settings, "default_timezone_offset", 0):
+        yield
+
+
+def _routine(*segments: ProfileLifeSegment) -> ProfileLifeRoutine:
+    return ProfileLifeRoutine(segments=list(segments))
 
 
 class TestSegmentMatching:
@@ -184,13 +192,12 @@ class TestFormParsing:
                 "routine_activity": ["上课", "", "摸鱼", "填错小时", "上班"],
                 "routine_phrase": ["早读困", "", "", "", "午后最容易出错"],
             },
-            {"routine_timezone": "Asia/Shanghai"},
+            {},
         )
         routine = _parse_life_routine(form)
-        assert routine.timezone == "Asia/Shanghai"
         assert [s.activity for s in routine.segments] == ["上课", "上班"]
         assert routine.segments[1].phrase == "午后最容易出错"
 
     def test_empty_form_yields_empty_routine(self) -> None:
         routine = _parse_life_routine(_FakeForm({}, {}))
-        assert routine.segments == [] and routine.timezone == ""
+        assert routine.segments == []

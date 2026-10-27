@@ -164,8 +164,8 @@
                         {% for u in identities %}
                         <tr>
                             <td><strong>{{ u.name or '-' }}</strong></td>
-                            <td><code class="u-fs-80">{{ u.platform_id }}</code></td>
-                            <td><span class="ui-badge ui-badge--line">{{ u.platform }}</span></td>
+                            <td><code class="u-fs-80">{{ u.platform_id or '-' }}</code></td>
+                            <td><span class="ui-badge ui-badge--line">{{ u.platform or '普通' }}</span></td>
                             <td>{{ u.nickname or '-' }}</td>
                             <td>
                                 <div class="ui-stack ui-stack--tight">
@@ -198,27 +198,6 @@
                                 </div>
                             </td>
                         </tr>
-                        {# 时区设置行：常用 IANA 下拉 + 手动输入，校验失败在页面顶部提示 #}
-                        <tr class="ui-row-sub">
-                            <td colspan="6">
-                                <form method="post" action="/admin/accounts/{{ account.id }}/identities/{{ u.id }}/timezone"
-                                      class="ui-cluster">
-                                    <small class="muted">时区：</small>
-                                    <select class="ui-select ui-select--sm" name="timezone">
-                                        <option value="" {% if not u.timezone %}selected{% endif %}>跟随全局默认</option>
-                                        {% for tz in common_timezones %}
-                                        <option value="{{ tz }}" {% if u.timezone == tz %}selected{% endif %}>{{ tz }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <input class="ui-input ui-input--sm" type="text" name="timezone_custom" placeholder="或手动输入 IANA 名"
-                                           value="{% if u.timezone and u.timezone not in common_timezones %}{{ u.timezone }}{% endif %}">
-                                    <button type="submit" class="ui-btn ui-btn--ghost ui-btn--sm">保存</button>
-                                    {% if u.timezone %}
-                                    <small class="muted">当前：{{ u.timezone }}</small>
-                                    {% endif %}
-                                </form>
-                            </td>
-                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -236,11 +215,11 @@
                             <input class="ui-input" type="text" name="name" placeholder="身份名称">
                         </label>
                         <label class="ui-field">
-                            <span class="ui-label">平台</span>
-                            <select class="ui-select" name="platform" required>
-                                <option value="qq">QQ</option>
-                                <option value="wechat">微信</option>
-                                <option value="web">网页</option>
+                            <span class="ui-label">外部平台绑定</span>
+                            <select class="ui-select" name="platform">
+                                <option value="" selected>普通身份（暂不绑定）</option>
+                                <option value="qq">QQ（等待首条消息绑定）</option>
+                                <option value="wechat">微信（等待首条消息绑定）</option>
                             </select>
                         </label>
                         <label class="ui-field">
@@ -462,13 +441,13 @@
                             <div class="ui-grid ui-grid--2">
                                 <label class="ui-field">
                                     <span class="ui-label">服务名称</span>
-                                    <input class="ui-input" type="text" name="name" value="{{ sinfo.service.name }}">
+                                    <input class="ui-input" type="text" name="name" maxlength="60" value="{{ sinfo.service.name }}">
                                 </label>
                                 <label class="ui-field">
                                     <span class="ui-label">角色</span>
                                     <select class="ui-select" name="profile_id">
                                         {% for p in profiles %}
-                                        <option value="{{ p.slug }}" {% if p.slug == sinfo.service.profile_id %}selected{% endif %}>{{ p.name }}</option>
+                                        <option value="{{ p.id }}" {% if p.id == sinfo.profile_ref %}selected{% endif %}>{{ p.name }}</option>
                                         {% endfor %}
                                     </select>
                                 </label>
@@ -503,15 +482,19 @@
         <!-- 添加对话服务 -->
         <section class="ui-card">
             <div class="ui-card-head"><h4 class="ui-card-title">添加对话服务</h4></div>
-            <p class="muted u-fs-85">服务名称将自动生成：{身份}-{角色}-{渠道名称}</p>
+            <p class="muted u-fs-85">服务 = 渠道 + 角色 + 身份；名称留空时自动生成：{身份} · {角色} · {渠道名称}</p>
             <form method="post" action="/admin/accounts/{{ account.id }}/services" class="ui-stack">
                 <div class="ui-grid ui-grid--3">
+                    <label class="ui-field">
+                        <span class="ui-label">服务名称（选填）</span>
+                        <input class="ui-input" type="text" name="name" maxlength="60" placeholder="留空自动命名">
+                    </label>
                     <label class="ui-field">
                         <span class="ui-label">选择身份</span>
                         <select class="ui-select" name="identity_id" required>
                             <option value="">选择身份...</option>
                             {% for u in identities %}
-                            <option value="{{ u.id }}">{{ u.name or u.platform_id }} ({{ u.platform }})</option>
+                            <option value="{{ u.id }}">{{ u.name or u.platform_id }} ({{ u.platform or '普通' }})</option>
                             {% endfor %}
                         </select>
                     </label>
@@ -529,7 +512,7 @@
                         <select class="ui-select" name="profile_id" required>
                             <option value="">选择角色...</option>
                             {% for p in profiles %}
-                            <option value="{{ p.slug }}">{{ p.name }}</option>
+                            <option value="{{ p.id }}">{{ p.name }}</option>
                             {% endfor %}
                         </select>
                     </label>

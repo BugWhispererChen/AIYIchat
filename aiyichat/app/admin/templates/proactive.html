@@ -33,10 +33,10 @@
                 <span class="ui-label">结束时刻（0-23 点）</span>
                 <input class="ui-input" type="number" name="quiet_end" min="0" max="23" value="{{ quiet_end }}">
             </label>
-            <label class="ui-field">
-                <span class="ui-label">身份时区（UTC 偏移小时）</span>
-                <input class="ui-input" type="number" name="tz_offset" min="-12" max="14" value="{{ tz_offset }}">
-            </label>
+            <div class="ui-field">
+                <span class="ui-label">全局时区</span>
+                <p class="ui-note">当前 UTC{{ '%+d' % tz_offset }}，由「功能设置 → 对话时间感知参数」统一修改。</p>
+            </div>
         </div>
         <div class="ui-cluster ui-cluster--bar ui-cluster--end">
             <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">保存设置</button>

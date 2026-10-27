@@ -70,7 +70,6 @@ class ProfileLifeRoutine(BaseModel):
     作息是说话的色彩，不是在线状态。
     """
 
-    timezone: str = ""  # IANA 时区名（如 Asia/Shanghai），空则回落全局默认偏移
     segments: list[ProfileLifeSegment] = Field(default_factory=list)
 
 

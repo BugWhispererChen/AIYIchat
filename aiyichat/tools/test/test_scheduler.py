@@ -118,18 +118,8 @@ class TestSchedulerHelpers:
         finally:
             settings.default_timezone_offset = old_tz
 
-    def test_quiet_hours_uses_service_timezone(self) -> None:
-        """免打扰按 service.timezone 取当地小时，而非服务器全局偏移。
-
-        动机：按全局偏移判"深夜别打扰"，会在海外身份当地凌晨发消息，
-        既扰人，也暴露角色不关心对方身在何处。
-        """
-        from zoneinfo import ZoneInfo
-
-        try:
-            expected = ZoneInfo("America/Los_Angeles")
-        except Exception:
-            pytest.skip("本机缺少 tzdata，跳过 IANA 时区用例")
+    def test_quiet_hours_ignores_legacy_service_timezone(self) -> None:
+        """历史服务时区字段不再覆盖全局配置。"""
         sched = ProactiveScheduler()
         old_tz = settings.default_timezone_offset
         try:
@@ -140,26 +130,25 @@ class TestSchedulerHelpers:
                     SimpleNamespace(timezone="America/Los_Angeles"),
                     SimpleNamespace(timezone=""),
                 )
-                assert mock_dt.now.call_args[0][0] is expected
+                assert mock_dt.now.call_args[0][0] == timezone(timedelta(hours=8))
         finally:
             settings.default_timezone_offset = old_tz
 
-    def test_time_hint_prefers_user_timezone_when_service_empty(self) -> None:
-        """service 未设时区时按解析链回落到 user.timezone。"""
-        from zoneinfo import ZoneInfo
-
-        try:
-            expected = ZoneInfo("Asia/Tokyo")
-        except Exception:
-            pytest.skip("本机缺少 tzdata，跳过 IANA 时区用例")
+    def test_time_hint_ignores_legacy_identity_timezone(self) -> None:
+        """历史身份时区字段不再覆盖全局配置。"""
         sched = ProactiveScheduler()
-        with patch("app.proactive.scheduler.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-            sched._time_hint(
-                SimpleNamespace(timezone=""),
-                SimpleNamespace(timezone="Asia/Tokyo"),
-            )
-            assert mock_dt.now.call_args[0][0] is expected
+        old_tz = settings.default_timezone_offset
+        try:
+            settings.default_timezone_offset = 8
+            with patch("app.proactive.scheduler.datetime") as mock_dt:
+                mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+                sched._time_hint(
+                    SimpleNamespace(timezone=""),
+                    SimpleNamespace(timezone="Asia/Tokyo"),
+                )
+                assert mock_dt.now.call_args[0][0] == timezone(timedelta(hours=8))
+        finally:
+            settings.default_timezone_offset = old_tz
 
     def test_can_send(self) -> None:
         sched = ProactiveScheduler()

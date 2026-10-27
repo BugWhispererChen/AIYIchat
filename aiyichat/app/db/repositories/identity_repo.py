@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 from typing import Literal, Optional
-from uuid import uuid4
 
 from app.db.mongo import get_database
 from app.models.identity import IdentityCreate, IdentityInDB, IdentityUpdate
@@ -48,7 +47,7 @@ class IdentityRepository:
 
     async def find_or_create(
         self,
-        platform: Literal["qq", "wechat", "web"],
+        platform: Literal["qq", "wechat"],
         platform_id: str,
         account_id: str,
         nickname: str = "",
@@ -90,28 +89,11 @@ class IdentityRepository:
         return result.deleted_count > 0
 
     async def delete_cascade(self, identity_id: str) -> dict[str, int]:
-        """删除身份及其名下的网页凭据/会话、主动关怀记录与会话数据。
-
-        后台"删除身份"以前只删 identities 一行：网页凭据还在就仍能登录到一个已不存在的身份，
-        主动关怀记录与会话/消息/快照则全留下。口径与 AccountRepository.delete_cascade 一致——
-        凭据最先删（用户名当场释放、旧令牌立即失效）。
-        """
+        """删除身份及其业务数据；网页登录凭据仅随账号删除。"""
         from app.db.repositories.conversation_repo import ConversationRepository
 
         db = get_database()
-        cred_ids = [
-            doc["id"]
-            async for doc in db.web_credentials.find(
-                {"identity_id": identity_id}, {"id": 1}
-            )
-        ]
         stats: dict[str, int] = {}
-        stats["web_sessions"] = (
-            await db.web_sessions.delete_many({"credential_id": {"$in": cred_ids}})
-        ).deleted_count if cred_ids else 0
-        stats["web_credentials"] = (
-            await db.web_credentials.delete_many({"id": {"$in": cred_ids}})
-        ).deleted_count if cred_ids else 0
         stats["proactive_records"] = (
             await db.proactive_records.delete_many({"identity_id": identity_id})
         ).deleted_count
@@ -209,15 +191,15 @@ class IdentityRepository:
         identity_id: str,
         platform_id: str,
         nickname: str = "",
+        platform: Literal["qq", "wechat"] | None = None,
     ) -> None:
-        """将真实平台 openid 绑定到管理员预创建的身份上。
-
-        同时更新 last_active_at 和 nickname（如果提供）。
-        """
+        """绑定真实平台 openid，并可同时写入首次外部平台类型。"""
         update_fields: dict = {
             "platform_id": platform_id,
             "last_active_at": datetime.now(timezone.utc),
         }
+        if platform is not None:
+            update_fields["platform"] = platform
         if nickname:
             update_fields["nickname"] = nickname
         await self._collection().update_one(
@@ -235,7 +217,8 @@ class IdentityRepository:
             {"id": identity_id},
             {
                 "$set": {
-                    "platform_id": str(uuid4()),
+                    "platform_id": "",
+                    "platform": None,
                     "last_active_at": datetime.now(timezone.utc),
                 },
                 "$unset": {f"bot_openids.{bot_id}": ""},

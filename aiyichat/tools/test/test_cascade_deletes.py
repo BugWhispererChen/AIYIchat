@@ -94,14 +94,14 @@ def test_conversation_cascade_removes_messages_snapshots_and_media() -> None:
         mongo._db = None
 
 
-def test_identity_cascade_removes_credentials_sessions_and_records() -> None:
+def test_identity_cascade_preserves_web_login_and_removes_records() -> None:
     conv_id = ObjectId()
 
     async def case() -> None:
         _setup()
         db = get_database()
         await db.identities.insert_one({"_id": ObjectId(), "id": "id-1", "account_id": "acc-1"})
-        await db.web_credentials.insert_one({"_id": ObjectId(), "id": "cred-1", "identity_id": "id-1"})
+        await db.web_credentials.insert_one({"_id": ObjectId(), "id": "cred-1", "account_id": "acc-1"})
         await db.web_sessions.insert_one({"_id": ObjectId(), "credential_id": "cred-1"})
         await db.proactive_records.insert_one({"_id": ObjectId(), "identity_id": "id-1"})
         await db.conversations.insert_one({
@@ -110,12 +110,11 @@ def test_identity_cascade_removes_credentials_sessions_and_records() -> None:
         await _seed_conversation(conv_id=conv_id, as_object_id=False)
 
         stats = await IdentityRepository().delete_cascade("id-1")
-        assert stats["web_credentials"] == 1, stats
-        assert stats["web_sessions"] == 1, stats
+        assert "web_credentials" not in stats and "web_sessions" not in stats
         assert stats["proactive_records"] == 1, stats
         assert stats["identity"] == 1, stats
-        assert await db.web_credentials.count_documents({}) == 0, "凭据还在=旧账号仍可能登录"
-        assert await db.web_sessions.count_documents({}) == 0
+        assert await db.web_credentials.count_documents({}) == 1
+        assert await db.web_sessions.count_documents({}) == 1
         assert await db.identities.count_documents({}) == 0
         assert await db.conversations.count_documents({}) == 0
         assert await db.messages.count_documents({}) == 0

@@ -749,7 +749,7 @@ class TestAutoBindOpenid:
         _run(engine, "你好")
 
         engine.identity_repo.bind_platform_id.assert_awaited_once_with(
-            "user-1", "openid-1", ""
+            "user-1", "openid-1", "", platform="qq"
         )
         engine.identity_repo.bind_bot_openid.assert_awaited_once_with(
             "user-1", "bot-1", "openid-1"

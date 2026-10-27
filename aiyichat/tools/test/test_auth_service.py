@@ -52,12 +52,24 @@ def _naive_utc(value: datetime) -> datetime:
 def _credential(username: str = "alice", password: str = "secret123") -> WebCredentialCreate:
     """构造测试用身份创建对象。"""
     return WebCredentialCreate(
-        identity_id="",
+        account_id="account-1",
         username=username,
         password_hash=hash_password(password),
         created_ip="127.0.0.1",
         consent=WebConsent(age_confirmed=True, age_confirmed_at=_now()),
     )
+
+
+async def _only_identity(credential):
+    identities = await IdentityRepository().list_by_account(credential.account_id)
+    assert len(identities) == 1
+    return identities[0]
+
+
+async def _only_service(account_id: str):
+    services = await ServiceRepository().list_by_account(account_id)
+    assert len(services) == 1
+    return services[0]
 
 
 class TestPasswordHashing:
@@ -120,7 +132,7 @@ class TestWebCredentialRepository:
             ident_info = await db.web_credentials.index_information()
             sess_info = await db.web_sessions.index_information()
             assert ("username",) in keys(ident_info)
-            assert ("identity_id",) in keys(ident_info)
+            assert ("account_id",) in keys(ident_info)
             assert ("status", "created_at") in keys(ident_info)
             assert ident_info["username_1"]["unique"] is True
             assert ("token",) in keys(sess_info)
@@ -158,15 +170,16 @@ class TestWebCredentialRepository:
 
         run_with_db(body)
 
-    def test_set_user_id_and_status(self) -> None:
-        """回填 user_id 与审核状态流转（含审核留痕与失败计数清零）。"""
+    def test_set_account_id_and_status(self) -> None:
+        """回填账号归属与审核状态流转。"""
 
         async def body():
             repo = WebCredentialRepository()
             ident = await repo.insert(_credential("bob"))
             await repo.register_login_failure(ident.id, max_fail=99, lockout_minutes=5)
-            assert await repo.set_identity_id(ident.id, "user-1") is True
-            assert (await repo.find_by_identity_id("user-1")).id == ident.id
+            assert await repo.set_account_id(ident.id, "account-2") is True
+            owned = await repo.find_by_account_id("account-2")
+            assert len(owned) == 1 and owned[0].id == ident.id
             assert await repo.set_status(
                 ident.id, "active", reviewed_by="admin", review_note="资料齐全", review=True
             ) is True
@@ -544,7 +557,7 @@ class TestExperienceQuotaCoversFirstTurn:
         async def body():
             await _seed_web_env()
             ident = await _register("firstturn")
-            identity = await IdentityRepository().find_by_id(ident.identity_id)
+            identity = await _only_identity(ident)
             engine = ConversationEngine(bot_id=settings.web_bot_id)
             required = estimate_tokens("你好，请陪我聊聊天，说说你今天过得怎么样") + settings.chat_max_tokens
             ok, reason = await engine._quota_precheck(identity.account_id, required)
@@ -600,20 +613,22 @@ class TestRegistration:
         """注册原子建齐 Account+Quota+User+Service 并回填 user_id。"""
 
         async def body():
-            bot_id = await _seed_web_env()
+            await _seed_web_env()
             ident = await _register("xiaochen")
             assert ident.status == "pending"
-            assert ident.identity_id
+            assert ident.account_id
             assert ident.created_ip == CLIENT_IP
             assert ident.consent.age_confirmed is True
             assert ident.consent.terms_version
 
-            identity = await IdentityRepository().find_by_id(ident.identity_id)
-            assert identity.platform == "web"
-            assert identity.platform_id == "xiaochen"  # 用户名而非 openid：_is_uuid 判定自洽拒绝绑 QQ
-            service = await ServiceRepository().find_by_identity_and_bot(identity.id, bot_id)
-            assert service is not None
-            assert service.profile_id == "lin-yu"
+            identity = await _only_identity(ident)
+            assert identity.platform is None
+            assert identity.platform_id == ""
+            service = await _only_service(ident.account_id)
+            assert service.identity_id == identity.id
+            assert service.account_id == ident.account_id
+            profile = await ProfileRepository().find_by_slug("lin-yu")
+            assert service.profile_id == profile.id
             quota = await QuotaRepository().find_by_account(identity.account_id)
             assert (quota.text_quota.limit, quota.voice_quota.limit, quota.image_quota.limit) == (
                 auth_service.FREE_TEXT_LIMIT,
@@ -631,7 +646,8 @@ class TestRegistration:
         async def body():
             await _seed_web_env()
             ident = await _register("hashsep")
-            identity_doc = await mongo.get_database().identities.find_one({"id": ident.identity_id})
+            identity = await _only_identity(ident)
+            identity_doc = await mongo.get_database().identities.find_one({"id": identity.id})
             assert "password_hash" not in identity_doc
             assert ident.password_hash.startswith("pbkdf2$")
 
@@ -673,21 +689,20 @@ class TestRegistration:
 
         run_with_db(body)
 
-    def test_rollback_when_bot_missing(self) -> None:
-        """依赖配置缺失 → 回滚删除已占用户名，配置修复后可重新注册。"""
+    def test_missing_system_bot_does_not_block_account_bot(self) -> None:
+        """系统渠道配置异常不再影响账号自有网页渠道创建。"""
 
         async def body():
             await _seed_web_env()
             settings.web_bot_id = "no-such-bot"
-            with pytest.raises(AuthError) as err:
-                await _register("rollback1")
-            assert err.value.code == "web_bot_not_found" and err.value.status_code == 503
-            assert await WebCredentialRepository().find_by_username("rollback1") is None
-            assert await AccountRepository().count() == 1  # 仅剩 seed 的系统账号
-            assert await IdentityRepository().count() == 0
-            settings.web_bot_id = "web-bot"
             ident = await _register("rollback1")
-            assert ident.id
+            service = await _only_service(ident.account_id)
+            bot = await BotConfigRepository().find_by_id(service.bot_id)
+            assert bot is not None
+            assert bot.account_id == ident.account_id
+            assert bot.id != "no-such-bot"
+            assert await AccountRepository().count() == 2
+            assert await IdentityRepository().count() == 1
 
         run_with_db(body)
 
@@ -698,7 +713,7 @@ class TestRegistration:
             await _seed_web_env()
             settings.web_bot_id = ""
             ident = await _register("autobot")
-            identity = await IdentityRepository().find_by_id(ident.identity_id)
+            identity = await _only_identity(ident)
             assert identity is not None
             services = await ServiceRepository().list_by_identity(identity.id)
             assert len(services) == 1
@@ -720,7 +735,7 @@ class TestRegistration:
             )
             settings.web_free_quota_template_id = tpl.id
             ident = await _register("tpluser")
-            identity = await IdentityRepository().find_by_id(ident.identity_id)
+            identity = await _only_identity(ident)
             quota = await QuotaRepository().find_by_account(identity.account_id)
             assert quota.text_quota.limit == 999
             assert quota.text_quota.expires_at is not None
@@ -728,7 +743,7 @@ class TestRegistration:
             # 非法 ObjectId 形态 → 回落内置
             settings.web_free_quota_template_id = "not-an-objectid"
             ident2 = await _register("badtpl")
-            identity2 = await IdentityRepository().find_by_id(ident2.identity_id)
+            identity2 = await _only_identity(ident2)
             assert (await QuotaRepository().find_by_account(identity2.account_id)).text_quota.limit == (
                 auth_service.FREE_TEXT_LIMIT
             )
@@ -736,7 +751,7 @@ class TestRegistration:
             # 指向不存在但格式合法的模板 → 同样回落内置
             settings.web_free_quota_template_id = "0" * 24
             ident3 = await _register("ghosttpl")
-            identity3 = await IdentityRepository().find_by_id(ident3.identity_id)
+            identity3 = await _only_identity(ident3)
             assert (await QuotaRepository().find_by_account(identity3.account_id)).voice_quota.limit == (
                 auth_service.FREE_VOICE_LIMIT
             )
@@ -764,8 +779,9 @@ class TestRegistration:
             await _seed_web_env()
             settings.web_default_profile_slug = ""
             ident = await _register("fallback")
-            service = await ServiceRepository().find_by_identity_and_bot(ident.identity_id, settings.web_bot_id)
-            assert service.profile_id == "lin-yu"
+            service = await _only_service(ident.account_id)
+            profile = await ProfileRepository().find_by_slug("lin-yu")
+            assert service.profile_id == profile.id
 
         run_with_db(body)
 
@@ -787,8 +803,9 @@ class TestRegistration:
             )
             settings.web_default_profile_slug = ""
             ident = await _register("skipinactive")
-            service = await ServiceRepository().find_by_identity_and_bot(ident.identity_id, settings.web_bot_id)
-            assert service.profile_id == "lin-yu"
+            service = await _only_service(ident.account_id)
+            profile = await ProfileRepository().find_by_slug("lin-yu")
+            assert service.profile_id == profile.id
 
         run_with_db(body)
 
@@ -867,7 +884,7 @@ class TestReviewAndGovernance:
             )
             fresh = await _register("rejected1", password="newpass77")
             assert fresh.status == "pending"
-            assert fresh.identity_id  # 新记录已重建四件套
+            assert fresh.account_id  # 新记录已重建账号、身份与默认服务
             assert await WebCredentialRepository().count_by_status("pending") == 1
 
         run_with_db(body)
@@ -880,8 +897,8 @@ class TestReviewAndGovernance:
             ident = await _register("banned1")
             await auth_service.approve(ident.id, "admin")
             result = await _login("banned1")
-            credential, identity_id = await auth_service.resolve_token(result.token)
-            assert credential.id == ident.id and identity_id == ident.identity_id
+            credential = await auth_service.resolve_token(result.token)
+            assert credential.id == ident.id and credential.account_id == ident.account_id
             assert await auth_service.set_disabled(ident.id, True, "admin", "违规") is True
             with pytest.raises(AuthError) as err:
                 await auth_service.resolve_token(result.token)
@@ -890,7 +907,7 @@ class TestReviewAndGovernance:
             # 重新启用后需重新登录
             await auth_service.set_disabled(ident.id, False, "admin")
             again = await _login("banned1")
-            assert (await auth_service.resolve_token(again.token))[0].status == "active"
+            assert (await auth_service.resolve_token(again.token)).status == "active"
 
         run_with_db(body)
 
@@ -967,7 +984,7 @@ class TestLoginProtection:
             with pytest.raises(AuthError) as err:
                 await auth_service.resolve_token(tokens[0])
             assert err.value.status_code == 401
-            assert (await auth_service.resolve_token(tokens[3]))[0].id == ident.id
+            assert (await auth_service.resolve_token(tokens[3])).id == ident.id
 
         run_with_db(body)
 

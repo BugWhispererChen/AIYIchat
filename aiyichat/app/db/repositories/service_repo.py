@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.db.mongo import get_database
+from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.models.service import ServiceCreate, ServiceInDB, ServiceUpdate
 
 
@@ -65,6 +66,10 @@ class ServiceRepository:
         """创建新对话服务。"""
         now = datetime.now(timezone.utc)
         doc = service.model_dump()
+        if doc.get("single_service_bot_id") is None:
+            bot = await BotConfigRepository().find_by_id(service.bot_id)
+            if bot is not None and bot.platform != "web":
+                doc["single_service_bot_id"] = bot.id
         doc["created_at"] = now
         result = await self._collection().insert_one(doc)
         doc["_id"] = result.inserted_id

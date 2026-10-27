@@ -1,11 +1,4 @@
-"""C 端网页鉴权 API：验证码、注册、登录、注销、当前身份。
-
-安全边界：
-- 所有写操作先按 IP 滑动窗口限流，再校验一次性图形验证码；
-- 业务规则全部收敛在 `app/services/auth_service.py`，本层只做 HTTP ↔ 服务层转换；
-- `require_current_identity` 是网页会话的唯一出口，`platform_id`/`bot_id` 一律由令牌反查，
-  绝不信任客户端入参。
-"""
+"""C 端网页鉴权 API：网页凭据只确定账号，对话身份由服务决定。"""
 
 import logging
 from dataclasses import dataclass
@@ -16,12 +9,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import settings
-from app.db.repositories.bot_config_repo import BotConfigRepository
+from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_repo import ServiceRepository
-from app.db.repositories.identity_repo import IdentityRepository
+from app.models.account import AccountInDB
 from app.models.service import ServiceInDB
-from app.models.identity import IdentityInDB
 from app.models.web_credential import WebCredentialInDB
 from app.models.web_session import WebSessionInDB
 from app.services import auth_service
@@ -37,31 +29,25 @@ _XFF_HEADER = "x-forwarded-for"
 
 
 @dataclass
-class WebPrincipal:
-    """由会话令牌解析出的当前网页账号会话主体（后续接口只认这个对象）。"""
-
-    credential: WebCredentialInDB
-    identity_id: str
-    account_id: str
-    username: str
-    nickname: str
-    bot_id: str
-    service_id: str
-
-
-@dataclass
 class WebAccountPrincipal:
-    """账号中心上下文：只依赖凭据 / 身份 / 会话，不要求账号已有活跃服务。
-
-    与 `WebPrincipal` 分开是有意为之：对话与角色/服务接口必须有可用服务才能工作，
-    但账号中心承担的正是"服务被停用后用户仍能自救"的场景（改密、清理数据、注销），
-    若复用带服务校验的依赖，这类用户会被 403 彻底挡在门外。
-    """
+    """网页登录主体：凭据、所属账号与当前会话。"""
 
     credential: WebCredentialInDB
-    identity: IdentityInDB
+    account: AccountInDB
     session: WebSessionInDB
     token: str
+
+    @property
+    def account_id(self) -> str:
+        return self.account.id
+
+    @property
+    def username(self) -> str:
+        return self.credential.username
+
+    @property
+    def nickname(self) -> str:
+        return self.account.name or self.credential.username
 
 
 def client_ip(request: Request) -> str:
@@ -85,88 +71,27 @@ def bearer_token(request: Request) -> str:
     return request.headers.get("x-auth-token", "").strip()
 
 
-async def require_current_identity(request: Request) -> WebPrincipal:
-    """网页会话依赖：令牌有效则返回当前身份，否则 401/403。
-
-    Raises:
-        AuthError: 总开关关闭、缺/错令牌、会话过期、身份被禁用或业务服务缺失
-    """
-    token = bearer_token(request)
-    if not token:
-        raise AuthError("unauthorized", "请先登录", 401)
-    result = await auth_service.resolve_session(token)
-    identity = await IdentityRepository().find_by_id(result.identity_id)
-    if identity is None or identity.is_blocked:
-        raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
-    service = await _resolve_service(identity)
-    return WebPrincipal(
-        credential=result.credential,
-        identity_id=identity.id,
-        account_id=identity.account_id,
-        username=result.credential.username,
-        nickname=identity.nickname or identity.name or result.credential.username,
-        bot_id=service.bot_id,
-        service_id=service.id,
-    )
-
-
 async def require_web_account(request: Request) -> WebAccountPrincipal:
-    """账号中心依赖：解析凭据 / 身份 / 当前会话，不校验是否存在活跃服务。
-
-    Raises:
-        AuthError: 总开关关闭、缺/错令牌、会话过期、凭据非 active、身份被禁用或已删除
-    """
+    """解析网页凭据与所属账号，不要求账号已有活跃服务。"""
     token = bearer_token(request)
     if not token:
         raise AuthError("unauthorized", "请先登录", 401)
     result = await auth_service.resolve_session(token)
-    identity = await IdentityRepository().find_by_id(result.identity_id)
-    if identity is None or identity.is_blocked:
+    account = await AccountRepository().find_by_id(result.account_id)
+    if account is None:
         raise AuthError("forbidden", "账号不可用，请联系管理员", 403)
     return WebAccountPrincipal(
         credential=result.credential,
-        identity=identity,
+        account=account,
         session=result.session,
         token=token,
     )
 
 
-async def _resolve_service(identity: IdentityInDB) -> ServiceInDB:
-    """反查该网页渠道身份的对话服务。
-
-    优先级：账号自己的 web Bot → 系统载体 Bot（存量部署）→ 名下任一活跃服务。
-    """
-    repo = ServiceRepository()
-    active = [s for s in await repo.list_by_identity(identity.id) if s.is_active]
-
-    own_bot_ids = {
-        bot.id
-        for bot in await BotConfigRepository().list_by_account(identity.account_id)
-        if bot.platform == "web" and not bot.is_blocked
-    }
-    for svc in active:
-        if svc.bot_id in own_bot_ids:
-            return svc
-
-    system_bot_id = settings.web_bot_id.strip()
-    if system_bot_id:
-        for svc in active:
-            if svc.bot_id == system_bot_id:
-                return svc
-
-    if active:
-        return active[0]
-    raise AuthError("no_service", "账号尚未绑定对话服务，请联系管理员", 403)
-
-
 async def require_account_service(
-    principal: WebPrincipal, service_id: str
+    principal: WebAccountPrincipal, service_id: str
 ) -> ServiceInDB:
-    """按账号归属取回服务，供 C 端跨身份读聊使用。
-
-    归属口径是 account_id：同账号的网页渠道身份可以使用任一服务（含 QQ/微信渠道）。
-    跨身份访问记审计日志，便于追溯网页侧读取渠道身份数据的操作。
-    """
+    """按账号归属取回服务；对话身份只从该服务读取。"""
     svc = await ServiceRepository().find_by_id(service_id)
     if svc is None or svc.account_id != principal.account_id:
         if svc is not None:
@@ -177,13 +102,6 @@ async def require_account_service(
                 svc.account_id,
             )
         raise AuthError("not_found", "服务不存在", 404)
-    if svc.identity_id != principal.identity_id:
-        logger.warning(
-            "跨身份访问：登录账号 %s 使用同账号服务 %s（归属身份 %s）",
-            principal.username,
-            svc.id,
-            svc.identity_id,
-        )
     return svc
 
 
@@ -306,7 +224,7 @@ async def login(req: LoginRequest, request: Request) -> JSONResponse:
 async def logout(request: Request) -> JSONResponse:
     """注销当前令牌（幂等：无有效令牌也返回成功）。"""
     try:
-        credential, _ = await auth_service.resolve_token(bearer_token(request))
+        credential = await auth_service.resolve_token(bearer_token(request))
     except AuthError as exc:
         return _error(exc)
     await auth_service.logout(bearer_token(request))
@@ -315,19 +233,18 @@ async def logout(request: Request) -> JSONResponse:
 
 @auth_router.get("/me")
 async def me(request: Request) -> JSONResponse:
-    """当前登录账号信息：网页聊天页据此渲染账号资料与额度余量。"""
+    """当前网页登录账号与额度，不包含任何对话身份。"""
     try:
-        identity = await require_current_identity(request)
+        principal = await require_web_account(request)
     except AuthError as exc:
         return _error(exc)
-    quota = await QuotaRepository().find_by_account(identity.account_id)
+    quota = await QuotaRepository().find_by_account(principal.account_id)
     return JSONResponse(
         status_code=200,
         content={
-            "username": identity.username,
-            "identity_id": identity.identity_id,
-            "bot_id": identity.bot_id,
-            "service_id": identity.service_id,
+            "username": principal.username,
+            "nickname": principal.nickname,
+            "account_id": principal.account_id,
             "quota": None
             if quota is None
             else {

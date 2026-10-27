@@ -17,7 +17,6 @@ from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
-from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
 from app.models.account import AccountCreate
@@ -360,10 +359,9 @@ class TestPasswordAndQuota:
             try:
                 ident_id = await _register_identity("quotamgmt")
                 ident = await WebCredentialRepository().find_by_id(ident_id)
-                identity = await IdentityRepository().find_by_id(ident.identity_id)
                 # 预置：文字额度上限 500、已用 7
                 await QuotaRepository().create_or_update(
-                    identity.account_id,
+                    ident.account_id,
                     AccountQuotaUpdate(text_quota=QuotaEntry(limit=500, used=7)),
                 )
                 async with _client(app) as client:
@@ -373,7 +371,7 @@ class TestPasswordAndQuota:
                         follow_redirects=False,
                     )
                     assert "msg=quota_updated" in resp.headers["location"]
-                    quota = await QuotaRepository().find_by_account(identity.account_id)
+                    quota = await QuotaRepository().find_by_account(ident.account_id)
                     assert quota.text_quota.limit == 1200
                     # 已用量原样保留，未传正数的语音/图片上限不变
                     assert quota.text_quota.used == 7

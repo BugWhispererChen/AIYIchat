@@ -166,7 +166,7 @@ class TestWebPagesRender:
                     # 零服务空态：创建服务入口与禁用态提示必须在静态壳里
                     assert 'id="empty-service-cta"' in html
                     assert 'id="no-service-note"' in html
-                    assert "/web/services#services" in html
+                    assert "/web/services?new=1#services" in html
             finally:
                 mongo._db = None
 

@@ -170,7 +170,14 @@
         if (selectedId) {
             select.value = selectedId;
             if (select.selectedIndex < 0) select.selectedIndex = 0;
+            return;
         }
+        // 新建服务不替用户决定角色：留空占位，必须显式选择后才能保存
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '请选择角色';
+        select.insertBefore(placeholder, select.firstChild);
+        select.value = '';
     }
 
     function fillBotSelect(select, selectedId, editing, editingSvc) {
@@ -273,6 +280,7 @@
             const saveBtn = el('svc-save-btn');
             if (saveBtn) {
                 saveBtn.disabled = !activeProfiles().length
+                    || !el('svc-profile').value
                     || (!editingService && (
                         !availableBotsForService() || !usableIdentities(selectedBot).length
                     ));
@@ -812,7 +820,8 @@
         const canPickBot = !!svc || availableBotsForService();
         const canPickIdentity = !!svc || usableIdentities(selectedBot).length > 0;
         const saveBtn = el('svc-save-btn');
-        saveBtn.disabled = !hasProfiles || !canPickBot || !canPickIdentity;
+        saveBtn.disabled = !hasProfiles || !el('svc-profile').value
+            || !canPickBot || !canPickIdentity;
         el('svc-bot-help').textContent = svc
             ? '服务创建后不可更换渠道；如需更换请删除后重建。'
             : canPickBot
@@ -1094,6 +1103,7 @@
     });
     el('svc-save-btn').addEventListener('click', saveService);
     el('svc-bot').addEventListener('change', syncEditors);
+    el('svc-profile').addEventListener('change', syncEditors);
     el('svc-identity-new-btn').addEventListener('click', function () {
         const panel = el('identity-quick');
         panel.hidden = !panel.hidden;
@@ -1116,7 +1126,24 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         activateTab(tabFromHash(), false);
-        fetchAll().catch(function (e) {
+        fetchAll().then(function () {
+            // 聊天页零服务 CTA 带 ?new=1：直接打开服务表单并预选网页渠道，
+            // 角色仍留空由用户显式选择
+            const params = new URLSearchParams(location.search);
+            if (params.get('new') !== '1') return;
+            const target = bots.find(function (bot) {
+                return !bot.is_blocked && bot.platform === 'web' && bot.service_count === 0;
+            }) || bots.find(function (bot) {
+                return !bot.is_blocked && (bot.platform === 'web' || bot.service_count === 0);
+            });
+            openServiceEditor(null, target ? target.id : '');
+            params.delete('new');
+            const query = params.toString();
+            history.replaceState(
+                null, '',
+                location.pathname + (query ? '?' + query : '') + location.hash
+            );
+        }).catch(function (e) {
             console.error('聊天服务加载失败', e);
             show('err', '聊天服务读取失败，请稍后重试');
         });

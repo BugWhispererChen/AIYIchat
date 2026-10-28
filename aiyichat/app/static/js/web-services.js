@@ -788,6 +788,8 @@
     }
 
     function openServiceEditor(svc, presetBotId) {
+        // 从渠道卡片进入时当前可能停在「渠道」分区：先切到服务分区，否则编辑卡不可见
+        activateTab('services', true);
         editingService = svc || null;
         el('bot-editor').hidden = true;
         el('bot-edit').hidden = true;

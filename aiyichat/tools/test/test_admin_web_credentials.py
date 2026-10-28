@@ -32,7 +32,7 @@ PASSWORD = "passw0rd9"
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login",
@@ -47,8 +47,6 @@ def web_flags():
     settings.web_register_enabled = True
     settings.web_register_require_review = True
     settings.web_captcha_enabled = False
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PROFILE_SLUG
     settings.web_free_quota_template_id = ""
     settings.admin_username = "admin"
     # require_admin 在未配置密码时返回 503，会掩盖"未登录"分支；固定为非空以稳定断言 401/303
@@ -110,6 +108,11 @@ class TestWebCredentialsPage:
                     assert "待审核（1）" in resp.text
                     assert "pendingone" in resp.text
                     assert "203.0.113.9" in resp.text
+                    # 默认服务配置已退役：页面不再出现默认载体渠道 / 默认角色
+                    assert "默认载体渠道" not in resp.text
+                    assert "默认角色" not in resp.text
+                    assert "web_bot_id" not in resp.text
+                    assert "web_default_profile_slug" not in resp.text
                     # 已拒绝/已禁用筛选下不出现该身份
                     resp = await client.get("/admin/web-credentials?status_filter=rejected")
                     assert "pendingone" not in resp.text
@@ -415,8 +418,6 @@ class TestSettingsSave:
                             "web_register_enabled": "on",
                             "web_register_require_review": "",
                             "web_captcha_enabled": "",
-                            "web_bot_id": WEB_BOT_ID,
-                            "web_default_profile_slug": PROFILE_SLUG,
                             "web_free_quota_template_id": "",
                             "web_session_hours": "12",
                             "web_session_max_concurrent": "2",
@@ -433,6 +434,11 @@ class TestSettingsSave:
                     assert settings.web_captcha_enabled is False
                     assert settings.web_session_hours == 12
                     assert settings.web_rate_limit_login == 9
+                    # 废弃的默认服务配置不再写库
+                    stored = await mongo.get_database().app_settings.find_one({"_id": "default"})
+                    assert stored is not None
+                    assert "web_bot_id" not in stored
+                    assert "web_default_profile_slug" not in stored
                     # 免审生效后，新注册可直接登录
                     resp = await client.post(
                         "/api/auth/register",

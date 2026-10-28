@@ -134,7 +134,7 @@ class TestWebChannelPageKeysReachDb:
 
     KEYS = (
         "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-        "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+        "web_captcha_enabled",
         "web_free_quota_template_id", "web_session_hours",
         "web_session_max_concurrent", "web_login_max_fail",
         "web_login_lockout_minutes", "web_rate_limit_register",

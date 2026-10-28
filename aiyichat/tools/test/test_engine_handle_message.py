@@ -870,7 +870,7 @@ class TestBotNotFound:
 
         result, provider = _run(engine, "在吗")
 
-        assert result.text == "您尚未绑定对话服务，请联系管理员。"
+        assert result.text == "该渠道还没有配置对话服务。登录网页端「聊天服务」页添加渠道后，再创建一个服务即可开始对话。"
         assert result.conversation_id == ""
         engine.identity_repo.find_by_platform.assert_not_awaited()
         provider.complete_with_usage.assert_not_awaited()

@@ -31,6 +31,7 @@ from app.models.profile import PromptProfileCreate
 from app.services import auth_service
 from app.services.captcha_service import captcha_service
 from app.utils.rate_limit import login_limiter, register_limiter
+from tools.test.db_test_utils import ensure_account_service
 
 WEB_BOT_ID = "web-bot-api"
 PROFILE_SLUG = "lin-yu"
@@ -39,7 +40,7 @@ CLIENT_IP = "203.0.113.7"
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login",
@@ -63,8 +64,6 @@ def web_flags():
     settings.web_session_hours = 24
     settings.web_session_max_concurrent = 3
     settings.web_login_max_fail = 5
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PROFILE_SLUG
     settings.web_free_quota_template_id = ""
     # 测试客户端用 X-Forwarded-For 模拟不同客户端 IP，等价于"代理已覆写"场景
     settings.trust_proxy_headers = True
@@ -133,6 +132,9 @@ async def _service_for_username(username: str):
     credential = await WebCredentialRepository().find_by_username(username)
     assert credential is not None
     services = await ServiceRepository().list_by_account(credential.account_id)
+    if not services:
+        # 注册零服务：需要服务的用例在此显式装配首个服务
+        return await ensure_account_service(credential.account_id, PROFILE_SLUG)
     assert len(services) == 1
     return services[0]
 

@@ -23,6 +23,7 @@
         <div class="svc-summary" aria-label="资源概览">
             <span class="svc-stat"><strong id="stat-services">-</strong><span>服务</span></span>
             <span class="svc-stat"><strong id="stat-bots">-</strong><span>渠道</span></span>
+            <span class="svc-stat"><strong id="stat-identities">-</strong><span>身份</span></span>
             <span class="svc-stat"><strong id="stat-roles">-</strong><span>角色</span></span>
         </div>
 
@@ -33,6 +34,9 @@
             <button type="button" class="svc-tab" data-svc-tab="services" role="tab" aria-selected="false">
                 服务 <span class="svc-tab-count" id="tab-count-services"></span>
             </button>
+            <button type="button" class="svc-tab" data-svc-tab="identities" role="tab" aria-selected="false">
+                身份 <span class="svc-tab-count" id="tab-count-identities"></span>
+            </button>
             <button type="button" class="svc-tab" data-svc-tab="roles" role="tab" aria-selected="false">
                 角色 <span class="svc-tab-count" id="tab-count-roles"></span>
             </button>
@@ -42,7 +46,7 @@
         <section class="svc-panel active" data-svc-panel="channels">
             {% call card('渠道',
                  action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="bot-new-btn">+ 添加渠道</button>') %}
-                <p class="ui-note">渠道是接入平台的实际连接。QQ / 微信渠道每个只能挂一个服务；网页渠道可挂多个服务。</p>
+                <p class="ui-note">渠道是接入平台的实际连接，只负责接入。QQ / 微信渠道每个只能挂一个服务；网页渠道可挂多个服务。创建渠道后可在「服务」分区为它配置服务。</p>
                 <div id="channel-list"><div class="ui-empty">正在读取渠道…</div></div>
             {% endcall %}
 
@@ -53,24 +57,14 @@
                         <button type="button" class="platform-option" data-bot-platform="wechat">微信</button>
                         <button type="button" class="platform-option" data-bot-platform="web">网页</button>
                     </div>
-                    <div class="ui-grid ui-grid--3">
+                    <div class="ui-grid">
                         <div class="ui-field">
                             <label for="bot-name">渠道名称 *</label>
                             <input class="ui-input" id="bot-name" maxlength="40" placeholder="例如：工作助手">
                         </div>
-                        <div class="ui-field">
-                            <label for="bot-profile">首个服务的角色 *</label>
-                            <select class="ui-select" id="bot-profile"></select>
-                            <div class="ui-help">创建渠道时同时装配第一个服务。</div>
-                        </div>
-                        <div class="ui-field">
-                            <label for="bot-identity">首个服务的身份 *</label>
-                            <select class="ui-select" id="bot-identity"></select>
-                            <div class="ui-help">身份是对话归属，不是网页登录账号。</div>
-                        </div>
                     </div>
                     <div id="qq-fields">
-                        <p class="ui-help">QQ 渠道创建后，使用「扫码绑定」获取凭据。</p>
+                        <p class="ui-help">QQ 渠道创建后，使用「扫码绑定」获取凭据；服务可在渠道列表中按需配置。</p>
                         <label class="ui-cluster">
                             <input type="checkbox" id="bot-sandbox" checked>
                             <span>沙箱模式（仅 QQ）</span>
@@ -135,8 +129,36 @@
                         </div>
                         <div class="ui-field">
                             <label for="svc-identity">身份 *</label>
-                            <select class="ui-select" id="svc-identity"></select>
+                            <div class="ui-cluster">
+                                <select class="ui-select" id="svc-identity"></select>
+                                <button type="button" class="ui-btn ui-btn--outline ui-btn--sm" id="svc-identity-new-btn">新建身份</button>
+                            </div>
                             <div class="ui-help">服务使用该身份保存对话，与网页登录账号无关。</div>
+                        </div>
+                    </div>
+                    <div id="identity-quick" class="ui-card" hidden>
+                        <p class="ui-note">新建身份后会留在当前服务创建流程，并自动选中新身份。</p>
+                        <div class="ui-grid ui-grid--2">
+                            <div class="ui-field">
+                                <label for="quick-identity-name">身份名称 *</label>
+                                <input class="ui-input" id="quick-identity-name" maxlength="60">
+                            </div>
+                            <div class="ui-field">
+                                <label for="quick-identity-nickname">昵称</label>
+                                <input class="ui-input" id="quick-identity-nickname" maxlength="30">
+                            </div>
+                        </div>
+                        <div class="ui-field">
+                            <label for="quick-identity-desc">自我描述（供 LLM 参考）</label>
+                            <textarea class="ui-textarea" id="quick-identity-desc" maxlength="600" rows="2"></textarea>
+                        </div>
+                        <label class="ui-cluster">
+                            <input type="checkbox" id="quick-identity-minor" role="switch">
+                            <span>未成年人</span>
+                        </label>
+                        <div class="ui-cluster ui-cluster--bar">
+                            <button type="button" class="ui-btn ui-btn--primary" id="quick-identity-create-btn">创建并选中</button>
+                            <button type="button" class="ui-btn ui-btn--ghost" id="quick-identity-cancel-btn">取消</button>
                         </div>
                     </div>
                     <div class="ui-cluster ui-cluster--bar">
@@ -145,31 +167,42 @@
                     </div>
                 {% endcall %}
             </div>
-            <details class="ui-card">
-                <summary class="ui-summary">新建普通身份</summary>
-                <p class="ui-note">普通身份不绑定网页登录或渠道，可用于任意服务；QQ / 微信绑定在首条消息时完成。</p>
-                <div class="ui-grid ui-grid--2">
-                    <div class="ui-field">
-                        <label for="identity-new-name">身份名称 *</label>
-                        <input class="ui-input" id="identity-new-name" maxlength="60">
+        </section>
+
+        {# ── 身份 ───────────────────────────────────── #}
+        <section class="svc-panel" data-svc-panel="identities">
+            {% call card('身份',
+                 action='<button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="identity-new-btn">+ 新建身份</button>') %}
+                <p class="ui-note">身份承载对话归属、对方资料与历史记忆；它不是网页登录账号，删除身份不会注销登录，但会一并清理该身份的对话与主动消息记录。</p>
+                <div id="identity-list"><div class="ui-empty">正在读取身份…</div></div>
+            {% endcall %}
+
+            <div id="identity-editor" class="svc-editor" hidden>
+                {% call card('新建身份') %}
+                    <div class="ui-grid ui-grid--2">
+                        <div class="ui-field">
+                            <label for="identity-name">身份名称 *</label>
+                            <input class="ui-input" id="identity-name" maxlength="60">
+                        </div>
+                        <div class="ui-field">
+                            <label for="identity-nickname">昵称</label>
+                            <input class="ui-input" id="identity-nickname" maxlength="30">
+                        </div>
                     </div>
                     <div class="ui-field">
-                        <label for="identity-new-nickname">昵称</label>
-                        <input class="ui-input" id="identity-new-nickname" maxlength="30">
+                        <label for="identity-desc">自我描述（供 LLM 参考）</label>
+                        <textarea class="ui-textarea" id="identity-desc" maxlength="600" rows="2"></textarea>
                     </div>
-                </div>
-                <div class="ui-field">
-                    <label for="identity-new-desc">自我描述（供 LLM 参考）</label>
-                    <textarea class="ui-textarea" id="identity-new-desc" maxlength="600" rows="2"></textarea>
-                </div>
-                <label class="ui-cluster">
-                    <input type="checkbox" id="identity-new-minor" role="switch">
-                    <span>未成年人</span>
-                </label>
-                <div class="ui-cluster ui-cluster--bar">
-                    <button type="button" class="ui-btn ui-btn--primary" id="identity-create-btn">创建身份</button>
-                </div>
-            </details>
+                    <label class="ui-cluster">
+                        <input type="checkbox" id="identity-minor" role="switch">
+                        <span>未成年人</span>
+                    </label>
+                    <div class="ui-cluster ui-cluster--bar">
+                        <button type="button" class="ui-btn ui-btn--primary" id="identity-save-btn">保存</button>
+                        <button type="button" class="ui-btn ui-btn--ghost" id="identity-cancel-btn">取消</button>
+                    </div>
+                {% endcall %}
+            </div>
         </section>
 
         {# ── 角色 ───────────────────────────────────── #}

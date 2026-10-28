@@ -2928,7 +2928,7 @@ class ConversationEngine:
         return None
 
     def _no_service_message(self) -> str:
-        return "您尚未绑定对话服务，请联系管理员。"
+        return "该渠道还没有配置对话服务。登录网页端「聊天服务」页添加渠道后，再创建一个服务即可开始对话。"
 
     def _no_profile_message(self) -> str:
         return "当前尚未配置角色，请先在管理后台「角色管理」中创建角色后再开始对话。"

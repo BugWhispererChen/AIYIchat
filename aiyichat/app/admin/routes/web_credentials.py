@@ -12,8 +12,6 @@ from fastapi.responses import RedirectResponse
 
 from app.admin.auth import require_admin
 from app.admin.routes.common import _render
-from app.db.repositories.bot_config_repo import BotConfigRepository
-from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.web_credential_repo import WebCredentialRepository
@@ -70,7 +68,6 @@ async def web_credentials_page(
     credentials = pool if clean_status == "all" else [i for i in pool if i.status == clean_status]
 
     counts = {s: await repo.count_by_status(s) for s in _VALID_STATUSES}
-    bots = [b for b in await BotConfigRepository().list_all() if b.platform == "web"]
     return _render(
         request,
         "web_credentials.html",
@@ -86,9 +83,6 @@ async def web_credentials_page(
             "web_register_enabled": bool(settings.web_register_enabled),
             "web_register_require_review": bool(settings.web_register_require_review),
             "web_captcha_enabled": bool(settings.web_captcha_enabled),
-            "web_bot_configured": bool(settings.web_bot_id.strip()),
-            "web_bots": bots,
-            "public_profiles": [p for p in await ProfileRepository().list_active() if not p.is_draft],
             "quota_templates": await QuotaTemplateRepository().list_all(),
             # 内置体验额度常量，供页面解释回落行为
             "builtin_text_limit": auth_service.FREE_TEXT_LIMIT,
@@ -135,8 +129,6 @@ async def save_settings(
         "web_register_enabled": _bool("web_register_enabled"),
         "web_register_require_review": _bool("web_register_require_review"),
         "web_captcha_enabled": _bool("web_captcha_enabled"),
-        "web_bot_id": str(form.get("web_bot_id", "") or "").strip(),
-        "web_default_profile_slug": str(form.get("web_default_profile_slug", "") or "").strip(),
         "web_free_quota_template_id": str(form.get("web_free_quota_template_id", "") or "").strip(),
         "web_session_hours": _int("web_session_hours", settings.web_session_hours, 1, 720),
         "web_session_max_concurrent": _int(

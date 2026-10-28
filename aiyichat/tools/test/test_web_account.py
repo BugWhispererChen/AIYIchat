@@ -50,6 +50,7 @@ from app.models.service import ServiceCreate, ServiceUpdate
 from app.models.service_memory import MemoryFact
 from app.services import auth_service
 from app.utils.rate_limit import account_limiter, login_limiter, register_limiter
+from tools.test.db_test_utils import ensure_account_service
 
 WEB_BOT_ID = "web-bot-account"
 PUBLIC_SLUG = "lin-yu"
@@ -59,7 +60,7 @@ CLIENT_IP = "203.0.113.31"
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login", "web_max_profiles", "web_max_services",
@@ -77,8 +78,6 @@ def web_flags():
     settings.web_captcha_enabled = False
     settings.web_rate_limit_register = 100
     settings.web_rate_limit_login = 100
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PUBLIC_SLUG
     settings.web_free_quota_template_id = ""
     settings.trust_proxy_headers = True
     register_limiter.reset()
@@ -144,6 +143,8 @@ async def _signup(client: AsyncClient, username: str) -> str:
     credential = await WebCredentialRepository().find_by_username(username)
     assert credential is not None
     assert await auth_service.approve(credential.id, "admin") is True
+    # 注册零服务：账号中心/聊天相关用例需要首个服务，由测试显式装配
+    await ensure_account_service(credential.account_id, PUBLIC_SLUG)
     return await _login(client, username)
 
 

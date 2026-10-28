@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 
 from app.config import settings
 from app.db import mongo
+from app.models.service import ServiceInDB
 
 
 def run_with_db(coro_fn: Callable[[], Awaitable[Any]]) -> Any:
@@ -22,3 +23,28 @@ def run_with_db(coro_fn: Callable[[], Awaitable[Any]]) -> Any:
             await mongo.close_db()
 
     return asyncio.run(wrapper())
+
+
+async def ensure_account_service(account_id: str, profile_ref: str) -> ServiceInDB:
+    """为账号显式装配首个服务（注册零服务后，仍需要服务的测试用此补齐）。"""
+    from app.db.repositories.bot_config_repo import BotConfigRepository
+    from app.db.repositories.identity_repo import IdentityRepository
+    from app.db.repositories.service_repo import ServiceRepository
+    from app.models.service import ServiceCreate
+
+    identities = await IdentityRepository().list_by_account(account_id)
+    identity = next((item for item in identities if item.platform is None), identities[0])
+    bots = [
+        bot
+        for bot in await BotConfigRepository().list_by_account(account_id)
+        if bot.platform == "web" and not bot.is_blocked
+    ]
+    bot = bots[0]
+    return await ServiceRepository().create(
+        ServiceCreate(
+            account_id=account_id,
+            identity_id=identity.id,
+            bot_id=bot.id,
+            profile_id=profile_ref,
+        )
+    )

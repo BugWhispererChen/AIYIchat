@@ -15,7 +15,6 @@ from bson.errors import InvalidId
 from app.config import settings
 from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.bot_config_repo import BotConfigRepository
-from app.db.repositories.profile_repo import ProfileRepository
 from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.quota_template_repo import QuotaTemplateRepository
 from app.db.repositories.identity_repo import IdentityRepository
@@ -34,7 +33,6 @@ from app.models.web_credential import (
     normalize_username,
 )
 from app.models.web_session import WebSessionCreate, WebSessionInDB
-from app.services.service_provisioning import create_service
 from app.utils.password_hashing import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -169,27 +167,6 @@ def build_consent(terms_accepted: bool, privacy_accepted: bool, age_confirmed: b
     )
 
 
-async def resolve_default_profile_id() -> str:
-    """解析新服务默认角色：优先 `web_default_profile_slug`，回落任一在用公共角色。
-
-    引擎 `_resolve_profile` 同时接受角色 ObjectId 与 slug，故这里直接返回 slug；
-    预置角色全部为 public，跨账号可用，无需为每个身份各建 Bot。
-
-    回落清单必须过滤 `is_active` 与草稿：`list_public()` 按名称排序且不看启用状态，
-    曾据此选中一个已停用的角色，导致新账号首条消息即回"尚未配置角色"。
-    """
-    repo = ProfileRepository()
-    slug = settings.web_default_profile_slug.strip()
-    if slug:
-        profile = await repo.find_by_slug(slug)
-        if profile is not None and profile.is_active and not profile.is_draft:
-            return slug
-    candidates = [p for p in await repo.list_active() if not p.is_draft]
-    if not candidates:
-        raise AuthError("profile_not_configured", "未配置可用的默认角色，请联系管理员", 503)
-    return candidates[0].slug
-
-
 async def ensure_account_web_bot(account_id: str, name: str = "") -> str:
     """取账号自有网页渠道，没有则创建；不为新服务借用系统渠道。"""
     repo = BotConfigRepository()
@@ -265,7 +242,7 @@ async def _purge_rejected(credential: WebCredentialInDB) -> None:
     """清理被拒身份的遗留数据，释放用户名以便冷却期后重新注册。
 
     唯一索引按字面值占位，被拒记录不删除就永远注册不了；被拒身份从未激活，
-    其业务四件套与会话可安全级联清除。
+    其账号、身份、渠道与会话可安全级联清除。
     """
     await WebSessionRepository().delete_by_credential(credential.id)
     if credential.account_id:
@@ -282,12 +259,16 @@ async def register(
     age_confirmed: bool,
     ip: str = "",
 ) -> WebCredentialInDB:
-    """自助注册：校验 → 占用户名 → 建四件套 → 落 pending（或免审直达 active）。
+    """自助注册：校验 → 占用户名 → 建账号、网页凭据、额度、网页渠道与默认身份。
+
+    注册不解析角色、不创建对话服务：首个服务由用户登录后显式装配，
+    因此没有可用角色时也能注册成功。
+    零服务是正常状态，不影响后续登录、管理资源或重新创建服务。
 
     Returns:
         已落库的网页账号（status 由 `web_register_require_review` 决定）
     Raises:
-        AuthError: 校验不通过、用户名冲突、处于拒绝冷却期、或依赖配置缺失
+        AuthError: 校验不通过、用户名冲突或处于拒绝冷却期
     """
     ensure_web_enabled()
     if not settings.web_register_enabled:
@@ -325,32 +306,23 @@ async def register(
 
     draft = _Draft(credential_id=credential.id)
     try:
-        profile_ref = await resolve_default_profile_id()
-
         account = await AccountRepository().create(
             AccountCreate(name=name, remark="C 端网页账号自助注册")
         )
         draft.account_id = account.id
         if not await credentials.set_account_id(credential.id, account.id):
             raise AuthError("register_failed", "账号归属写入失败，请稍后重试", 500)
-        bot_id = await ensure_account_web_bot(account.id, name="网页助手")
+        await ensure_account_web_bot(account.id, name="网页助手")
 
         quota_update, quota_source = await build_free_quota(account.id)
         await QuotaRepository().create_or_update(account.id, quota_update)
 
-        identity = await IdentityRepository().create(
+        await IdentityRepository().create(
             IdentityCreate(
                 account_id=account.id,
                 name=name,
                 nickname=name,
             )
-        )
-        await create_service(
-            account_id=account.id,
-            bot_id=bot_id,
-            identity_id=identity.id,
-            profile_ref=profile_ref,
-            name="默认服务",
         )
 
         if not settings.web_register_require_review:

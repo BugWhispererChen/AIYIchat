@@ -335,8 +335,6 @@ class _RuntimeSettings:
     web_register_enabled: bool = False  # 自助注册开关
     web_register_require_review: bool = True  # 注册需管理员审核后才可登录
     web_captcha_enabled: bool = True  # 注册/登录图形验证码开关
-    web_bot_id: str = ""  # 承载网页会话的系统 Bot（platform="web"）id
-    web_default_profile_slug: str = ""  # 新建服务的默认角色 slug
     web_free_quota_template_id: str = ""  # 注册赠送额度模板 id（空/不存在回落内置体验额度）
     web_session_hours: int = 24  # 会话有效期（小时，滑动过期）
     web_session_max_concurrent: int = 3  # 同一身份并发有效会话上限
@@ -510,7 +508,7 @@ class _RuntimeSettings:
             "qq_full_group_context_enabled", "wechat_quote_cache_enabled",
             "web_auth_enabled", "web_register_enabled",
             "web_register_require_review", "web_captcha_enabled",
-            "web_bot_id", "web_default_profile_slug", "web_free_quota_template_id",
+            "web_free_quota_template_id",
             "web_session_hours", "web_session_max_concurrent",
             "web_login_max_fail", "web_login_lockout_minutes",
             "web_rate_limit_register", "web_rate_limit_login",
@@ -706,8 +704,6 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         web_register_enabled: bool = Field(default=False)
         web_register_require_review: bool = Field(default=True)
         web_captcha_enabled: bool = Field(default=True)
-        web_bot_id: str = Field(default="")
-        web_default_profile_slug: str = Field(default="")
         web_free_quota_template_id: str = Field(default="")
         web_session_hours: int = Field(default=24)
         web_session_max_concurrent: int = Field(default=3)
@@ -778,6 +774,11 @@ async def load_settings_from_db() -> set[str]:
     migrated = await repo.migrate_model_configs_if_needed()
     if migrated:
         logger.info("App settings model_configs 已补齐默认分组")
+
+    # 迁移：清除已退役的默认服务配置键（幂等，仅动配置文档）
+    retired = await repo.retire_removed_keys()
+    if retired:
+        logger.info("App settings 已清除 %d 个退役配置键", retired)
 
     await _reconcile_admin_password(repo)
 

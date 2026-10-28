@@ -36,6 +36,7 @@ class IdentityOption:
     external_bot_id: str = ""
     external_platform: str = ""
     bound: bool = False
+    service_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ async def resolve_visible_profile(
 
 
 async def list_identity_options(account_id: str) -> list[IdentityOption]:
-    """列出账号身份及其非网页渠道占用情况。"""
+    """列出账号身份及其外部渠道占用情况与服务引用数。"""
     identities = await IdentityRepository().list_by_account(account_id, limit=1000)
     services = await ServiceRepository().list_by_account(account_id)
     bots = {
@@ -81,7 +82,9 @@ async def list_identity_options(account_id: str) -> list[IdentityOption]:
         for bot in await BotConfigRepository().list_by_account(account_id)
     }
     external_by_identity: dict[str, BotConfigInDB] = {}
+    service_counts: dict[str, int] = {}
     for svc in services:
+        service_counts[svc.identity_id] = service_counts.get(svc.identity_id, 0) + 1
         bot = bots.get(svc.bot_id)
         if bot is not None and bot.platform != "web" and svc.identity_id not in external_by_identity:
             external_by_identity[svc.identity_id] = bot
@@ -96,6 +99,7 @@ async def list_identity_options(account_id: str) -> list[IdentityOption]:
                     external.platform if external else (identity.platform or "")
                 ),
                 bound=bool(identity.platform_id) and not _is_uuid(identity.platform_id),
+                service_count=service_counts.get(identity.id, 0),
             )
         )
     return options

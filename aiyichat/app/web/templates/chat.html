@@ -31,12 +31,16 @@
         </div>
     </div>
 
-    <!-- 服务选择：一个服务 = 渠道 + 角色 + 身份，是聊天页可切换的对话单元 -->
+    <!-- 服务选择：一个服务 = 渠道 + 角色 + 身份，是聊天页可切换的对话单元。
+         零服务是合法状态：下拉显示空态，输入区禁用，并提供创建服务入口。 -->
     <div class="partner-bar">
         <label for="service-select">正在对话</label>
         <select id="service-select" disabled></select>
         <span class="system-note" id="partner-channel" hidden></span>
         <span class="links">
+            <span class="system-note" id="no-service-note" hidden>
+                还没有对话服务，<a href="/web/services#services">去创建</a>
+            </span>
             <span class="system-note" id="loading-note">正在建立会话…</span>
         </span>
     </div>
@@ -59,7 +63,9 @@
                 <div class="transcript-inner" id="transcript-inner">
                     <div class="transcript-empty" id="transcript-empty">
                         <span class="kicker">Begin</span>
-                        <p>对话从这里开始，说点什么吧。</p>
+                        <p id="transcript-empty-text">对话从这里开始，说点什么吧。</p>
+                        <a class="ui-btn ui-btn--primary" id="empty-service-cta"
+                           href="/web/services#services" hidden>创建我的第一个服务</a>
                     </div>
                 </div>
             </div>

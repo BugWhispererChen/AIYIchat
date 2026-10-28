@@ -31,7 +31,7 @@ PAGE_PATHS = ("/web/register", "/web/login", "/web/chat", "/web/account", "/web/
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id",
 )
 
@@ -44,8 +44,6 @@ def web_flags():
     settings.web_register_enabled = True
     settings.web_register_require_review = True
     settings.web_captcha_enabled = True
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PROFILE_SLUG
     settings.web_free_quota_template_id = ""
     yield
     for key, value in saved.items():
@@ -165,13 +163,17 @@ class TestWebPagesRender:
                     assert "/api/conversations/chat/stream" in html
                     assert "退出登录" in html
                     assert "Design Tokens" in html
+                    # 零服务空态：创建服务入口与禁用态提示必须在静态壳里
+                    assert 'id="empty-service-cta"' in html
+                    assert 'id="no-service-note"' in html
+                    assert "/web/services#services" in html
             finally:
                 mongo._db = None
 
         asyncio.run(flow())
 
     def test_services_page_landmarks_and_profiles_redirect(self) -> None:
-        """聊天服务页三区齐备；旧角色页 307 落到角色分区。"""
+        """聊天服务页四区齐备（含独立身份分区）；旧角色页 307 落到角色分区。"""
 
         async def flow() -> None:
             app = await _setup_app("t_web_pages_services")
@@ -181,11 +183,16 @@ class TestWebPagesRender:
                     assert resp.status_code == 200
                     html = resp.text
                     for marker in (
-                        "svc-tabs", "channel-list", "service-list", "role-list",
-                        "bot-editor", "service-editor", "web-services.js",
-                        "web-roles.js", "聊天服务",
+                        "svc-tabs", "channel-list", "service-list", "identity-list",
+                        "role-list", "bot-editor", "service-editor", "identity-editor",
+                        "web-services.js", "web-roles.js", "聊天服务",
                     ):
                         assert marker in html, marker
+                    # 身份是与渠道 / 服务 / 角色并列的独立 Tab
+                    assert 'data-svc-tab="identities"' in html
+                    # 渠道表单不再要求首个服务的身份与角色
+                    assert 'id="bot-profile"' not in html
+                    assert 'id="bot-identity"' not in html
                     assert "Design Tokens" in html
 
                     redirect = await client.get("/web/profiles", follow_redirects=False)

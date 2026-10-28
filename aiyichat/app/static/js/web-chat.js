@@ -33,6 +33,7 @@
     var MAX_VOICE_SECONDS = 60;
 
     var streaming = false;
+    var hasService = false;   // 零服务是合法状态：为 false 时禁用发送、语音与输入
     var browsing = null;      // 正在回看的历史会话 ID；null 表示处于当前对话
     var abort = null;         // 进行中的流请求，便于中止
     var recording = false;
@@ -296,20 +297,23 @@
         return data;
     }
 
-    /* 服务（对话服务）列表：只有一个时锁死选择器，多个时供账号切换角色 */
+    /* 服务（对话服务）列表：只有一个时锁死选择器，多个时供账号切换角色。
+       返回账号是否存在可用的对话服务；零服务时由 boot 走空态引导。 */
     async function loadServices() {
         var result = await window.WebAuth.call('/api/web/services');
         if (!result.ok) {
             serviceSelect.disabled = true;
-            return;
+            hasService = false;
+            return false;
         }
         var items = ((result.data || {}).items || []).filter(function (s) { return s.is_active; });
+        hasService = items.length > 0;
         serviceSelect.textContent = '';
         if (items.length <= 1) {
             var one = items[0];
             var only = document.createElement('option');
             only.value = one ? one.id : '';
-            only.textContent = one ? one.profile_name + channelSuffix(one.bot_platform) : '未配置服务';
+            only.textContent = one ? one.profile_name + channelSuffix(one.bot_platform) : '还没有对话服务';
             if (one) {
                 only.dataset.label = one.profile_name;
                 only.dataset.platform = one.bot_platform || '';
@@ -318,7 +322,7 @@
             serviceSelect.disabled = true;
             if (one) { try { localStorage.setItem(SERVICE_KEY, one.id); } catch (e) {} }
             updateChannelNote();
-            return;
+            return hasService;
         }
         var saved = '';
         try { saved = localStorage.getItem(SERVICE_KEY) || ''; } catch (e) {}
@@ -336,6 +340,21 @@
         if (serviceSelect.selectedIndex === -1) serviceSelect.selectedIndex = 0;
         serviceSelect.disabled = false;
         updateChannelNote();
+        return hasService;
+    }
+
+    /* 零服务空态：明确告诉用户原因，并给出创建服务的入口 */
+    function renderZeroServiceState() {
+        var cta = document.getElementById('empty-service-cta');
+        if (cta) cta.hidden = false;
+        var note = document.getElementById('no-service-note');
+        if (note) note.hidden = false;
+        var emptyText = document.getElementById('transcript-empty-text');
+        if (emptyText) emptyText.textContent = '还没有对话服务。创建服务后即可开始对话。';
+        input.disabled = true;
+        sendBtn.disabled = true;
+        if (micBtn) micBtn.disabled = true;
+        if (composerHintText) composerHintText.textContent = '还没有可用的对话服务，请先创建服务';
     }
 
     /* 单服务时下拉被禁用，仍必须带上 service_id：否则历史与发送会退化成"按身份"口径 */
@@ -458,11 +477,11 @@
     function setStreaming(on) {
         streaming = on;
         sendBtn.textContent = on ? '停止' : '发送';
-        // 流式中保留"停止"可点；录音中发送按钮禁用，避免把录音与文字请求混在一起
-        sendBtn.disabled = recording;
-        input.disabled = on || recording;
-        if (micBtn) micBtn.disabled = on;
-        if (!on && !recording) input.focus();
+        // 流式中保留"停止"可点；录音中或零服务时发送按钮禁用
+        sendBtn.disabled = recording || !hasService;
+        input.disabled = on || recording || !hasService;
+        if (micBtn) micBtn.disabled = on || !hasService;
+        if (!on && !recording && hasService) input.focus();
     }
 
     async function consumeSse(resp, onPayload) {
@@ -643,6 +662,7 @@
     async function send() {
         // "停止"按钮也走表单提交，必须先处理中止，否则空输入会提前 return
         if (streaming && abort) { abort.abort(); return; }
+        if (!hasService) { renderZeroServiceState(); return; }
         var text = input.value.trim();
         if (!text || recording) return;
         if (browsing) await resumeCurrent();
@@ -754,6 +774,7 @@
 
     async function startRecording() {
         if (streaming || recording) return;
+        if (!hasService) { renderZeroServiceState(); return; }
         if (browsing) await resumeCurrent();
         try {
             voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -829,6 +850,7 @@
 
     async function sendVoice(blob) {
         if (streaming && abort) { abort.abort(); return; }
+        if (!hasService) { renderZeroServiceState(); return; }
         if (browsing) await resumeCurrent();
 
         var localUrl = URL.createObjectURL(blob);
@@ -961,12 +983,16 @@
         }
         if (loadingNote) loadingNote.remove();
         await loadServices();
-        addNote('对话已就绪，直接输入即可开始。');
         setStreaming(false);
-        sendBtn.disabled = false;
-        input.disabled = false;
-        setupVoice();
-        input.focus();
+        if (hasService) {
+            addNote('对话已就绪，直接输入即可开始。');
+            sendBtn.disabled = false;
+            input.disabled = false;
+            setupVoice();
+            input.focus();
+        } else {
+            renderZeroServiceState();
+        }
         await loadSessions();
     })().catch(function () {
         quotaInfo.textContent = '账号信息读取失败';

@@ -289,7 +289,7 @@ async def profiles_page(request: Request) -> Response:
 
 @web_router.get("/web/services", response_class=HTMLResponse)
 async def services_page(request: Request) -> Response:
-    """聊天服务自助管理页：渠道、服务与角色三个分区。"""
+    """聊天服务自助管理页：渠道、服务、身份与角色四个分区。"""
     if not settings.web_auth_enabled:
         return _disabled_page()
     return _render(request, "services.html")

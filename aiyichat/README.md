@@ -95,10 +95,8 @@ chmod +x deploy.sh
 | `WEB_REGISTER_ENABLED` | 开放自助注册（需先打开总开关） | `false` |
 | `WEB_REGISTER_REQUIRE_REVIEW` | 注册需管理员审核后才可登录 | `true` |
 | `WEB_CAPTCHA_ENABLED` | 注册/登录算式图形验证码 | `true` |
-| `WEB_BOT_ID` | 系统载体渠道 id（须为 `platform=web`）；留空时新账号自动创建账号级网页渠道 | 空 |
-| `WEB_DEFAULT_PROFILE_SLUG` | 新会话默认角色 slug（留空自动取任一在用公共角色） | 空 |
 | `WEB_FREE_QUOTA_TEMPLATE_ID` | 注册赠送额度模板 id（留空/不存在回落内置体验额度） | 空 |
-| `WEB_MAX_SERVICES` | 账号的对话服务数量上限（渠道与服务共用） | `3` |
+| `WEB_MAX_SERVICES` | 账号的渠道与服务各自数量上限 | `3` |
 | `WEB_SESSION_HOURS` | 会话有效期（小时，滑动过期） | `24` |
 | `WEB_SESSION_MAX_CONCURRENT` | 同一身份并发有效会话上限（超出踢最旧） | `3` |
 | `WEB_LOGIN_MAX_FAIL` / `WEB_LOGIN_LOCKOUT_MINUTES` | 连续登录失败上限 / 锁定时长（分钟） | `5` / `15` |

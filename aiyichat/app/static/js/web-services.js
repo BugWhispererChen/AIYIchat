@@ -1,5 +1,5 @@
-/* 聊天服务页：渠道、服务与角色管理。
-   服务 = 渠道 + 角色 + 身份；网页登录只确定账号归属。 */
+/* 聊天服务页：渠道、服务、身份与角色管理。
+   渠道只负责接入，服务 = 渠道 + 角色 + 身份，零服务是合法状态。 */
 (function () {
     'use strict';
 
@@ -72,6 +72,21 @@
 
     function stateLabel(state) { return STATE_LABELS[state] || state || ''; }
 
+    /* 渠道连接状态与服务配置状态必须分开呈现：
+       「待扫码」不等于「未配置服务」，两类问题对应不同的修复入口 */
+    function connectionLabel(bot) {
+        if (bot.is_blocked) return '已停用';
+        if (bot.platform === 'qq') {
+            return bot.state === 'pending_bind' ? '待绑定' : '已绑定';
+        }
+        if (bot.platform === 'wechat') {
+            if (bot.state === 'online') return '在线';
+            if (bot.state === 'pending_qr') return '等待扫码';
+            return '离线';
+        }
+        return '已就绪';
+    }
+
     function stateClass(state) {
         if (state === 'blocked') return 'ui-badge--err';
         if (state === 'online' || state === 'ready') return 'ui-badge--ok';
@@ -109,6 +124,7 @@
         renderSummary();
         renderChannels();
         renderServices();
+        renderIdentities();
         syncEditors();
     }
 
@@ -116,9 +132,11 @@
         const limit = quota.limit || 0;
         el('stat-services').textContent = limit > 0 ? quota.services + ' / ' + limit : '未开放';
         el('stat-bots').textContent = limit > 0 ? quota.bots + ' / ' + limit : '未开放';
+        el('stat-identities').textContent = String(identities.length);
         el('stat-roles').textContent = String(profiles.length);
         el('tab-count-bots').textContent = bots.length ? '(' + bots.length + ')' : '';
         el('tab-count-services').textContent = services.length ? '(' + services.length + ')' : '';
+        el('tab-count-identities').textContent = identities.length ? '(' + identities.length + ')' : '';
         el('tab-count-roles').textContent = profiles.length ? '(' + profiles.length + ')' : '';
         const botNew = el('bot-new-btn');
         if (botNew) botNew.hidden = !canCreateBot;
@@ -222,7 +240,7 @@
         if (!identities.length) {
             const option = document.createElement('option');
             option.value = '';
-            option.textContent = '暂无身份，请先在下方新建普通身份';
+            option.textContent = '暂无身份，可点击右侧「新建身份」';
             select.appendChild(option);
         }
         if (selectedId) select.value = selectedId;
@@ -234,18 +252,6 @@
     }
 
     function syncEditors() {
-        const botEditor = el('bot-editor');
-        if (botEditor && !botEditor.hidden) {
-            fillProfileSelect(el('bot-profile'), el('bot-profile').value);
-            fillIdentitySelect(
-                el('bot-identity'), { platform: botPlatform }, el('bot-identity').value, false
-            );
-            const createBtn = el('bot-create-btn');
-            if (createBtn) {
-                createBtn.disabled = !activeProfiles().length
-                    || !usableIdentities({ platform: botPlatform }).length;
-            }
-        }
         const svcEditor = el('service-editor');
         if (svcEditor && !svcEditor.hidden) {
             const currentProfile = el('svc-profile').value;
@@ -275,7 +281,7 @@
     }
 
     /* ── Tab 切换 ─────────────────────────────────── */
-    const TAB_NAMES = ['channels', 'services', 'roles'];
+    const TAB_NAMES = ['channels', 'services', 'identities', 'roles'];
 
     function tabFromHash() {
         const name = (location.hash || '').replace('#', '');
@@ -309,9 +315,11 @@
             return;
         }
         bots.forEach(function (bot) {
+            const configured = bot.service_count > 0;
             const card = document.createElement('div');
             card.className = 'channel-card';
             card.dataset.botId = bot.id;
+            card.dataset.serviceState = configured ? 'configured' : 'empty';
 
             const head = document.createElement('div');
             head.className = 'channel-head';
@@ -320,13 +328,20 @@
             name.className = 'channel-name';
             name.textContent = bot.name;
             head.appendChild(name);
-            head.appendChild(badge(stateLabel(bot.state), stateClass(bot.state)));
+            const conn = badge('连接：' + connectionLabel(bot), stateClass(bot.state));
+            conn.title = '连接状态';
+            head.appendChild(conn);
+            const svcState = badge(
+                configured ? '已配置 ' + bot.service_count + ' 个服务' : '尚未配置服务',
+                configured ? 'ui-badge--ok' : 'ui-badge--warn'
+            );
+            svcState.title = '服务配置状态';
+            head.appendChild(svcState);
             card.appendChild(head);
 
             const meta = document.createElement('div');
             meta.className = 'channel-meta u-muted u-fs-82';
             const parts = [];
-            parts.push(bot.service_count ? '承载 ' + bot.service_count + ' 个服务' : '未装配服务');
             if (bot.service_count && bot.service_names && bot.service_names.length) {
                 parts.push('服务：' + bot.service_names.join('、'));
             }
@@ -335,7 +350,7 @@
             }
             if (bot.is_blocked && bot.block_reason) parts.push('停用原因：' + bot.block_reason);
             meta.textContent = parts.join(' · ');
-            card.appendChild(meta);
+            if (meta.textContent) card.appendChild(meta);
 
             const actions = document.createElement('div');
             actions.className = 'channel-actions';
@@ -367,10 +382,15 @@
                 }
                 if (canCreateService && (bot.platform === 'web' || bot.service_count === 0)) {
                     actions.appendChild(mkBtn(
-                        '添加服务',
+                        configured ? '添加服务' : '配置服务',
                         function () { openServiceEditor(null, bot.id); },
-                        { outline: true }
+                        { outline: true, primary: !configured }
                     ));
+                } else if (!configured) {
+                    const note = document.createElement('span');
+                    note.className = 'ui-help';
+                    note.textContent = '尚未配置服务，自助创建暂未开放。';
+                    actions.appendChild(note);
                 }
                 actions.appendChild(mkBtn('编辑', function () { openBotEdit(bot); }));
                 actions.appendChild(mkBtn('删除', function () { removeBot(bot); }, { danger: true }));
@@ -610,30 +630,17 @@
         el('bot-name').value = '';
         el('bot-sandbox').checked = true;
         setBotPlatform('qq');
-        fillProfileSelect(el('bot-profile'), '');
-        fillIdentitySelect(el('bot-identity'), { platform: botPlatform }, '', false);
-        const createBtn = el('bot-create-btn');
-        if (createBtn) {
-            createBtn.disabled = !activeProfiles().length
-                || !usableIdentities({ platform: botPlatform }).length;
-        }
         el('bot-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
         el('bot-name').focus();
     }
 
     async function createBot() {
         const name = el('bot-name').value.trim();
-        const profileId = el('bot-profile').value;
-        const identityId = el('bot-identity').value;
         if (!name) { show('err', '请填写渠道名称'); return; }
-        if (!identityId) { show('err', '请选择首个服务的身份'); return; }
-        if (!profileId) { show('err', '请选择首个服务的角色'); return; }
 
         const payload = {
             platform: botPlatform,
             name: name,
-            identity_id: identityId,
-            profile_id: profileId,
             sandbox_mode: el('bot-sandbox').checked
         };
         const button = el('bot-create-btn');
@@ -652,9 +659,9 @@
 
         const created = result.data.bot;
         el('bot-editor').hidden = true;
-        show('ok', '渠道已创建，正在装配首个服务。');
         await fetchAll();
         if (!created) return;
+        show('ok', '渠道已创建，可继续扫码接入或为它配置服务。');
         if (created.platform === 'qq' || created.platform === 'wechat') {
             const card = document.querySelector('.channel-card[data-bot-id="' + created.id + '"]');
             const panel = card ? card.querySelector('.qr-panel') : null;
@@ -662,8 +669,6 @@
                 if (created.platform === 'qq') startQqBind(created, panel);
                 else startWechatLogin(created, panel);
             }
-        } else {
-            show('ok', '网页渠道已就绪，可继续添加服务。');
         }
     }
 
@@ -718,7 +723,7 @@
         if (!services.length) {
             list.appendChild(empty(
                 canCreateService
-                    ? '还没有服务。先在「渠道」分区添加渠道，或点击「+ 添加服务」。'
+                    ? '还没有服务。先添加渠道与身份，再点击「+ 添加服务」显式装配。'
                     : '还没有服务，管理员未开放自助创建。'
             ));
             return;
@@ -779,6 +784,7 @@
         el('bot-editor').hidden = true;
         el('bot-edit').hidden = true;
         el('service-editor').hidden = false;
+        resetQuickIdentity();
 
         fillProfileSelect(el('svc-profile'), svc ? svc.profile_id : '');
         fillBotSelect(
@@ -797,6 +803,10 @@
 
         const title = el('service-editor').querySelector('.ui-card-title');
         if (title) title.textContent = svc ? '编辑服务：' + svc.name : '新建服务';
+
+        // 编辑态不能换身份，隐藏「新建身份」避免误解
+        const newIdentityBtn = el('svc-identity-new-btn');
+        if (newIdentityBtn) newIdentityBtn.hidden = !!svc;
 
         const hasProfiles = activeProfiles().length > 0;
         const canPickBot = !!svc || availableBotsForService();
@@ -874,10 +884,149 @@
         await fetchAll();
     }
 
-    async function createIdentity() {
-        const name = el('identity-new-name').value.trim();
+    /* ── 身份管理 ─────────────────────────────────── */
+    let editingIdentity = null;
+
+    function bindingLabel(identity) {
+        if (identity.bound) {
+            return '已绑定' + platformName(identity.external_platform || identity.platform);
+        }
+        return '未绑定外部平台';
+    }
+
+    function renderIdentities() {
+        const list = el('identity-list');
+        if (!list) return;
+        clear(list);
+        if (!identities.length) {
+            list.appendChild(empty('还没有身份。点击「+ 新建身份」创建，身份可用于任意渠道的服务。'));
+            return;
+        }
+        identities.forEach(function (identity) {
+            const row = document.createElement('div');
+            row.className = 'ui-list-row svc-row';
+            row.dataset.identityId = identity.id;
+
+            const grow = document.createElement('div');
+            grow.className = 'ui-stack ui-stack--tight ui-cluster--fill svc-row-main';
+            const name = document.createElement('div');
+            name.className = 'u-fw-600';
+            name.textContent = identity.name;
+            grow.appendChild(name);
+            const meta = document.createElement('div');
+            meta.className = 'u-muted u-fs-82';
+            const parts = [];
+            if (identity.nickname && identity.nickname !== identity.name) {
+                parts.push('昵称：' + identity.nickname);
+            }
+            parts.push(bindingLabel(identity));
+            if (identity.self_description) parts.push(identity.self_description);
+            meta.textContent = parts.join(' · ');
+            grow.appendChild(meta);
+            row.appendChild(grow);
+
+            const status = document.createElement('div');
+            status.className = 'svc-row-status';
+            status.appendChild(badge(
+                identity.service_count ? identity.service_count + ' 个服务' : '未用于服务',
+                identity.service_count ? 'ui-badge--line' : 'ui-badge--warn'
+            ));
+            if (identity.is_minor) status.appendChild(badge('未成年人', 'ui-badge--warn'));
+            if (identity.is_blocked) status.appendChild(badge('已停用', 'ui-badge--err'));
+            row.appendChild(status);
+
+            const actions = document.createElement('div');
+            actions.className = 'svc-row-actions';
+            actions.appendChild(mkBtn('编辑', function () { openIdentityEditor(identity); }));
+            actions.appendChild(mkBtn('删除', function () { removeIdentity(identity); }, { danger: true }));
+            row.appendChild(actions);
+            list.appendChild(row);
+        });
+    }
+
+    function resetQuickIdentity() {
+        const panel = el('identity-quick');
+        if (!panel) return;
+        panel.hidden = true;
+        el('quick-identity-name').value = '';
+        el('quick-identity-nickname').value = '';
+        el('quick-identity-desc').value = '';
+        el('quick-identity-minor').checked = false;
+    }
+
+    function openIdentityEditor(identity) {
+        editingIdentity = identity || null;
+        el('identity-editor').hidden = false;
+        el('identity-name').value = identity ? identity.name : '';
+        el('identity-nickname').value = identity ? identity.nickname : '';
+        el('identity-desc').value = identity ? (identity.self_description || '') : '';
+        el('identity-minor').checked = identity ? !!identity.is_minor : false;
+        const title = el('identity-editor').querySelector('.ui-card-title');
+        if (title) title.textContent = identity ? '编辑身份：' + identity.name : '新建身份';
+        el('identity-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el('identity-name').focus();
+    }
+
+    async function saveIdentity() {
+        const name = el('identity-name').value.trim();
         if (!name) { show('err', '请填写身份名称'); return; }
-        const button = el('identity-create-btn');
+        const payload = {
+            name: name,
+            nickname: el('identity-nickname').value.trim(),
+            self_description: el('identity-desc').value.trim(),
+            is_minor: el('identity-minor').checked
+        };
+        const button = el('identity-save-btn');
+        button.disabled = true;
+        let result;
+        try {
+            if (editingIdentity) {
+                result = await window.WebAuth.call(
+                    '/api/web/identities/' + encodeURIComponent(editingIdentity.id),
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }
+                );
+            } else {
+                result = await window.WebAuth.call('/api/web/identities', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+        } finally {
+            button.disabled = false;
+        }
+        if (!result.ok) { show('err', result.detail || '保存身份失败'); return; }
+        el('identity-editor').hidden = true;
+        editingIdentity = null;
+        show('ok', '身份已保存。');
+        await fetchAll();
+    }
+
+    async function removeIdentity(identity) {
+        const referenced = identity.service_count
+            ? '该身份仍被 ' + identity.service_count + ' 个服务使用，需先删除或改绑这些服务。'
+            : '其对话历史与主动消息记录会一并清理，且不可恢复。';
+        if (!window.confirm(
+            '确定删除身份「' + identity.name + '」？\n'
+            + referenced + '\n该操作不会注销网页登录账号。'
+        )) return;
+        const result = await window.WebAuth.call(
+            '/api/web/identities/' + encodeURIComponent(identity.id),
+            { method: 'DELETE' }
+        );
+        if (!result.ok) { show('err', result.detail || '删除身份失败'); return; }
+        show('ok', '身份已删除。');
+        await fetchAll();
+    }
+
+    async function quickCreateIdentity() {
+        const name = el('quick-identity-name').value.trim();
+        if (!name) { show('err', '请填写身份名称'); return; }
+        const button = el('quick-identity-create-btn');
         button.disabled = true;
         let result;
         try {
@@ -886,25 +1035,29 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: name,
-                    nickname: el('identity-new-nickname').value.trim(),
-                    self_description: el('identity-new-desc').value.trim(),
-                    is_minor: el('identity-new-minor').checked
+                    nickname: el('quick-identity-nickname').value.trim(),
+                    self_description: el('quick-identity-desc').value.trim(),
+                    is_minor: el('quick-identity-minor').checked
                 })
             });
         } finally {
             button.disabled = false;
         }
         if (!result.ok) { show('err', result.detail || '创建身份失败'); return; }
-        el('identity-new-name').value = '';
-        el('identity-new-nickname').value = '';
-        el('identity-new-desc').value = '';
-        el('identity-new-minor').checked = false;
-        show('ok', '普通身份已创建，可用于任意渠道的服务。');
+        resetQuickIdentity();
         await fetchAll();
-        ['svc-identity', 'bot-identity'].forEach(function (id) {
-            const select = el(id);
-            if (select && !select.disabled) select.value = result.data.id;
-        });
+        const select = el('svc-identity');
+        if (select) {
+            select.value = result.data.id;
+            if (select.selectedIndex < 0) {
+                const option = document.createElement('option');
+                option.value = result.data.id;
+                option.textContent = result.data.name;
+                select.appendChild(option);
+                select.value = result.data.id;
+            }
+        }
+        show('ok', '身份已创建并选中，继续完成服务创建即可。');
     }
 
     /* ── 事件绑定与首屏 ───────────────────────────── */
@@ -937,10 +1090,23 @@
     el('svc-cancel-btn').addEventListener('click', function () {
         el('service-editor').hidden = true;
         editingService = null;
+        resetQuickIdentity();
     });
     el('svc-save-btn').addEventListener('click', saveService);
     el('svc-bot').addEventListener('change', syncEditors);
-    el('identity-create-btn').addEventListener('click', createIdentity);
+    el('svc-identity-new-btn').addEventListener('click', function () {
+        const panel = el('identity-quick');
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden) el('quick-identity-name').focus();
+    });
+    el('quick-identity-create-btn').addEventListener('click', quickCreateIdentity);
+    el('quick-identity-cancel-btn').addEventListener('click', resetQuickIdentity);
+    el('identity-new-btn').addEventListener('click', function () { openIdentityEditor(null); });
+    el('identity-save-btn').addEventListener('click', saveIdentity);
+    el('identity-cancel-btn').addEventListener('click', function () {
+        el('identity-editor').hidden = true;
+        editingIdentity = null;
+    });
 
     window.addEventListener('web-roles-updated', function () {
         fetchAll().catch(function (e) {

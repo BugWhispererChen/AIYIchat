@@ -89,6 +89,17 @@ class AppSettingsRepository:
         )
         return True
 
+    async def retire_removed_keys(self) -> int:
+        """清除已退役的默认服务配置键（幂等）。
+
+        只 `$unset` 配置文档里的废弃字段，不触碰账号、身份、渠道、角色或服务。
+        """
+        result = await self._collection().update_one(
+            {"_id": self._DOC_ID},
+            {"$unset": {"web_bot_id": "", "web_default_profile_slug": ""}},
+        )
+        return result.modified_count
+
 
 def build_model_configs_migration(doc: AppSettingsDocument) -> dict[str, Any]:
     """生成默认基础配置组与功能引用。

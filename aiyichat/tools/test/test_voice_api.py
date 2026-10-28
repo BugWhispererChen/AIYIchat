@@ -14,8 +14,6 @@ from app.services.captcha_service import captcha_service
 from app.utils.rate_limit import account_limiter, login_limiter, register_limiter
 from tools.test.test_api_auth import (
     _WEB_KEYS,
-    PROFILE_SLUG,
-    WEB_BOT_ID,
     _approve,
     _client,
     _login,
@@ -37,8 +35,6 @@ def voice_web_flags():
     settings.web_session_hours = 24
     settings.web_session_max_concurrent = 3
     settings.web_login_max_fail = 5
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PROFILE_SLUG
     settings.web_free_quota_template_id = ""
     settings.trust_proxy_headers = True
     register_limiter.reset()

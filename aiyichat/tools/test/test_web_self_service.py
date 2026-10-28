@@ -4,7 +4,7 @@
 - 未登录拒绝；登录账号只能操作自己账号名下的私有角色与服务；
 - 归属字段由服务端写入，客户端伪造 account_id/visibility/bot_id 无效；
 - 配额上限、能力关闭、内容安全三条治理闸门；
-- 服务删除/停用后的"至少保留一个可聊天服务"保护；
+- 注册零服务、首服务显式创建、删到零服务后可重建；
 - 聊天按显式 service_id 选择伙伴，越权指定他人服务被拒。
 """
 
@@ -53,7 +53,7 @@ HIDDEN_PUBLIC_FIELDS = (
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
     "web_rate_limit_register", "web_rate_limit_login",
@@ -73,8 +73,6 @@ def web_flags():
     settings.web_rate_limit_register = 100
     settings.web_rate_limit_login = 100
     settings.trust_proxy_headers = True
-    settings.web_bot_id = WEB_BOT_ID
-    settings.web_default_profile_slug = PUBLIC_SLUG
     settings.web_free_quota_template_id = ""
     settings.web_max_profiles = 2
     settings.web_max_services = 3
@@ -149,11 +147,23 @@ async def _default_identity_model(client: AsyncClient, token: str):
 
 
 async def _default_service(client: AsyncClient, token: str):
+    """取账号第一个服务；注册已不再创建服务，没有则显式装配一个。"""
     me = await client.get("/api/auth/me", headers=_h(token))
     assert me.status_code == 200
-    services = await ServiceRepository().list_by_account(me.json()["account_id"])
-    assert len(services) == 1
-    return services[0]
+    account_id = me.json()["account_id"]
+    services = await ServiceRepository().list_by_account(account_id)
+    if services:
+        return services[0]
+    identity = await _default_identity_model(client, token)
+    bot_id = await auth_service.ensure_account_web_bot(account_id)
+    return await ServiceRepository().create(
+        ServiceCreate(
+            account_id=account_id,
+            identity_id=identity.id,
+            bot_id=bot_id,
+            profile_id=PUBLIC_SLUG,
+        )
+    )
 
 
 def _profile_body(name: str = "阿禾") -> dict[str, Any]:
@@ -477,9 +487,9 @@ class TestWebServiceSelfService:
                     b = await _signup(c, "bob")
                     pid = (await c.post("/api/web/profiles", json=_profile_body(), headers=_h(a))).json()["id"]
                     identity = await _default_identity(c, a)
-                    # 注册已自带 1 个服务，再建 2 个到上限 3
+                    # 注册零服务，再建 3 个到上限 3
                     ids = []
-                    for name in ("甲", "乙"):
+                    for name in ("甲", "乙", "丙"):
                         r = await c.post(
                             "/api/web/services",
                             json={
@@ -506,58 +516,62 @@ class TestWebServiceSelfService:
 
         _run(flow())
 
-    def test_last_active_service_protected(self) -> None:
-        """最后一个启用中的服务不能停用、最后一个服务不能删除：否则账号失去聊天能力。"""
+    def test_last_service_can_be_disabled_and_deleted(self) -> None:
+        """零服务是合法状态：最后一个服务可以停用，也可以删除。"""
 
         async def flow() -> None:
             app = await _setup_app("svc_last")
             try:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
+                    service = await _default_service(c, a)
+                    disabled = await c.put(
+                        f"/api/web/services/{service.id}",
+                        json={"is_active": False},
+                        headers=_h(a),
+                    )
+                    assert disabled.status_code == 200, disabled.text
+                    deleted = await c.delete(
+                        f"/api/web/services/{service.id}", headers=_h(a)
+                    )
+                    assert deleted.status_code == 200, deleted.text
                     items = (await c.get("/api/web/services", headers=_h(a))).json()["items"]
-                    only = items[0]["id"]
-                    assert (await c.put(f"/api/web/services/{only}", json={"is_active": False}, headers=_h(a))).status_code == 409
-                    assert (await c.delete(f"/api/web/services/{only}", headers=_h(a))).status_code == 409
+                    assert items == []
             finally:
                 mongo._db = None
 
         _run(flow())
 
-    def test_last_active_guard_uses_account_not_login_identity(self) -> None:
-        """其他身份仍有活跃服务时可删除，最后剩余一个账号服务时才阻断。"""
+    def test_zero_service_account_can_create_first_service(self) -> None:
+        """新注册账号零服务，登录后按引导显式创建首个服务即可恢复聊天能力。"""
 
         async def flow() -> None:
             app = await _setup_app("svc_login_last")
             try:
                 async with _client(app) as c:
                     a = await _signup(c, "alice")
-                    identity = await _default_identity_model(c, a)
-                    own = await ServiceRepository().list_by_identity(identity.id)
-                    target = own[0]
-                    qq_identity = await IdentityRepository().create(
-                        IdentityCreate(
-                            account_id=identity.account_id,
-                            platform="qq",
-                            platform_id="openid-qq",
-                        )
+                    assert (await c.get("/api/web/services", headers=_h(a))).json()["items"] == []
+                    identity = await _default_identity(c, a)
+                    first = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": PUBLIC_SLUG, "identity_id": identity["id"]},
+                        headers=_h(a),
                     )
-                    qq_service = await ServiceRepository().create(
-                        ServiceCreate(
-                            account_id=identity.account_id,
-                            identity_id=qq_identity.id,
-                            bot_id="qq-bot",
-                            profile_id=target.profile_id,
-                        )
+                    assert first.status_code == 201, first.text
+                    assert first.json()["bot_platform"] == "web"
+                    items = (await c.get("/api/web/services", headers=_h(a))).json()["items"]
+                    assert len(items) == 1
+
+                    # 删到零服务后仍可再次创建
+                    assert (await c.delete(
+                        f"/api/web/services/{items[0]['id']}", headers=_h(a)
+                    )).status_code == 200
+                    again = await c.post(
+                        "/api/web/services",
+                        json={"profile_id": PUBLIC_SLUG, "identity_id": identity["id"]},
+                        headers=_h(a),
                     )
-                    resp = await c.delete(
-                        f"/api/web/services/{target.id}", headers=_h(a)
-                    )
-                    assert resp.status_code == 200, resp.text
-                    resp = await c.delete(
-                        f"/api/web/services/{qq_service.id}", headers=_h(a)
-                    )
-                    assert resp.status_code == 409, resp.text
-                    assert resp.json()["code"] == "last_active_service"
+                    assert again.status_code == 201, again.text
             finally:
                 mongo._db = None
 
@@ -573,9 +587,10 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     identity = await _default_identity_model(c, a)
                     assert identity is not None
+                    await _default_service(c, a)
                     services = await ServiceRepository().list_by_identity(identity.id)
                     target = services[0]
-                    # 再建一个活跃服务，保证删除 target 不触发最后服务保护
+                    # 再建一个活跃服务，使 target 删除时仍有其它服务
                     await ServiceRepository().create(
                         ServiceCreate(
                             account_id=identity.account_id,
@@ -618,6 +633,7 @@ class TestWebServiceSelfService:
                     a = await _signup(c, "alice")
                     identity = await _default_identity_model(c, a)
                     assert identity is not None
+                    await _default_service(c, a)
                     services = await ServiceRepository().list_by_identity(identity.id)
                     keeper = services[0]
                     group = "grp-cleanup"
@@ -720,8 +736,16 @@ class TestChatHonoursServiceSelection:
                     assert resp.status_code == 200
                     assert _RecordingEngine.calls[-1]["service_id"] == sid
 
-                    theirs = await c.get("/api/web/services", headers=_h(b))
-                    other_id = theirs.json()["items"][0]["id"]
+                    theirs = await c.post(
+                        "/api/web/services",
+                        json={
+                            "profile_id": PUBLIC_SLUG,
+                            "identity_id": (await _default_identity(c, b))["id"],
+                        },
+                        headers=_h(b),
+                    )
+                    assert theirs.status_code == 201, theirs.text
+                    other_id = theirs.json()["id"]
                     calls_before = len(_RecordingEngine.calls)
                     resp = await c.post(
                         "/api/conversations/chat/stream",
@@ -872,8 +896,8 @@ class TestCrossChannelAccess:
                     token = await _signup(c, "alice")
                     await self._seed_channel_service(c, token)
                     identity = await _default_identity(c, token)
-                    # 注册自带 1 个，再加 2 个到本人上限 3；渠道服务不占名额
-                    for name in ("甲", "乙"):
+                    # 注册零服务，再建 3 个到本人上限 3；渠道服务不占名额
+                    for name in ("甲", "乙", "丙"):
                         resp = await c.post(
                             "/api/web/services",
                             json={

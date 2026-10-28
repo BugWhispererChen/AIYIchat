@@ -1,7 +1,7 @@
 """C 端聊天渠道（Bot）自助管理 API。
 
 - GET    /api/web/bots                         可管理渠道列表 + 配额
-- POST   /api/web/bots                         建渠道并装配首个服务
+- POST   /api/web/bots                         只创建渠道，服务另行显式装配
 - PUT    /api/web/bots/{bot_id}                改名 / QQ 凭据 / 沙箱
 - DELETE /api/web/bots/{bot_id}                级联删服务并删渠道
 - POST   /api/web/bots/{bot_id}/qq/qrcode      QQ 绑定二维码
@@ -52,13 +52,10 @@ _RATE_QR_POLL = 120
 
 
 class WebBotCreatePayload(BaseModel):
-    """新建渠道：必须选一个角色装配首个服务。"""
+    """新建渠道：只填渠道自身字段，服务由用户稍后显式装配。"""
 
     platform: Literal["qq", "wechat", "web"]
     name: str
-    profile_id: str
-    identity_id: str = ""  # 鉴权后由装配核心判必填
-    service_name: str = ""
     sandbox_mode: bool = True
     app_id: str = ""
     app_secret: str = ""
@@ -128,26 +125,6 @@ def _bot_item(bot: BotConfigInDB, services: list[ServiceInDB]) -> dict:
     }
 
 
-def _service_brief(
-    svc: ServiceInDB, bot: BotConfigInDB, profile_name: str
-) -> dict:
-    """创建渠道后返回的服务摘要（前端随后会重新拉取完整列表）。"""
-    return {
-        "id": svc.id,
-        "name": svc.name,
-        "profile_id": svc.profile_id,
-        "profile_name": profile_name,
-        "bot_id": svc.bot_id,
-        "bot_platform": bot.platform,
-        "bot_name": bot.name,
-        "bot_manageable": True,
-        "bot_state": web_channel_service.compute_state(bot),
-        "identity_id": svc.identity_id,
-        "is_active": svc.is_active,
-        "created_at": svc.created_at.isoformat(),
-    }
-
-
 async def _services_of_bot(bot_id: str) -> list[ServiceInDB]:
     """取某个渠道下的服务（渠道删除前/展示时使用）。"""
     return await _service_repo.list_by_bot(bot_id)
@@ -169,7 +146,8 @@ async def list_web_bots(request: Request) -> JSONResponse:
 
     quota = await web_channel_service.web_quota(account_id)
     limit = quota["limit"]
-    can_bot = limit > 0 and quota["bots"] < limit and quota["services"] < limit
+    # 渠道与服务各自独立计数：服务满额不再误阻渠道创建
+    can_bot = limit > 0 and quota["bots"] < limit
     can_service = limit > 0 and quota["services"] < limit
     return JSONResponse(
         status_code=200,
@@ -186,7 +164,7 @@ async def list_web_bots(request: Request) -> JSONResponse:
 async def create_web_bot(
     request: Request, payload: WebBotCreatePayload
 ) -> JSONResponse:
-    """创建渠道并同事务装配首个服务。"""
+    """创建渠道；服务由 `POST /api/web/services` 显式装配。"""
     principal, err = await _principal(request)
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
@@ -196,13 +174,10 @@ async def create_web_bot(
 
     account_id = principal.account_id
     try:
-        bot, service, profile = await web_channel_service.create_managed_bot(
+        bot = await web_channel_service.create_managed_bot(
             account_id=account_id,
             platform=payload.platform,
             name=payload.name,
-            identity_id=payload.identity_id,
-            profile_id=payload.profile_id,
-            service_name=payload.service_name,
             sandbox_mode=payload.sandbox_mode,
             app_id=payload.app_id,
             app_secret=payload.app_secret,
@@ -213,10 +188,7 @@ async def create_web_bot(
     services = await _services_of_bot(bot.id)
     return JSONResponse(
         status_code=201,
-        content={
-            "bot": _bot_item(bot, services),
-            "service": _service_brief(service, bot, profile.name),
-        },
+        content={"bot": _bot_item(bot, services)},
     )
 
 

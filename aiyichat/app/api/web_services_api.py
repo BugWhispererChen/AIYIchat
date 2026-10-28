@@ -2,7 +2,8 @@
 
 服务 = 渠道 + 角色 + 身份。网页凭据只确定 account_id，客户端必须显式选择
 本账号身份与角色；指定渠道时只接受本账号可管理渠道。角色必须可见且启用，
-数量受自助配额约束，并始终保留至少一个启用中的服务。
+数量受自助配额约束。零服务是合法状态：用户可以停用或删除最后一个服务，
+随后按引导重新创建。
 """
 
 import logging
@@ -196,23 +197,6 @@ async def _require_owned_service(
     return svc, None
 
 
-async def _last_active_guard(
-    principal: WebAccountPrincipal, svc: ServiceInDB
-) -> Optional[JSONResponse]:
-    """停用/删除活跃服务前，账号至少保留一个启用中的服务。"""
-    siblings = await _service_repo.list_by_account(principal.account_id)
-    account_active_others = [
-        s for s in siblings if s.id != svc.id and s.is_active
-    ]
-    if not account_active_others:
-        return _bad(
-            "last_active_service",
-            "至少需要保留一个启用中的服务才能继续聊天",
-            409,
-        )
-    return None
-
-
 @web_services_router.get("")
 async def list_web_services(request: Request) -> JSONResponse:
     """列出本人所有对话服务（聊天页的角色切换器数据源）。"""
@@ -310,11 +294,6 @@ async def update_web_service(
             return _bad("invalid_name", f"服务名称最多 {_MAX_NAME_LEN} 个字符")
         update.name = clean_name
     if payload.is_active is not None and payload.is_active != svc.is_active:
-        # 停用前确认账号与当前网页账号都还有活跃服务（见 _last_active_guard）
-        if not payload.is_active:
-            guard = await _last_active_guard(principal, svc)
-            if guard is not None:
-                return guard
         update.is_active = payload.is_active
 
     saved = await _service_repo.update(svc.id, update)
@@ -336,7 +315,7 @@ async def update_web_service(
 
 @web_services_router.delete("/{service_id}")
 async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
-    """删除本人服务；删除活跃服务后必须仍有至少一个启用中的服务。"""
+    """删除本人服务；允许删到零服务，随后按引导重新创建。"""
     try:
         principal = await require_web_account(request)
     except AuthError as exc:
@@ -345,11 +324,6 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
     svc, err = await _require_owned_service(principal, service_id)
     if err is not None or svc is None:
         return err or _bad("not_found", "服务不存在", 404)
-
-    if svc.is_active:
-        guard = await _last_active_guard(principal, svc)
-        if guard is not None:
-            return guard
 
     # 先清记忆/快照再删服务行：反过来会让服务行消失后这些数据再也无法定位
     try:

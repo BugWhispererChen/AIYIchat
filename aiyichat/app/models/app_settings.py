@@ -339,8 +339,6 @@ class AppSettingsDocument(BaseModel):
     web_register_enabled: bool = False  # 自助注册开关
     web_register_require_review: bool = True  # 注册需管理员审核后才可登录
     web_captcha_enabled: bool = True  # 注册/登录图形验证码开关
-    web_bot_id: str = ""  # 承载网页会话的系统 Bot（platform="web"）id
-    web_default_profile_slug: str = ""  # 新建服务的默认角色 slug
     web_free_quota_template_id: str = ""  # 注册赠送额度模板 id（空/不存在回落内置体验额度）
     web_session_hours: int = 24  # 会话有效期（小时，滑动过期）
     web_session_max_concurrent: int = 3  # 同一身份并发有效会话上限

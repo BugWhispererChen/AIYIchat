@@ -66,12 +66,6 @@ async def _only_identity(credential):
     return identities[0]
 
 
-async def _only_service(account_id: str):
-    services = await ServiceRepository().list_by_account(account_id)
-    assert len(services) == 1
-    return services[0]
-
-
 class TestPasswordHashing:
     """密码哈希工具测试集。"""
 
@@ -444,7 +438,7 @@ CLIENT_IP = "203.0.113.7"
 
 _WEB_KEYS = (
     "web_auth_enabled", "web_register_enabled", "web_register_require_review",
-    "web_captcha_enabled", "web_bot_id", "web_default_profile_slug",
+    "web_captcha_enabled",
     "web_free_quota_template_id", "web_session_hours", "web_session_max_concurrent",
     "web_login_max_fail", "web_login_lockout_minutes",
 )
@@ -465,8 +459,6 @@ def web_cfg():
     settings.web_session_max_concurrent = 3
     settings.web_login_max_fail = 3
     settings.web_login_lockout_minutes = 15
-    settings.web_bot_id = ""
-    settings.web_default_profile_slug = "lin-yu"
     settings.web_free_quota_template_id = ""
     yield settings
     for key, value in saved.items():
@@ -474,14 +466,15 @@ def web_cfg():
 
 
 async def _seed_web_env(bot_id: str = "web-bot", slug: str = "lin-yu") -> str:
-    """建系统账号 + platform=web 载体 Bot + 公共预置角色，并回填配置。"""
+    """建系统账号 + platform=web 载体 Bot + 公共预置角色。
+
+    注册已不再读取这些配置，保留种子是为了兼容聊天/额度相关用例。
+    """
     account = await AccountRepository().create(AccountCreate(name="系统账号", remark="网页服务载体"))
     await BotConfigRepository().create(
         BotConfigCreate(id=bot_id, account_id=account.id, name="网页助手", platform="web")
     )
     await ProfileRepository().create(PromptProfileCreate(slug=slug, name="林语", visibility="public"))
-    settings.web_bot_id = bot_id
-    settings.web_default_profile_slug = slug
     return bot_id
 
 
@@ -558,7 +551,7 @@ class TestExperienceQuotaCoversFirstTurn:
             await _seed_web_env()
             ident = await _register("firstturn")
             identity = await _only_identity(ident)
-            engine = ConversationEngine(bot_id=settings.web_bot_id)
+            engine = ConversationEngine(bot_id="web-bot")
             required = estimate_tokens("你好，请陪我聊聊天，说说你今天过得怎么样") + settings.chat_max_tokens
             ok, reason = await engine._quota_precheck(identity.account_id, required)
             assert ok is True, f"新身份体验额度不足以发起首条消息: {reason}"
@@ -609,8 +602,8 @@ class TestValidationRules:
 class TestRegistration:
     """注册编排测试集。"""
 
-    def test_creates_four_piece_set(self) -> None:
-        """注册原子建齐 Account+Quota+User+Service 并回填 user_id。"""
+    def test_creates_account_resources_without_service(self) -> None:
+        """注册原子创建 Account+Quota+Identity+网页渠道，且不创建任何对话服务。"""
 
         async def body():
             await _seed_web_env()
@@ -624,11 +617,9 @@ class TestRegistration:
             identity = await _only_identity(ident)
             assert identity.platform is None
             assert identity.platform_id == ""
-            service = await _only_service(ident.account_id)
-            assert service.identity_id == identity.id
-            assert service.account_id == ident.account_id
-            profile = await ProfileRepository().find_by_slug("lin-yu")
-            assert service.profile_id == profile.id
+            assert await ServiceRepository().list_by_account(ident.account_id) == []
+            bots = await BotConfigRepository().list_by_account(ident.account_id)
+            assert len(bots) == 1 and bots[0].platform == "web"
             quota = await QuotaRepository().find_by_account(identity.account_id)
             assert (quota.text_quota.limit, quota.voice_quota.limit, quota.image_quota.limit) == (
                 auth_service.FREE_TEXT_LIMIT,
@@ -689,39 +680,19 @@ class TestRegistration:
 
         run_with_db(body)
 
-    def test_missing_system_bot_does_not_block_account_bot(self) -> None:
-        """系统渠道配置异常不再影响账号自有网页渠道创建。"""
+    def test_register_creates_account_web_bot_without_service(self) -> None:
+        """注册为该账号创建一个 platform=web 渠道，但不装配任何服务。"""
 
         async def body():
             await _seed_web_env()
-            settings.web_bot_id = "no-such-bot"
-            ident = await _register("rollback1")
-            service = await _only_service(ident.account_id)
-            bot = await BotConfigRepository().find_by_id(service.bot_id)
-            assert bot is not None
-            assert bot.account_id == ident.account_id
-            assert bot.id != "no-such-bot"
-            assert await AccountRepository().count() == 2
-            assert await IdentityRepository().count() == 1
-
-        run_with_db(body)
-
-    def test_register_auto_creates_account_web_bot(self) -> None:
-        """未配置系统载体 Bot 时，注册为该账号自动建一个 platform=web 的 Bot。"""
-
-        async def body():
-            await _seed_web_env()
-            settings.web_bot_id = ""
             ident = await _register("autobot")
             identity = await _only_identity(ident)
-            assert identity is not None
-            services = await ServiceRepository().list_by_identity(identity.id)
-            assert len(services) == 1
-            bot = await BotConfigRepository().find_by_id(services[0].bot_id)
-            assert bot is not None
-            assert bot.platform == "web"
-            assert bot.account_id == identity.account_id
-            assert bot.is_blocked is False
+            bots = await BotConfigRepository().list_by_account(identity.account_id)
+            assert len(bots) == 1
+            assert bots[0].platform == "web"
+            assert bots[0].account_id == identity.account_id
+            assert bots[0].is_blocked is False
+            assert await ServiceRepository().list_by_account(identity.account_id) == []
 
         run_with_db(body)
 
@@ -772,54 +743,17 @@ class TestRegistration:
 
         run_with_db(body)
 
-    def test_default_profile_falls_back_to_public(self) -> None:
-        """未配置默认角色 slug 时回落到在用的公共角色，注册不受阻。"""
+    def test_register_without_any_profile_succeeds(self) -> None:
+        """注册不读取角色配置：没有公共角色也能成功，只是不会自动建服务。"""
 
         async def body():
             await _seed_web_env()
-            settings.web_default_profile_slug = ""
-            ident = await _register("fallback")
-            service = await _only_service(ident.account_id)
-            profile = await ProfileRepository().find_by_slug("lin-yu")
-            assert service.profile_id == profile.id
-
-        run_with_db(body)
-
-    def test_default_profile_skips_inactive(self) -> None:
-        """回落必须跳过已停用与草稿角色（按名称排序时停用角色可能排在最前）。
-
-        回归意义：`list_public()` 不看 is_active，曾据此选中停用角色，
-        新账号首条消息直接回"尚未配置角色"，且注册本身不报错、很难被发现。
-        """
-
-        async def body():
-            await _seed_web_env()
-            repo = ProfileRepository()
-            await repo.create(
-                PromptProfileCreate(slug="a-disabled", name="A 已停用角色", visibility="public", is_active=False)
-            )
-            await repo.create(
-                PromptProfileCreate(slug="b-draft", name="B 草稿", visibility="public", is_draft=True)
-            )
-            settings.web_default_profile_slug = ""
-            ident = await _register("skipinactive")
-            service = await _only_service(ident.account_id)
-            profile = await ProfileRepository().find_by_slug("lin-yu")
-            assert service.profile_id == profile.id
-
-        run_with_db(body)
-
-    def test_no_profile_configured(self) -> None:
-        """既无默认角色也无可引用的公共角色 → 503 且回滚。"""
-
-        async def body():
-            await _seed_web_env()
-            settings.web_default_profile_slug = "missing-slug"
             await mongo.get_database().profiles.delete_many({})
-            with pytest.raises(AuthError) as err:
-                await _register("noprofile")
-            assert err.value.code == "profile_not_configured"
-            assert await WebCredentialRepository().find_by_username("noprofile") is None
+            ident = await _register("noprofile")
+            assert ident.account_id
+            identity = await _only_identity(ident)
+            assert await ProfileRepository().list_active() == []
+            assert await ServiceRepository().list_by_account(identity.account_id) == []
 
         run_with_db(body)
 

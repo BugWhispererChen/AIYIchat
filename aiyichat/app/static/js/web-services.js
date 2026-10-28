@@ -23,6 +23,7 @@
     let botPlatform = 'qq';
     let editingBot = null;
     let editingService = null;
+    let pendingFirstService = false;   // 由聊天页零服务 CTA 进入：建好首服务后回到对话
     let qrToken = 0;
 
     function el(id) { return document.getElementById(id); }
@@ -790,6 +791,7 @@
     function openServiceEditor(svc, presetBotId) {
         // 从渠道卡片进入时当前可能停在「渠道」分区：先切到服务分区，否则编辑卡不可见
         activateTab('services', true);
+        pendingFirstService = false;
         editingService = svc || null;
         el('bot-editor').hidden = true;
         el('bot-edit').hidden = true;
@@ -865,8 +867,15 @@
             });
         }
         if (!result.ok) { show('err', result.detail || '保存失败'); return; }
+        const goChat = pendingFirstService && !editingService;
+        pendingFirstService = false;
         el('service-editor').hidden = true;
         editingService = null;
+        if (goChat) {
+            // 方案要求首个服务创建成功后直接进入对话
+            location.href = '/web/chat';
+            return;
+        }
         show('ok', '服务已保存，回到对话页即可切换。');
         await fetchAll();
     }
@@ -1139,6 +1148,7 @@
                 return !bot.is_blocked && (bot.platform === 'web' || bot.service_count === 0);
             });
             openServiceEditor(null, target ? target.id : '');
+            pendingFirstService = true;
             params.delete('new');
             const query = params.toString();
             history.replaceState(

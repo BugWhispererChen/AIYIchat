@@ -535,7 +535,7 @@
         if (!qrcode) return;
 
         let attempts = 0;
-        async function poll() {
+        async function poll(verifyCode) {
             if (token !== qrToken) return;
             attempts += 1;
             if (attempts > 90) {
@@ -544,10 +544,10 @@
             }
             let polled;
             try {
-                polled = await window.WebAuth.call(
-                    '/api/web/bots/' + encodeURIComponent(bot.id)
-                    + '/wechat/poll-qr?qrcode=' + encodeURIComponent(qrcode)
-                );
+                let url = '/api/web/bots/' + encodeURIComponent(bot.id)
+                    + '/wechat/poll-qr?qrcode=' + encodeURIComponent(qrcode);
+                if (verifyCode) url += '&verify_code=' + encodeURIComponent(verifyCode);
+                polled = await window.WebAuth.call(url);
             } catch (e) {
                 status.textContent = '轮询失败，请稍后重试';
                 return;
@@ -563,7 +563,18 @@
                 return;
             }
             const state = polled.data.status;
-            if (state === 'waiting') { setTimeout(poll, 2000); return; }
+            if (state === 'wait' || state === 'waiting' || state === 'scaned'
+                || state === 'scaned_but_redirect') {
+                status.textContent = polled.data.message || '等待微信确认…';
+                setTimeout(poll, 2000);
+                return;
+            }
+            if (state === 'need_verifycode') {
+                const code = window.prompt(polled.data.message || '请输入微信中显示的验证码');
+                if (code && code.trim()) { poll(code.trim()); return; }
+                status.textContent = '需要验证码才能继续，请重新获取二维码后再试';
+                return;
+            }
             if (state === 'success') {
                 status.textContent = '登录成功，渠道已上线。';
                 show('ok', '微信渠道已登录上线。');

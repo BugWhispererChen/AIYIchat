@@ -645,6 +645,12 @@ class TestFeatureGapThresholds:
                     async with _client(app) as client:
                         before = await client.get("/admin/features")
                         assert before.status_code == 200
+                        for key in (
+                            "qq_stream_enabled", "qq_markdown_enabled",
+                            "qq_keyboard_enabled", "qq_full_group_context_enabled",
+                            "wechat_quote_cache_enabled",
+                        ):
+                            assert f'name="{key}"' in before.text
                         for field, value in (
                             ("time_session_gap_hours", 12), ("time_reunion_gap_hours", 96),
                         ):

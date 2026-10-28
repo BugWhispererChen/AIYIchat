@@ -822,6 +822,44 @@ class ConversationEngine:
             voice_emotion_tag=voice_emotion_tag,
         )
 
+    async def record_context_message(
+        self,
+        platform: str,
+        platform_id: str,
+        text: str,
+        nickname: str = "",
+    ) -> bool:
+        """仅记录群上下文，不调用 LLM、不扣额度、不产生回复。
+
+        用于全量群消息开关：消息进入既有会话历史，只有后续被 @ 时才参与生成。
+        """
+        if not text.strip():
+            return False
+        bot = await self.bot_repo.find_by_id(self.bot_id)
+        if bot is None or getattr(bot, "is_blocked", False):
+            return False
+        identity = await self.identity_repo.find_by_platform(platform, platform_id)
+        if identity is None or identity.is_blocked:
+            return False
+        service = await self.service_repo.find_by_identity_and_bot(
+            identity.id, self.bot_id
+        )
+        if service is None:
+            return False
+        profile = await self._resolve_profile(service.profile_id, service.account_id)
+        if profile is None:
+            return False
+        conversation = await self._find_or_create_conversation(
+            identity, profile, service
+        )
+        await self.turn_recorder.record_identity_message(
+            conversation_id=conversation.id,
+            text=text,
+            emotion_tag=detect_emotion(text),
+        )
+        await self.identity_repo.update_last_active(identity.id)
+        return True
+
     async def handle_message_stream(
         self,
         platform: str,

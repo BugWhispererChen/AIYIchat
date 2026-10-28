@@ -547,13 +547,15 @@ function setQrAlert(botId, text) {
 function pollQRStatus(botId, qrcode) {
     var maxRetries = 120;
     var retryCount = 0;
-    var poll = function() {
+    var poll = function(verifyCode) {
         if (retryCount++ > maxRetries) {
             document.querySelector('#qr-area-' + botId).innerHTML =
                 '<div class="alert alert-warning">二维码已过期，请重新获取</div>';
             return;
         }
-        fetch('/admin/wechat-bots/' + botId + '/poll-qr?qrcode=' + encodeURIComponent(qrcode), {
+        var url = '/admin/wechat-bots/' + botId + '/poll-qr?qrcode=' + encodeURIComponent(qrcode);
+        if (verifyCode) url += '&verify_code=' + encodeURIComponent(verifyCode);
+        fetch(url, {
             redirect: 'manual'
         })
             .then(function(resp) {
@@ -567,27 +569,20 @@ function pollQRStatus(botId, qrcode) {
             })
             .then(function(data) {
                 if (!data) return;
-                if (data.status === 'scanned' && data.bot_token) {
-                    fetch('/admin/wechat-bots/' + botId + '/complete-login', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: 'bot_token=' + encodeURIComponent(data.bot_token)
-                    }).then(function(r) { return r.json(); })
-                      .then(function(d) {
-                          if (d.status === 'success') {
-                              window.location.reload();
-                          } else {
-                              document.querySelector('#qr-area-' + botId).innerHTML =
-                                  setQrAlert(botId, d.message || '登录失败');
-                          }
-                      });
-                } else if (data.status === 'waiting') {
+                if (data.status === 'wait' || data.status === 'waiting' ||
+                    data.status === 'scaned' || data.status === 'scaned_but_redirect') {
                     setTimeout(poll, 2000);
+                } else if (data.status === 'need_verifycode') {
+                    var code = window.prompt(data.message || '请输入微信中显示的验证码');
+                    if (code && code.trim()) {
+                        poll(code.trim());
+                    } else {
+                        setQrAlert(botId, '需要验证码才能继续，请重新获取二维码后再试');
+                    }
                 } else if (data.status === 'success') {
                     window.location.reload();
                 } else {
-                    document.querySelector('#qr-area-' + botId).innerHTML =
-                        setQrAlert(botId, data.message || '登录失败');
+                    setQrAlert(botId, data.message || '登录失败，请重新获取二维码');
                 }
             })
             .catch(function(e) {

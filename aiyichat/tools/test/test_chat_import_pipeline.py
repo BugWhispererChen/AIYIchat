@@ -440,7 +440,9 @@ class TestWechatBotRoutes:
                     get_login_qrcode=AsyncMock(return_value={
                         "qrcode": "QR", "qrcode_url": "data:image/png;base64,x",
                     }),
-                    poll_qrcode_status=AsyncMock(return_value="BT"),
+                    poll_qrcode_status=AsyncMock(return_value={
+                        "status": "confirmed", "bot_token": "BT",
+                    }),
                     set_bot_token=lambda t: None,
                     complete_login=AsyncMock(return_value={}),
                 )

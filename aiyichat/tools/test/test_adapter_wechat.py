@@ -113,14 +113,19 @@ class TestParseAndDedup:
 
     def test_dedup(self) -> None:
         async def body():
-            client = _make_client()
-            client._dedup_max_size = 3
-            assert await client._is_msg_duplicate(1) is False
-            assert await client._is_msg_duplicate(1) is True
-            for i in range(2, 8):
-                await client._is_msg_duplicate(i)
-            # 超过上限后最早的被淘汰
-            assert len(client._processed_msg_ids) <= 3
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_dedup"]
+            try:
+                client = _make_client()
+                client._dedup_max_size = 3
+                assert await client._is_msg_duplicate("1") is False
+                await client._mark_msg_processed("1")
+                assert await client._is_msg_duplicate("1") is True
+                for i in range(2, 8):
+                    await client._mark_msg_processed(str(i))
+                # 超过上限后最早的被淘汰
+                assert len(client._processed_msg_ids) <= 3
+            finally:
+                mongo._db = None
 
         _run(body())
 
@@ -164,23 +169,25 @@ class TestHttpFlows:
     def test_poll_qrcode_status(self) -> None:
         async def body():
             client = _make_client()
-            # 成功拿到 bot_token
+            # 确认状态返回凭据供服务层保存，但不直接暴露给路由。
             client._session = FakeAiohttpSession([
                 FakeAiohttpResponse(text=json.dumps({
-                    "ret": 0, "bot_token": "BT", "ilink_user_id": "uid-1",
+                    "ret": 0, "status": "confirmed",
+                    "bot_token": "BT", "ilink_user_id": "uid-1",
                 }))
             ])
-            assert await client.poll_qrcode_status("QR") == "BT"
-            # 超时错误码 → None
+            result = await client.poll_qrcode_status("QR")
+            assert result["status"] == "confirmed"
+            assert result["bot_token"] == "BT"
+            # 超时错误码与空状态均保持 wait。
             client._session = FakeAiohttpSession([
                 FakeAiohttpResponse(text=json.dumps({"ret": -14}))
             ])
-            assert await client.poll_qrcode_status("QR") is None
-            # 无 bot_token → None
+            assert await client.poll_qrcode_status("QR") == {"status": "wait"}
             client._session = FakeAiohttpSession([
                 FakeAiohttpResponse(text=json.dumps({"ret": 0}))
             ])
-            assert await client.poll_qrcode_status("QR") is None
+            assert await client.poll_qrcode_status("QR") == {"status": "wait"}
 
         _run(body())
 
@@ -250,19 +257,152 @@ class TestHttpFlows:
 
     def test_polling_loop_dispatches_messages(self) -> None:
         async def body():
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_poll"]
+            try:
+                client = _make_client()
+                client._handle_message = AsyncMock()
+                data = {
+                    "ret": 0,
+                    "get_updates_buf": "cursor-2",
+                    "msgs": [{"message_id": 9, "item_list": []}],
+                }
+                session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps(data))
+                ])
+                client._session = session
+                await client._polling_loop()
+                client._handle_message.assert_awaited()
+                assert client._get_updates_buf == "cursor-2"
+                payload = session.calls[0][2]["json"]
+                assert set(payload) == {"get_updates_buf", "base_info"}
+                assert payload["get_updates_buf"] == ""
+                assert set(payload["base_info"]) == {"channel_version", "bot_agent"}
+            finally:
+                mongo._db = None
+
+        _run(body())
+
+
+class TestIlinkReliability:
+    """iLink 持久游标、去重与完整媒体 URL 契约。"""
+
+    def test_cursor_restart_and_duplicate_repull(self) -> None:
+        async def body():
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_restart"]
+            try:
+                data = {
+                    "ret": 0,
+                    "get_updates_buf": "cursor-2",
+                    "msgs": [{"message_id": 9001, "item_list": []}],
+                }
+                first = _make_client()
+                first._handle_message = AsyncMock()
+                first._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps(data))
+                ])
+                await first._polling_loop()
+                assert first._get_updates_buf == "cursor-2"
+
+                # 新进程客户端恢复游标和回执，重拉同一消息不再进入处理器。
+                second = _make_client()
+                await second.load_sync_state()
+                assert second._get_updates_buf == "cursor-2"
+                second._handle_message = AsyncMock()
+                second._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps({
+                        **data, "get_updates_buf": "cursor-3"
+                    }))
+                ])
+                await second._polling_loop()
+                second._handle_message.assert_not_awaited()
+                assert second._get_updates_buf == "cursor-3"
+
+                third = _make_client()
+                await third.load_sync_state()
+                assert third._get_updates_buf == "cursor-3"
+            finally:
+                mongo._db = None
+
+        _run(body())
+
+    def test_processing_failure_does_not_advance_cursor(self) -> None:
+        async def body():
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_failure"]
+            try:
+                client = _make_client()
+                await client._persist_get_updates_buf("cursor-old")
+                client._handle_message = AsyncMock(side_effect=RuntimeError("boom"))
+                client._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps({
+                        "ret": 0,
+                        "get_updates_buf": "cursor-new",
+                        "msgs": [{"message_id": 1, "item_list": []}],
+                    }))
+                ])
+                await client._polling_loop()
+                assert client._get_updates_buf == "cursor-old"
+                doc = await mongo.get_database().wechat_sync_state.find_one(
+                    {"bot_id": client.bot_id}
+                )
+                assert doc["get_updates_buf"] == "cursor-old"
+                assert doc.get("processed_msg_ids", []) == []
+            finally:
+                mongo._db = None
+
+        _run(body())
+
+    def test_cdn_download_full_url_and_encoded_fallback(self) -> None:
+        async def body():
+            key = base64.b64encode(b"0123456789abcdef").decode()
             client = _make_client()
-            client._handle_message = AsyncMock()
-            data = {
+            with patch.object(WeChatClient, "_aes_decrypt", return_value=b"plain"):
+                session = FakeAiohttpSession([FakeAiohttpResponse(read=b"cipher")])
+                client._session = session
+                item = {"media": {
+                    "full_url": "https://cdn.example.test/download?id=1",
+                    "encrypt_query_param": "ignored",
+                    "aes_key": key,
+                }}
+                assert await client._download_cdn_media(item) == b"plain"
+                assert session.calls[0][1] == item["media"]["full_url"]
+
+                session = FakeAiohttpSession([FakeAiohttpResponse(read=b"cipher")])
+                client._session = session
+                item = {"media": {
+                    "encrypt_query_param": "a+b/c=",
+                    "aes_key": key,
+                }}
+                assert await client._download_cdn_media(item) == b"plain"
+                assert session.calls[0][1].endswith(
+                    "encrypted_query_param=a%2Bb%2Fc%3D"
+                )
+
+        _run(body())
+
+    def test_cdn_upload_full_url_and_encoded_fallback(self) -> None:
+        async def body():
+            client = _make_client()
+            client._get_upload_url = AsyncMock(return_value={
                 "ret": 0,
-                "get_updates_buf": "cursor-2",
-                "msgs": [{"message_id": 9, "item_list": []}],
-            }
-            client._session = FakeAiohttpSession([
-                FakeAiohttpResponse(text=json.dumps(data))
+                "upload_full_url": "https://cdn.example.test/upload?ticket=1",
+                "upload_param": "ignored",
+            })
+            session = FakeAiohttpSession([
+                FakeAiohttpResponse(headers={"x-encrypted-param": "download"})
             ])
-            await client._polling_loop()
-            client._handle_message.assert_awaited()
-            assert client._get_updates_buf == "cursor-2"
+            client._session = session
+            assert await client._upload_cdn_media(b"image", "u-1", "image")
+            assert session.calls[0][1] == "https://cdn.example.test/upload?ticket=1"
+
+            client._get_upload_url = AsyncMock(return_value={
+                "ret": 0, "upload_param": "a+b/c="
+            })
+            session = FakeAiohttpSession([
+                FakeAiohttpResponse(headers={"x-encrypted-param": "download"})
+            ])
+            client._session = session
+            assert await client._upload_cdn_media(b"image", "u-1", "image")
+            assert "encrypted_query_param=a%2Bb%2Fc%3D" in session.calls[0][1]
 
         _run(body())
 
@@ -523,3 +663,589 @@ class TestBotManager:
         m1 = get_wechat_manager()
         m2 = get_wechat_manager()
         assert m1 is m2
+
+
+class TestP0QrLifecycleAndFileContract:
+    """P0：扫码状态机、验证码/重定向、生命周期取消与文件字段。"""
+
+    def test_qr_verify_code_and_redirect_state_machine(self) -> None:
+        async def body():
+            client = _make_client()
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({
+                    "ret": 0, "status": "need_verifycode",
+                })),
+                FakeAiohttpResponse(text=json.dumps({
+                    "ret": 0, "status": "scaned_but_redirect",
+                    "redirect_host": "redirect.example.test",
+                })),
+                FakeAiohttpResponse(text=json.dumps({
+                    "ret": 0, "status": "verify_code_blocked",
+                })),
+            ])
+            first = await client.poll_qrcode_status("QR", "123456")
+            assert first["status"] == "need_verifycode"
+            assert client._session.calls[0][2]["params"]["verify_code"] == "123456"
+            second = await client.poll_qrcode_status("QR", "123456")
+            assert second["status"] == "scaned_but_redirect"
+            third = await client.poll_qrcode_status("QR")
+            assert third["status"] == "verify_code_blocked"
+            assert client._session.calls[2][1].startswith(
+                "https://redirect.example.test/"
+            )
+
+        _run(body())
+
+    def test_confirmed_baseurl_is_persisted_and_restored(self) -> None:
+        async def body():
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_baseurl"]
+            try:
+                client = _make_client()
+                client._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps({
+                        "ret": 0,
+                        "status": "confirmed",
+                        "bot_token": "BT",
+                        "baseurl": "https://api2.example.test",
+                    }))
+                ])
+                result = await client.poll_qrcode_status("QR")
+                assert result["status"] == "confirmed"
+                assert client._bot_url("/ilink/bot/getupdates").startswith(
+                    "https://api2.example.test/"
+                )
+                restored = _make_client(bot_token="BT")
+                await restored.load_sync_state()
+                assert restored._api_base_url == "https://api2.example.test"
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_stop_cancels_inflight_poll_and_notifies_platform(self) -> None:
+        async def body():
+            client = _make_client()
+            client._running = True
+            session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({"ret": 0}))
+            ])
+            client._session = session
+
+            async def never_finishes():
+                await asyncio.sleep(60)
+
+            client._poll_task = asyncio.create_task(never_finishes())
+            await client.stop()
+            assert client._poll_task is None
+            assert any(
+                url.endswith("/ilink/bot/msg/notifystop")
+                for _method, url, _kwargs in session.calls
+            )
+
+        _run(body())
+
+    def test_notify_start_uses_base_info(self) -> None:
+        async def body():
+            client = _make_client()
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({"ret": 0}))
+            ])
+            await client._notify_lifecycle("start")
+            method, url, kwargs = client._session.calls[0]
+            assert method == "POST"
+            assert url.endswith("/ilink/bot/msg/notifystart")
+            assert set(kwargs["json"]["base_info"]) == {
+                "channel_version", "bot_agent",
+            }
+
+        _run(body())
+
+    def test_send_file_uses_len_and_checks_business_result(self) -> None:
+        async def body():
+            client = _make_client()
+            client._context_tokens["u-1"] = "ctx"
+            client._upload_cdn_media = AsyncMock(return_value={
+                "cdn_media": {
+                    "encrypt_query_param": "p",
+                    "aes_key": "a",
+                    "encrypt_type": 1,
+                },
+                "raw_size": 123,
+                "cipher_size": 128,
+            })
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({"ret": 0}))
+            ])
+            assert await client.send_file("u-1", b"data", "file.pdf") is True
+            payload = client._session.calls[0][2]["json"]
+            file_item = payload["msg"]["item_list"][0]["file_item"]
+            assert file_item["len"] == "123"
+            assert "file_size" not in file_item
+
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({
+                    "ret": 100, "msg": "context invalid",
+                }))
+            ])
+            assert await client.send_file("u-1", b"data", "file.pdf") is False
+            assert client.last_send_error == "context invalid"
+
+        _run(body())
+
+
+class TestP1QuoteAndFiles:
+    """P1：持久引用缓存与入站文件。"""
+
+    def test_quote_cache_is_restart_safe_and_isolated(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_quote"]
+            try:
+                repo = WeChatQuoteCacheRepository()
+                await repo.upsert(
+                    bot_id="bot-a", account_id="acc-a",
+                    session_key="session-1", svr_id="svr-1",
+                    message_id="101", text="被引用的原文",
+                    media_kind="image", media_url="/api/media/m1",
+                )
+                # 新实例模拟服务重启
+                restored = await WeChatQuoteCacheRepository().find(
+                    bot_id="bot-a", session_key="session-1", svr_id="svr-1",
+                )
+                assert restored and restored["text"] == "被引用的原文"
+                assert await repo.find(
+                    bot_id="bot-b", session_key="session-1", svr_id="svr-1",
+                ) is None
+                assert await repo.find(
+                    bot_id="bot-a", session_key="session-2", svr_id="svr-1",
+                ) is None
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_outbound_text_and_media_are_cached_by_server_message_id(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_out_quote"]
+            try:
+                client = _make_client(account_id="acc-1")
+                client._context_tokens["u-1"] = "ctx"
+                client._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps({
+                        "ret": 0, "message_id": "srv-out-1",
+                    }))
+                ])
+                with patch(
+                    "app.adapters.wechat_clawbot.spawn",
+                    lambda coro: coro.close(),
+                ):
+                    assert await client.send_text("u-1", "Bot 发出的原文") is True
+                cached = await WeChatQuoteCacheRepository().find(
+                    bot_id=client.bot_id, session_key="u-1",
+                    svr_id="srv-out-1",
+                )
+                assert cached and cached["role"] == "assistant"
+                assert cached["text"] == "Bot 发出的原文"
+
+                client._upload_cdn_media = AsyncMock(return_value={
+                    "cdn_media": {
+                        "encrypt_query_param": "p",
+                        "aes_key": "a",
+                        "encrypt_type": 1,
+                    },
+                    "raw_size": 4,
+                    "cipher_size": 16,
+                })
+                client._session = FakeAiohttpSession([
+                    FakeAiohttpResponse(text=json.dumps({
+                        "ret": 0, "message_id": "srv-out-file",
+                    }))
+                ])
+                with patch(
+                    "app.adapters.wechat_clawbot.spawn",
+                    lambda coro: coro.close(),
+                ):
+                    assert await client.send_file(
+                        "u-1", b"data", "说明.txt"
+                    ) is True
+                cached_file = await WeChatQuoteCacheRepository().find(
+                    bot_id=client.bot_id, session_key="u-1",
+                    svr_id="srv-out-file",
+                )
+                assert cached_file and cached_file["media_kind"] == "file"
+                assert "说明.txt" in cached_file["text"]
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_quote_context_prefers_cached_text_and_media(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_quote_ctx"]
+            try:
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-1234abcd", account_id="acc-1",
+                    session_key="u-1", svr_id="svr-9",
+                    text="原消息正文", media_kind="image",
+                    media_url="/api/media/m9",
+                )
+                client = _make_client(account_id="acc-1")
+                context = await client._resolve_quote_context(
+                    {"type": 1, "ref_msg": {"svr_id": "svr-9"}},
+                    {"from_user_id": "u-1", "message_id": 200},
+                )
+                assert "原消息正文" in context
+                assert "image" in context
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_quote_uses_nested_message_item_msg_id(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_nested_ref"]
+            try:
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-1234abcd", account_id="acc-1",
+                    session_key="u-1", svr_id="server-msg-1",
+                    text="Bot 被引用的回复",
+                )
+                client = _make_client(account_id="acc-1")
+                context = await client._resolve_quote_context({
+                    "type": 1,
+                    "ref_msg": {
+                        "message_item": {
+                            "type": 0,
+                            "msg_id": "server-msg-1",
+                        },
+                    },
+                }, {"from_user_id": "u-1", "message_id": 700})
+                assert "【引用消息】Bot 被引用的回复" in context
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_quote_message_item_accepts_string_type(self) -> None:
+        async def body():
+            client = _make_client(account_id="acc-1")
+            context = await client._resolve_quote_context({
+                "type": 1,
+                "ref_msg": {
+                    "svr_id": "not-cached",
+                    "message_item": {
+                        "type": "1",
+                        "text_item": {"text": "字符串类型的引用正文"},
+                    },
+                },
+            }, {"from_user_id": "u-1", "message_id": 600})
+            assert "字符串类型的引用正文" in context
+
+            media_context = await client._resolve_quote_context({
+                "type": 1,
+                "ref_msg": {
+                    "svr_id": "not-cached",
+                    "message_item": {
+                        "type": "2",
+                        "image_item": {},
+                    },
+                },
+            }, {"from_user_id": "u-1", "message_id": 601})
+            assert "image" in media_context
+
+        _run(body())
+
+    def test_partial_quote_uses_md5_and_never_falls_back_to_full_text(self) -> None:
+        async def body():
+            import hashlib
+
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_partial"]
+            try:
+                full_text = "今天天气不错我们出去走走吧"
+                selected = "天气不错我们出去走走"
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-1234abcd", account_id="acc-1",
+                    session_key="u-1", svr_id="svr-partial",
+                    text=full_text,
+                )
+                client = _make_client(account_id="acc-1")
+                msg = {"from_user_id": "u-1", "message_id": 500}
+                partial = {
+                    "start": "天气", "end": "走走",
+                    "startindex": 0, "endindex": 0,
+                    "quotemd5": hashlib.md5(selected.encode()).hexdigest(),
+                }
+                context = await client._resolve_quote_context({
+                    "type": 1,
+                    "ref_msg": {
+                        "svr_id": "svr-partial",
+                        "partial_text": partial,
+                    },
+                }, msg)
+                assert f"【引用消息】{selected}" in context
+                assert "今天" not in context
+
+                bad_partial = {**partial, "quotemd5": "deadbeef"}
+                mismatch = await client._resolve_quote_context({
+                    "type": 1,
+                    "ref_msg": {
+                        "svr_id": "svr-partial",
+                        "partial_text": bad_partial,
+                    },
+                }, msg)
+                assert mismatch == "【引用消息：局部引用校验失败】"
+                assert "天气" not in mismatch
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_bot_echo_only_caches_and_never_reenters_engine(self) -> None:
+        async def body():
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_echo"]
+            try:
+                client = _make_client(account_id="acc-1")
+                client.engine.handle_message = AsyncMock()
+                client._cache_message_without_reply = AsyncMock()
+                msg = {
+                    "message_id": 300,
+                    "message_type": 2,
+                    "to_user_id": "u-1",
+                    "item_list": [{"type": 1, "text_item": {"text": "Bot 回显"}}],
+                }
+                await client._handle_message(msg)
+                client.engine.handle_message.assert_not_awaited()
+                client._cache_message_without_reply.assert_awaited_once()
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_quote_ref_is_resolved_in_full_message_flow(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_ref_flow"]
+            try:
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-1234abcd", account_id="acc-1",
+                    session_key="u-1", svr_id="svr-quote-1",
+                    text="被引用的原句", media_kind="image",
+                )
+                client = _make_client(account_id="acc-1")
+                client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                    text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                    voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                    voice_emotion_tag="", account_id="acc-1",
+                ))
+                client.send_text = AsyncMock()
+                client._send_typing = AsyncMock()
+                with patch(
+                    "app.adapters.wechat_clawbot.spawn", lambda coro: coro.close()
+                ):
+                    await client._handle_message({
+                        "message_id": 401,
+                        "from_user_id": "u-1",
+                        "item_list": [{
+                            "type": 1,
+                            "text_item": {"text": "这条怎么样"},
+                            "ref_msg": {"svr_id": "svr-quote-1"},
+                        }],
+                    })
+                text = client.engine.handle_message.await_args.kwargs["text"]
+                assert "【引用消息】被引用的原句" in text
+                assert "image" in text
+                assert text.endswith("这条怎么样")
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_incoming_video_is_saved(self) -> None:
+        async def body():
+            client = _make_client(account_id="acc-1")
+            client._download_cdn_media = AsyncMock(return_value=b"video")
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client.send_text = AsyncMock()
+            client._send_typing = AsyncMock()
+            client._cache_quote_message = AsyncMock()
+            with patch(
+                "app.services.media_storage.save_file_from_bytes",
+                AsyncMock(return_value="/api/media/video-1"),
+            ), patch(
+                "app.adapters.wechat_clawbot.spawn", lambda coro: coro.close()
+            ):
+                await client._handle_message({
+                    "message_id": 402,
+                    "from_user_id": "u-1",
+                    "item_list": [{
+                        "type": 5,
+                        "video_item": {"media": {
+                            "encrypt_query_param": "p", "aes_key": "key",
+                        }},
+                    }],
+                })
+            kwargs = client.engine.handle_message.await_args.kwargs
+            assert kwargs["content_type"] == "video"
+            assert kwargs["media_url"] == "/api/media/video-1"
+
+        _run(body())
+
+    def test_incoming_file_is_saved_and_text_extracted(self) -> None:
+        async def body():
+            client = _make_client(account_id="acc-1")
+            client._download_cdn_media = AsyncMock(return_value="报告正文".encode())
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client.send_text = AsyncMock()
+            client._send_typing = AsyncMock()
+            client._cache_quote_message = AsyncMock()
+            msg = {
+                "message_id": 301,
+                "from_user_id": "u-1",
+                "item_list": [{
+                    "type": 4,
+                    "file_item": {
+                        "file_name": "报告.txt",
+                        "media": {
+                            "encrypt_query_param": "p", "aes_key": "key",
+                        },
+                    },
+                }],
+            }
+            with patch(
+                "app.services.media_storage.save_file_from_bytes",
+                AsyncMock(return_value="/api/media/file-1"),
+            ), patch(
+                "app.adapters.wechat_clawbot.spawn", lambda coro: coro.close()
+            ):
+                await client._handle_message(msg)
+            kwargs = client.engine.handle_message.await_args.kwargs
+            assert "报告正文" in kwargs["text"]
+            assert kwargs["content_type"] == "file"
+            assert kwargs["media_url"] == "/api/media/file-1"
+
+        _run(body())
+
+
+class TestP2VideoAndCacheLifecycle:
+    """P2：视频发送与引用缓存清理。"""
+
+    def test_send_video_official_payload(self) -> None:
+        async def body():
+            client = _make_client()
+            client._context_tokens["u-1"] = "ctx"
+            client._upload_cdn_media = AsyncMock(return_value={
+                "cdn_media": {
+                    "encrypt_query_param": "p", "aes_key": "a", "encrypt_type": 1,
+                },
+                "cipher_size": 42,
+            })
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(text=json.dumps({"ret": 0}))
+            ])
+            assert await client.send_video("u-1", b"video") is True
+            payload = client._session.calls[0][2]["json"]
+            item = payload["msg"]["item_list"][0]
+            assert item["type"] == 5
+            assert item["video_item"]["video_size"] == 42
+
+        _run(body())
+
+    def test_remove_bot_clears_quote_cache(self) -> None:
+        async def body():
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_remove"]
+            try:
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-remove", session_key="u-1", svr_id="s-1",
+                    account_id="acc-1", text="hi",
+                )
+                mgr = WeChatBotManager(poll_interval=1)
+                await mgr.remove_bot("bot-remove")
+                assert await WeChatQuoteCacheRepository().find(
+                    bot_id="bot-remove", session_key="u-1", svr_id="s-1",
+                ) is None
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+
+class TestFileTextExtraction:
+    """入站文件文本提取的格式覆盖与恶意 XML 防护。"""
+
+    def test_text_and_json_and_unknown(self) -> None:
+        from app.services.file_text import extract_text_from_file
+
+        assert extract_text_from_file("你好".encode(), "a.txt") == "你好"
+        assert "name" in extract_text_from_file(
+            b'{"name": "x"}', "a.json"
+        )
+        assert extract_text_from_file(b"\x00\x01", "a.pdf") == ""
+
+    def test_docx_extracts_paragraphs_and_rejects_entities(self) -> None:
+        import io
+        import zipfile
+
+        from app.services.file_text import extract_text_from_file
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                'wordprocessingml/2006/main"><w:body><w:p><w:r>'
+                '<w:t>段落正文</w:t></w:r></w:p></w:body></w:document>',
+            )
+        assert "段落正文" in extract_text_from_file(
+            buffer.getvalue(), "a.docx"
+        )
+
+        malicious = io.BytesIO()
+        with zipfile.ZipFile(malicious, "w") as archive:
+            archive.writestr(
+                "word/document.xml",
+                '<!DOCTYPE x [<!ENTITY a "boom">]><x>&a;</x>',
+            )
+        assert extract_text_from_file(malicious.getvalue(), "a.docx") == ""

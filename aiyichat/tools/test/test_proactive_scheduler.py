@@ -102,9 +102,61 @@ class TestCanSend:
         self.scheduler._wechat_manager = manager
         assert self.scheduler._can_send("wechat", "bot1", "u1") is False
 
+    def test_qq_group_precheck_preserves_authorization_key(self) -> None:
+        """QQ 群 LLM 前预检必须收到 group::member，不能只剩成员 openid。"""
+        client = MagicMock()
+        client.can_send_proactive.return_value = False
+        manager = MagicMock()
+        manager.get_client.return_value = client
+        self.scheduler._qq_manager = manager
+        assert self.scheduler._can_send("qq", "bot1", "group-1::member-1") is False
+        client.can_send_proactive.assert_called_once_with("group-1::member-1")
+
     def test_unknown_platform_blocks(self) -> None:
         """未知平台 → 不可发送。"""
         assert self.scheduler._can_send("web", "bot1", "u1") is False
+
+    def test_qq_authorization_rejection_stops_before_llm(self, monkeypatch) -> None:
+        """完整调度链路中，QQ 授权预检失败不得建档或调用 LLM。"""
+        async def body():
+            monkeypatch.setattr(settings, "proactive_event_enabled", False)
+            monkeypatch.setattr(settings, "proactive_share_enabled", False)
+            identity = SimpleNamespace(
+                id="u-qq", platform="qq", platform_id="openid-1",
+                bot_openids={"bot1": "openid-1"}, is_blocked=False,
+                last_active_at=datetime.now(timezone.utc) - timedelta(hours=5),
+                timezone="",
+            )
+            service = SimpleNamespace(
+                id="svc-qq", identity_id="u-qq", account_id="acc-1",
+                bot_id="bot1", profile_id="companion", share_group_id="",
+                last_message_at=None, timezone="",
+            )
+            service.context_key = service.id
+            client = MagicMock()
+            client.can_send_proactive.return_value = False
+            self.scheduler._qq_manager = SimpleNamespace(
+                get_client=lambda bot_id: client
+            )
+            self.scheduler._identity_repo.find_by_id = AsyncMock(return_value=identity)
+            self.scheduler._proactive_repo.get_latest_sent = AsyncMock(return_value=None)
+            self.scheduler._proactive_repo.count_sent_today = AsyncMock(return_value=0)
+            self.scheduler._proactive_repo.get_attempted_stages = AsyncMock(return_value=[])
+            self.scheduler._proactive_repo.count_sent_this_month = AsyncMock(return_value=0)
+            self.scheduler._proactive_repo.create = AsyncMock()
+            self.scheduler._unanswered_streak = AsyncMock(return_value=0)
+            self.scheduler._generate_content = AsyncMock()
+            self.scheduler._send_message = AsyncMock()
+            self.scheduler._is_quiet_hours = lambda *args: False
+
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            await self.scheduler._process_service(service, cutoff)
+            client.can_send_proactive.assert_called_once_with("openid-1")
+            self.scheduler._generate_content.assert_not_awaited()
+            self.scheduler._proactive_repo.create.assert_not_awaited()
+            self.scheduler._send_message.assert_not_awaited()
+
+        asyncio.run(body())
 
 
 class TestGetPendingStage:

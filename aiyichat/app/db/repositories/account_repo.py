@@ -203,6 +203,21 @@ class AccountRepository:
         stats["wechat_context_tokens"] = (
             await db.wechat_context_tokens.delete_many({"bot_id": {"$in": bot_ids}})
         ).deleted_count if bot_ids else 0
+        # 渠道协议旁路状态同样含用户聊天内容或平台授权，必须随账号清除
+        stats["wechat_sync_state"] = (
+            await db.wechat_sync_state.delete_many({"bot_id": {"$in": bot_ids}})
+        ).deleted_count if bot_ids else 0
+        stats["wechat_quote_cache"] = (
+            await db.wechat_quote_cache.delete_many({"bot_id": {"$in": bot_ids}})
+        ).deleted_count if bot_ids else 0
+        stats["qq_proactive_authorizations"] = (
+            await db.qq_proactive_authorizations.delete_many(
+                {"bot_id": {"$in": bot_ids}}
+            )
+        ).deleted_count if bot_ids else 0
+        stats["qq_message_bindings"] = (
+            await db.qq_message_bindings.delete_many({"bot_id": {"$in": bot_ids}})
+        ).deleted_count if bot_ids else 0
         stats["bots"] = (await db.bot_configs.delete_many({"account_id": account_id})).deleted_count
         # 5. 删除额度
         stats["quotas"] = (await db.account_quotas.delete_many({"account_id": account_id})).deleted_count

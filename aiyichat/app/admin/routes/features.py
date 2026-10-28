@@ -188,6 +188,46 @@ FEATURE_TOGGLES: list[FeatureToggle] = [
         cost="free",
     ),
     FeatureToggle(
+        key="qq_stream_enabled",
+        label="QQ 单聊流式消息",
+        desc="有权限的 QQ C2C 渠道边生成边更新同一条消息，降低长回复首字等待；"
+              "平台拒绝或网络中断时自动降级为普通整段文本，不重复调用对话引擎。"
+              "语音回复链路仍走非流式，避免影响 TTS 与额度结算。",
+        dependency="需 QQ 平台为该 Bot 开通 stream_messages 权限；仅 C2C，群聊不启用",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="qq_markdown_enabled",
+        label="QQ Markdown 消息",
+        desc="回复使用 msg_type=2 的 Markdown 内容；未获平台权限时自动降级为普通文本。",
+        dependency="需 QQ 平台为该 Bot 开通 Markdown 权限",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="qq_keyboard_enabled",
+        label="QQ 指令键盘",
+        desc="在帮助/菜单回复中附带原生键盘按钮，客户端可直接点击常用指令；"
+              "低版本或未授权客户端自动回退为文本提示。",
+        dependency="需 QQ 平台开通键盘/互动事件权限",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="qq_full_group_context_enabled",
+        label="QQ 全量群消息补上下文",
+        desc="接收群内非 @ 消息并写入既有会话历史作为上下文，但绝不触发回复或消耗 LLM；"
+              "群 @ 消息仍由独立事件处理。关闭时完全忽略全量群消息。",
+        dependency="需平台授予全量群消息事件权限；默认关闭，避免隐私与 token 风险",
+        cost="free",
+    ),
+    FeatureToggle(
+        key="wechat_quote_cache_enabled",
+        label="微信引用消息还原",
+        desc="按 Bot、会话与 svr_id 持久缓存消息正文和媒体元数据，重启后仍能还原"
+              "只带服务端 ID 的引用消息；缓存不可用时不影响正常收发。",
+        dependency="关闭后仅能使用平台随引用直接下发的正文",
+        cost="free",
+    ),
+    FeatureToggle(
         key="memory_reflection_enabled",
         label="反思层（高阶判断）",
         desc="在记忆事实积累到一定规模后，额外用一次轻量模型调用把多条事实归纳成"

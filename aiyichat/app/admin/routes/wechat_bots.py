@@ -69,12 +69,15 @@ async def get_wechat_qrcode(
 
 @wechat_bots_router.get("/wechat-bots/{config_id}/poll-qr")
 async def poll_wechat_qr(
-    config_id: str, qrcode: str, _s: str = Depends(require_admin)
+    config_id: str,
+    qrcode: str,
+    verify_code: str = "",
+    _s: str = Depends(require_admin),
 ) -> JSONResponse:
-    """轮询扫码状态 - 扫码成功后直接启动渠道。"""
+    """轮询扫码状态，可携带手机验证码并直接启动已确认渠道。"""
     if await _bot_config_repo.find_by_id(config_id) is None:
         return JSONResponse({"error": "渠道不存在"}, status_code=404)
-    return JSONResponse(await poll_wechat_login(config_id, qrcode))
+    return JSONResponse(await poll_wechat_login(config_id, qrcode, verify_code))
 
 
 @wechat_bots_router.post("/wechat-bots/{config_id}/complete-login")

@@ -137,7 +137,9 @@ async def ensure_wechat_client(config_id: str) -> Optional[WeChatClient]:
         return None
     client = WeChatClient(
         bot_id=cfg.id,
+        bot_token=cfg.bot_token,
         on_token_update=manager._on_token_update,
+        account_id=cfg.account_id,
     )
     manager._pending_clients[cfg.id] = client
     return client
@@ -155,32 +157,55 @@ async def create_wechat_qr(config_id: str) -> Optional[dict]:
     return {"qrcode_url": qrcode_url, "qrcode": qr_data.get("qrcode", "")}
 
 
-async def poll_wechat_login(config_id: str, qrcode: str) -> dict:
-    """轮询微信扫码状态；成功后保存 token、置 online 并启动轮询任务。"""
+async def poll_wechat_login(
+    config_id: str, qrcode: str, verify_code: str = ""
+) -> dict:
+    """轮询微信扫码状态；验证码、重定向和异常均保留可恢复状态。"""
     client = await ensure_wechat_client(config_id)
     if client is None:
         return {"status": "error", "message": "渠道不存在"}
 
     manager = wechat_clawbot.get_wechat_manager()
     try:
-        bot_token = await client.poll_qrcode_status(qrcode)
-        if bot_token:
-            # 防止重复启动
-            if manager.is_bot_running(config_id):
-                logger.info("[WeChatBot] Bot %s 已有运行任务，跳过重复启动", config_id)
-                return {"status": "success", "message": "登录成功"}
-
-            logger.info("[WeChatBot] Bot %s 扫码成功，保存 bot_token 并启动", config_id)
-            await _bot_repo.update_wechat_bot_token(config_id, bot_token)
+        previous_token = getattr(client, "_bot_token", "") or ""
+        result = await client.poll_qrcode_status(qrcode, verify_code)
+        status = result.get("status", "wait")
+        if status in {"confirmed", "binded_redirect"}:
+            bot_token = result.get("bot_token", "") or client._bot_token
+            if not bot_token:
+                return {
+                    "status": "binded_redirect",
+                    "message": "该 Bot 已绑定，但本渠道无可用凭据，请先退出登录后重新扫码",
+                }
+            if status == "confirmed":
+                await _bot_repo.update_wechat_bot_token(config_id, bot_token)
+                if previous_token and previous_token != bot_token:
+                    await client.reset_sync_state()
+            client.set_bot_token(bot_token)
             await _bot_repo.update_status(config_id, "online")
+            # 重复确认或重复绑定只保留一个轮询任务。
+            if manager.is_bot_running(config_id):
+                await manager.cancel_bot_task(config_id)
             manager.start_bot_task(config_id, client)
+            logger.info("[WeChatBot] Bot %s 登录成功并已启动", config_id)
             return {"status": "success", "message": "登录成功"}
-        return {"status": "waiting", "message": "等待扫码..."}
+
+        messages = {
+            "wait": "等待扫码...",
+            "scaned": "已扫码，请在微信中继续确认",
+            "expired": "二维码已过期，请重新获取",
+            "need_verifycode": "请输入微信中显示的验证码",
+            "verify_code_blocked": "验证码错误次数过多，请重新获取二维码",
+            "scaned_but_redirect": "已切换登录服务器，请继续在微信中确认",
+        }
+        if status in messages:
+            return {"status": status, "message": messages[status]}
+        return {"status": "error", "message": "未知扫码状态，请重新获取二维码"}
     except Exception as exc:  # noqa: BLE001 - 平台错误统一转成可读状态
-        logger.error("[WeChatBot] Poll QR error: %s", exc, exc_info=True)
-        # 这个 message 会经后台与 C 端两条扫码接口原样返回，异常原文可能带
-        # 平台会话标识或内部地址；调用方只需要知道"这次轮询失败"，细节留在日志
-        return {"status": "error", "message": "扫码状态获取失败，请重新获取二维码"}
+        # 网络异常可能拼有 qrcode/verify_code 查询串，日志仅保留异常类型。
+        logger.error("[WeChatBot] Poll QR error: %s", type(exc).__name__)
+        # 异常原文可能包含平台凭据，双端只返回稳定可恢复话术。
+        return {"status": "error", "message": "扫码状态获取失败，请稍后重试或重新获取二维码"}
 
 
 async def logout_wechat(config_id: str) -> bool:

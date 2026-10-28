@@ -18,7 +18,8 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
+from urllib.parse import quote
 
 import aiohttp
 
@@ -50,14 +51,28 @@ logger = logging.getLogger(__name__)
 ILINK_BASE_URL = "https://ilinkai.weixin.qq.com"
 QRCODE_URL = f"{ILINK_BASE_URL}/ilink/bot/get_bot_qrcode"
 QRCODE_STATUS_URL = f"{ILINK_BASE_URL}/ilink/bot/get_qrcode_status"
-GETCONFIG_URL = f"{ILINK_BASE_URL}/ilink/bot/getconfig"
-GETUPDATES_URL = f"{ILINK_BASE_URL}/ilink/bot/getupdates"
-SENDMESSAGE_URL = f"{ILINK_BASE_URL}/ilink/bot/sendmessage"
-SENDTYPING_URL = f"{ILINK_BASE_URL}/ilink/bot/sendtyping"
-GETUPLOADURL_URL = f"{ILINK_BASE_URL}/ilink/bot/getuploadurl"
+
+# 本项目协议实现版本与观测标识，不能冒用官方插件版本。
+ILINK_CHANNEL_VERSION = "1.0.0"
+ILINK_BOT_AGENT = "AIYIchat/1.0.0"
+ILINK_APP_ID = "bot"
+_version_parts = [int(part) for part in ILINK_CHANNEL_VERSION.split(".")]
+ILINK_APP_CLIENT_VERSION = str(
+    ((_version_parts[0] & 0xFF) << 16)
+    | ((_version_parts[1] & 0xFF) << 8)
+    | (_version_parts[2] & 0xFF)
+)
 
 # CDN 基础 URL
 CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c"
+
+
+def _build_base_info() -> dict[str, str]:
+    """构造所有鉴权 Bot POST 共用的协议元数据。"""
+    return {
+        "channel_version": ILINK_CHANNEL_VERSION,
+        "bot_agent": ILINK_BOT_AGENT,
+    }
 
 
 class SessionExpiredError(Exception):
@@ -73,8 +88,10 @@ class WeChatClient(ChannelAdapter):
         bot_id: str,
         bot_token: str = "",
         on_token_update: Optional[Callable] = None,
+        account_id: str = "",
     ) -> None:
         self.bot_id = bot_id
+        self.account_id = account_id
         self._label = "[WX:%s]" % bot_id[:8]
 
         # 认证
@@ -86,6 +103,7 @@ class WeChatClient(ChannelAdapter):
         self._get_updates_buf: str = ""
         self._running: bool = False
         self._reconnect_delay: int = 5
+        self._poll_task: Optional[asyncio.Task[dict[str, Any]]] = None
 
         # per-user context_token 缓存（官方协议: 每条入站消息独立 context_token）
         self._context_tokens: dict[str, str] = {}
@@ -93,8 +111,8 @@ class WeChatClient(ChannelAdapter):
         # sendtyping
         self._typing_ticket: str = ""
 
-        # 消息去重（基于官方 message_id）
-        self._processed_msg_ids: collections.OrderedDict[int, float] = (
+        # 消息去重（message_id 持久化；异常缺失时使用稳定内容指纹）
+        self._processed_msg_ids: collections.OrderedDict[str, float] = (
             collections.OrderedDict()
         )
         self._dedup_max_size: int = 500
@@ -118,8 +136,14 @@ class WeChatClient(ChannelAdapter):
         self._tts: TTSService | None = None
         self._imagegen: ImageGenService | None = None
 
-        # 登录流程临时数据
+        # 登录流程临时数据；重定向只影响后续扫码状态请求
         self._qrcode: str = ""
+        self._qr_base_url: str = ILINK_BASE_URL
+        self._qr_verify_code: str = ""
+        # 扫码确认返回的 Bot API 主机；持久化后跨重启保留
+        self._api_base_url: str = ILINK_BASE_URL
+        # 引用缓存过期清理按小时节流，避免每条入站消息都扫集合
+        self._last_quote_purge: float = 0.0
 
     # ── ChannelAdapter 抽象方法实现 ─────────────────────
 
@@ -155,16 +179,25 @@ class WeChatClient(ChannelAdapter):
 
     # ── 请求头 ────────────────────────────────────────
 
-    def _get_headers(self) -> dict[str, str]:
-        """生成 iLink API 请求头。"""
+    @staticmethod
+    def _get_app_headers() -> dict[str, str]:
+        """生成扫码 GET 与 Bot 请求共用的 iLink App 请求头。"""
+        return {
+            "iLink-App-Id": ILINK_APP_ID,
+            "iLink-App-ClientVersion": ILINK_APP_CLIENT_VERSION,
+        }
+
+    def _get_headers(self, include_auth: bool = True) -> dict[str, str]:
+        """生成 JSON POST 请求头，取码时不携带已有 Bot 鉴权。"""
         random_uin = secrets.randbits(32)
-        uin_b64 = base64.b64encode(random_uin.to_bytes(4, "big")).decode()
+        uin_b64 = base64.b64encode(str(random_uin).encode("ascii")).decode()
         headers: dict[str, str] = {
             "Content-Type": "application/json",
             "AuthorizationType": "ilink_bot_token",
             "X-WECHAT-UIN": uin_b64,
+            **self._get_app_headers(),
         }
-        if self._bot_token:
+        if include_auth and self._bot_token:
             headers["Authorization"] = "Bearer %s" % self._bot_token
         return headers
 
@@ -176,20 +209,32 @@ class WeChatClient(ChannelAdapter):
             self._session = aiohttp.ClientSession()
         return self._session
 
-    async def get_login_qrcode(self) -> dict:
-        """获取登录二维码。"""
-        session = await self._ensure_session()
-        headers = {"iLink-App-ClientVersion": "1"}
+    def _bot_url(self, path: str) -> str:
+        """拼接扫码确认后返回的 Bot API 主机，重启后仍沿用。"""
+        return f"{self._api_base_url}{path}"
 
-        async with session.get(
-            QRCODE_URL, params={"bot_type": "3"}, headers=headers
+    async def get_login_qrcode(self) -> dict:
+        """获取登录二维码；已有 token 仅用于识别重复绑定。"""
+        session = await self._ensure_session()
+        self._qr_base_url = ILINK_BASE_URL
+        self._qr_verify_code = ""
+
+        async with session.post(
+            QRCODE_URL,
+            params={"bot_type": "3"},
+            headers=self._get_headers(include_auth=False),
+            json={
+                "local_token_list": [self._bot_token] if self._bot_token else []
+            },
         ) as resp:
             raw_data = await resp.read()
+            if resp.status != 200:
+                raise RuntimeError("获取二维码失败: HTTP %s" % resp.status)
             try:
                 data = json.loads(raw_data.decode("utf-8"))
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.error("%s 二维码响应解析失败: %s", self._label, e)
-                raise RuntimeError("获取二维码失败: 无法解析响应")
+                raise RuntimeError("获取二维码失败: 无法解析响应") from e
 
             logger.info(
                 "%s QRCode response: %s",
@@ -205,7 +250,7 @@ class WeChatClient(ChannelAdapter):
                 )
 
             if "qrcode" not in data:
-                raise RuntimeError("获取二维码失败: 响应中无qrcode字段: %s" % data)
+                raise RuntimeError("获取二维码失败: 响应中无 qrcode 字段")
 
             self._qrcode = data["qrcode"]
             qrcode_url = data.get("qrcode_img_content", "")
@@ -232,57 +277,81 @@ class WeChatClient(ChannelAdapter):
 
             return {"qrcode": self._qrcode, "qrcode_url": qrcode_data_uri}
 
-    async def poll_qrcode_status(self, qrcode: str) -> Optional[str]:
-        """长轮询扫码状态，返回 bot_token。"""
+    async def poll_qrcode_status(
+        self, qrcode: str, verify_code: str = ""
+    ) -> dict[str, str]:
+        """长轮询扫码状态，保留平台状态机并处理 IDC 重定向。"""
         session = await self._ensure_session()
+        if verify_code:
+            self._qr_verify_code = verify_code.strip()
+        params = {"qrcode": qrcode}
+        if self._qr_verify_code:
+            params["verify_code"] = self._qr_verify_code
         try:
             async with session.get(
-                QRCODE_STATUS_URL,
-                params={"qrcode": qrcode},
-                headers={"iLink-App-ClientVersion": "1"},
+                f"{self._qr_base_url}/ilink/bot/get_qrcode_status",
+                params=params,
+                headers=self._get_app_headers(),
                 timeout=aiohttp.ClientTimeout(total=45),
             ) as resp:
                 text = await resp.text()
+                if resp.status != 200:
+                    raise RuntimeError("扫码状态请求失败: HTTP %s" % resp.status)
                 try:
                     data = json.loads(text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s 扫码状态响应解析失败: %s", self._label, text[:100]
-                    )
-                    return None
+                except json.JSONDecodeError as e:
+                    raise RuntimeError("扫码状态响应无法解析") from e
 
-                # 成功响应里带着 bot_token：只输出键名与错误码，绝不整包落日志
+                # 成功响应可能带凭据，只记录状态与错误码，不记录完整响应。
                 logger.info(
-                    "%s 扫码状态: %s",
-                    self._label,
-                    brief_json(data, ("ret", "errcode", "msg", "errmsg")),
+                    "%s 扫码状态: status=%s, ret=%s",
+                    self._label, data.get("status", ""), data.get("ret", 0),
                 )
-
                 ret_code = data.get("ret", data.get("errcode", 0))
                 if ret_code != 0:
-                    error_msg = data.get("msg", data.get("errmsg", ""))
-                    if "timeout" in error_msg.lower() or ret_code == -14:
-                        return None
-                    logger.warning(
-                        "%s 扫码异常: %s (code: %s)",
-                        self._label, error_msg, ret_code,
-                    )
-                    return None
+                    if ret_code == -14:
+                        return {"status": "wait"}
+                    raise RuntimeError("扫码状态请求失败: ret=%s" % ret_code)
 
-                if data.get("bot_token"):
-                    bot_token = data["bot_token"]
+                status = str(data.get("status") or "wait")
+                if status == "scaned_but_redirect":
+                    redirect_host = str(data.get("redirect_host", "")).strip()
+                    if redirect_host:
+                        self._qr_base_url = (
+                            redirect_host.rstrip("/")
+                            if "://" in redirect_host
+                            else "https://%s" % redirect_host.rstrip("/")
+                        )
+                elif status != "wait":
+                    # wait/redirect 期间继续携带验证码；其余状态结束本次提交。
+                    self._qr_verify_code = ""
+
+                if status == "confirmed":
+                    bot_token = str(data.get("bot_token", ""))
+                    if not bot_token:
+                        raise RuntimeError("扫码确认响应缺少 bot_token")
                     self._ilink_user_id = data.get("ilink_user_id")
                     self._bot_token = bot_token
-                    logger.info(
-                        "%s 扫码成功, ilink_user_id=%s",
-                        self._label, self._ilink_user_id,
-                    )
-                    return bot_token
-
-                return None
+                    baseurl = str(data.get("baseurl", "")).strip()
+                    if baseurl:
+                        self._api_base_url = baseurl.rstrip("/")
+                        try:
+                            await self._persist_api_base_url()
+                        except Exception as exc:
+                            # 持久化失败不否定平台已确认的登录，重启后回退默认主机
+                            logger.warning(
+                                "%s Bot API 主机持久化失败: %s",
+                                self._label, exc,
+                            )
+                    logger.info("%s 扫码确认成功", self._label)
+                return {"status": status, **{
+                    key: str(data[key])
+                    for key in ("bot_token", "ilink_user_id", "baseurl")
+                    if data.get(key)
+                }}
         except asyncio.TimeoutError:
             logger.debug("%s 扫码长轮询超时，将重试", self._label)
-            return None
+            return {"status": "wait"}
 
     def set_bot_token(self, bot_token: str) -> None:
         """设置 bot_token（供 admin 路由调用）。"""
@@ -299,9 +368,9 @@ class WeChatClient(ChannelAdapter):
         # 调用 getconfig 获取 typing_ticket
         try:
             async with session.post(
-                GETCONFIG_URL,
+                self._bot_url("/ilink/bot/getconfig"),
                 headers=self._get_headers(),
-                json={"base_info": {"channel_version": "1.0.0"}},
+                json={"base_info": _build_base_info()},
             ) as resp:
                 text = await resp.text()
                 try:
@@ -330,7 +399,7 @@ class WeChatClient(ChannelAdapter):
     # ── 消息轮询主循环 ────────────────────────────────
 
     async def start(self) -> None:
-        """启动消息轮询（含指数退避重连）。"""
+        """启动消息轮询（含指数退避重连与持久状态恢复）。"""
         if not self._bot_token:
             logger.warning("%s 无 bot_token，无法启动", self._label)
             return
@@ -339,6 +408,10 @@ class WeChatClient(ChannelAdapter):
         self._reconnect_delay = 5
         max_reconnect_delay = 120
         await self._ensure_session()
+
+        # 先恢复游标和去重记录，再开始收消息，避免重启后重复进入引擎。
+        await self.load_sync_state()
+        await self._notify_lifecycle("start")
 
         # 获取 typing_ticket（非阻塞）
         await self._refresh_typing_ticket()
@@ -356,6 +429,7 @@ class WeChatClient(ChannelAdapter):
             except SessionExpiredError:
                 logger.warning("%s Session 过期，需要重新扫码", self._label)
                 self._running = False
+                await self._notify_lifecycle("stop")
                 await self._mark_offline()
                 raise
 
@@ -375,12 +449,44 @@ class WeChatClient(ChannelAdapter):
                 )
 
     async def stop(self) -> None:
-        """停止消息轮询。"""
+        """停止消息轮询，显式取消请求并通知平台离线。"""
         self._running = False
+        poll_task = self._poll_task
+        if poll_task is not None and not poll_task.done():
+            poll_task.cancel()
+            await asyncio.gather(poll_task, return_exceptions=True)
+        self._poll_task = None
+        await self._notify_lifecycle("stop")
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
         logger.info("%s 微信Bot停止", self._label)
+
+    async def _notify_lifecycle(self, action: Literal["start", "stop"]) -> None:
+        """发送生命周期通知；HTTP、解析或业务失败均只告警。"""
+        if not self._bot_token:
+            return
+        url = self._bot_url(f"/ilink/bot/msg/notify{action}")
+        try:
+            session = await self._ensure_session()
+            async with session.post(
+                url,
+                headers=self._get_headers(),
+                json={"base_info": _build_base_info()},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                text = await resp.text()
+                if resp.status != 200:
+                    logger.warning(
+                        "%s notify%s HTTP %s", self._label, action, resp.status
+                    )
+                    return
+                data = json.loads(text) if text.strip() else {}
+                ret = data.get("ret", data.get("errcode", 0))
+                if ret != 0:
+                    logger.warning("%s notify%s ret=%s", self._label, action, ret)
+        except Exception as e:
+            logger.warning("%s notify%s 失败: %s", self._label, action, e)
 
     async def _mark_offline(self) -> None:
         """标记 Bot 为离线状态。"""
@@ -392,100 +498,482 @@ class WeChatClient(ChannelAdapter):
             logger.error("%s 标记离线失败: %s", self._label, e)
 
     async def _polling_loop(self) -> None:
-        """长轮询消息主循环（35s hold）。"""
+        """执行一次长轮询；全部消息处理并持久去重后才推进游标。"""
         session = await self._ensure_session()
-        payload: dict = {
-            "cursor": self._get_updates_buf or "",
-            "hold": 35000,
+        payload: dict[str, Any] = {
+            "get_updates_buf": self._get_updates_buf,
+            "base_info": _build_base_info(),
         }
-
+        self._poll_task = asyncio.create_task(
+            self._fetch_updates(session, payload)
+        )
         try:
-            async with session.post(
-                GETUPDATES_URL,
-                headers=self._get_headers(),
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=50),
-            ) as resp:
-                text = await resp.text()
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s getupdates 响应解析失败: %s",
-                        self._label, text[:100],
-                    )
-                    await asyncio.sleep(2)
-                    return
-
-                # 检查 session 过期
-                ret = data.get("ret")
-                if ret is not None and ret != 0:
-                    if ret == -14:
-                        raise SessionExpiredError("session timeout (ret: -14)")
-                    error_msg = data.get("msg", "")
-                    logger.error(
-                        "%s getupdates 错误: ret=%s, msg=%s",
-                        self._label, ret, error_msg,
-                    )
-                    await asyncio.sleep(2)
-                    return
-
-                # 更新游标
-                if "get_updates_buf" in data:
-                    self._get_updates_buf = data["get_updates_buf"]
-
-                # 处理消息
-                messages = data.get("msgs", [])
-                if messages:
-                    logger.info(
-                        "%s getupdates 返回 %d 条消息",
-                        self._label, len(messages),
-                    )
-                for msg in messages:
-                    try:
-                        await self._handle_message(msg)
-                    except Exception as e:
-                        logger.error(
-                            "%s 处理消息错误: %s",
-                            self._label, e, exc_info=True,
-                        )
-
-                # 无消息时短暂休眠避免空转
-                if not messages:
-                    await asyncio.sleep(1)
-
+            data = await self._poll_task
         except asyncio.TimeoutError:
             logger.debug("%s getupdates 长轮询超时，继续下一轮", self._label)
+            return
         except SessionExpiredError:
+            raise
+        except asyncio.CancelledError:
             raise
         except Exception as e:
             logger.error(
                 "%s getupdates 请求异常: %s", self._label, e, exc_info=True
             )
+            return
+        finally:
+            self._poll_task = None
 
-    # ── 消息去重 ──────────────────────────────────────
+        try:
+            messages = data.get("msgs", [])
+            if messages:
+                logger.info(
+                    "%s getupdates 返回 %d 条消息",
+                    self._label, len(messages),
+                )
+            for msg in messages:
+                await self._process_message_once(msg)
 
-    async def _is_msg_duplicate(self, msg_id: int) -> bool:
-        """基于 message_id 的消息去重。"""
+            # 空游标不覆盖旧值；任何处理/落库异常都不会执行到这里。
+            new_cursor = str(data.get("get_updates_buf", ""))
+            if new_cursor:
+                await self._persist_get_updates_buf(new_cursor)
+            if not messages:
+                await asyncio.sleep(1)
+        except Exception as e:
+            logger.error("%s 处理消息或推进游标失败: %s", self._label, e)
+
+    async def _fetch_updates(
+        self, session: aiohttp.ClientSession, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """发送协议约定的 getupdates 请求并校验 HTTP 与业务返回码。"""
+        async with session.post(
+            self._bot_url("/ilink/bot/getupdates"),
+            headers=self._get_headers(),
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=50),
+        ) as resp:
+            text = await resp.text()
+            if resp.status != 200:
+                raise RuntimeError("getupdates HTTP %s" % resp.status)
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                raise RuntimeError("getupdates 响应无法解析") from e
+            ret = data.get("ret", data.get("errcode", 0))
+            if ret != 0:
+                if ret == -14:
+                    raise SessionExpiredError("session timeout (ret: -14)")
+                raise RuntimeError("getupdates ret=%s" % ret)
+            return data
+
+    # ── 持久游标与消息去重 ─────────────────────────────
+
+    async def load_sync_state(self) -> None:
+        """按 Bot 恢复游标和最近消息回执；读取失败时禁止直接轮询。"""
+        from app.db.mongo import get_database
+
+        doc = await get_database().wechat_sync_state.find_one(
+            {"bot_id": self.bot_id}
+        )
+        if not doc:
+            return
+        self._get_updates_buf = str(doc.get("get_updates_buf", ""))
+        self._api_base_url = str(doc.get("api_base_url") or ILINK_BASE_URL)
+        self._processed_msg_ids.clear()
+        for msg_key in doc.get("processed_msg_ids", [])[-self._dedup_max_size:]:
+            self._processed_msg_ids[str(msg_key)] = time.time()
+
+    async def _persist_api_base_url(self) -> None:
+        """持久化扫码返回的 Bot API 主机，供重启后继续使用。"""
+        from app.db.mongo import get_database
+
+        await get_database().wechat_sync_state.update_one(
+            {"bot_id": self.bot_id},
+            {
+                "$set": {
+                    "api_base_url": self._api_base_url,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$setOnInsert": {"processed_msg_ids": []},
+            },
+            upsert=True,
+        )
+
+    async def _persist_get_updates_buf(self, new_cursor: str) -> None:
+        """持久化非空新游标成功后才更新内存状态。"""
+        from app.db.mongo import get_database
+
+        await get_database().wechat_sync_state.update_one(
+            {"bot_id": self.bot_id},
+            {
+                "$set": {
+                    "get_updates_buf": new_cursor,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$setOnInsert": {"processed_msg_ids": []},
+            },
+            upsert=True,
+        )
+        self._get_updates_buf = new_cursor
+
+    async def reset_sync_state(self) -> None:
+        """重新登录新会话时清除旧游标与回执。"""
+        from app.db.mongo import get_database
+
+        await get_database().wechat_sync_state.delete_one({"bot_id": self.bot_id})
+        self._get_updates_buf = ""
+        self._api_base_url = ILINK_BASE_URL
+        self._processed_msg_ids.clear()
+
+    @staticmethod
+    def _message_dedup_key(msg: dict[str, Any]) -> str:
+        """优先使用平台 message_id，缺失时生成跨重启稳定的内容指纹。"""
+        msg_id = msg.get("message_id")
+        if msg_id not in (None, "", 0):
+            return str(msg_id)
+        canonical = json.dumps(msg, ensure_ascii=False, sort_keys=True, default=str)
+        return "sha256:%s" % hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    async def _is_msg_duplicate(self, msg_key: str) -> bool:
+        """只查询回执，不在处理完成前写入去重状态。"""
         async with self._dedup_lock:
-            if msg_id in self._processed_msg_ids:
-                logger.debug("%s 跳过重复消息: %s", self._label, msg_id)
-                return True
-            self._processed_msg_ids[msg_id] = time.time()
+            return msg_key in self._processed_msg_ids
+
+    async def _mark_msg_processed(self, msg_key: str) -> None:
+        """持久化消息占位回执，再更新有界内存缓存。"""
+        from app.db.mongo import get_database
+
+        async with self._dedup_lock:
+            await get_database().wechat_sync_state.update_one(
+                {"bot_id": self.bot_id},
+                {
+                    "$push": {
+                        "processed_msg_ids": {
+                            "$each": [msg_key],
+                            "$slice": -self._dedup_max_size,
+                        }
+                    },
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                },
+                upsert=True,
+            )
+            self._processed_msg_ids[msg_key] = time.time()
+            self._processed_msg_ids.move_to_end(msg_key)
             while len(self._processed_msg_ids) > self._dedup_max_size:
                 self._processed_msg_ids.popitem(last=False)
-            return False
+
+    async def _process_message_once(self, msg: dict[str, Any]) -> None:
+        """先持久占位再处理，崩溃重拉时宁可少投一次也不重复进入引擎。"""
+        msg_key = self._message_dedup_key(msg)
+        if await self._is_msg_duplicate(msg_key):
+            logger.debug("%s 跳过已处理消息: %s", self._label, msg_key)
+            return
+        await self._mark_msg_processed(msg_key)
+        try:
+            await self._handle_message(msg)
+        except Exception:
+            # 明确失败可安全回滚；进程崩溃来不及回滚时仍由占位记录阻止重复。
+            await self._unmark_msg_processed(msg_key)
+            raise
+
+    async def _unmark_msg_processed(self, msg_key: str) -> None:
+        """处理失败时撤销持久占位，让下一轮能重试该消息。"""
+        from app.db.mongo import get_database
+
+        async with self._dedup_lock:
+            await get_database().wechat_sync_state.update_one(
+                {"bot_id": self.bot_id},
+                {
+                    "$pull": {"processed_msg_ids": msg_key},
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                },
+            )
+            self._processed_msg_ids.pop(msg_key, None)
+
+    # ── 引用缓存 ──────────────────────────────────────
+
+    @staticmethod
+    def _quote_session_key(msg: dict[str, Any]) -> str:
+        """引用隔离键：优先 session_id，其次取会话对端用户。"""
+        return str(
+            msg.get("session_id")
+            or msg.get("from_user_id")
+            or msg.get("to_user_id")
+            or ""
+        )
+
+    @staticmethod
+    def _quote_svr_ids(msg: dict[str, Any]) -> list[str]:
+        """收集服务端可能用于引用的稳定消息 ID。"""
+        candidates: list[str] = [
+            str(value)
+            for value in (
+                msg.get("svr_id"),
+                msg.get("message_id"),
+                msg.get("client_id"),
+            )
+            if value not in (None, "", 0, "0")
+        ]
+        for item in msg.get("item_list", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("svr_id", "msg_id"):
+                value = item.get(key)
+                if value not in (None, "", 0, "0"):
+                    candidates.append(str(value))
+        return list(dict.fromkeys(candidates))
+
+    @staticmethod
+    def _item_type(item: dict[str, Any]) -> int | None:
+        """兼容 JSON 数字与字符串形式的 item.type。"""
+        value = item.get("type")
+        if isinstance(value, bool):
+            return None
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _item_text(cls, item: dict[str, Any]) -> str:
+        """从单个 MessageItem 取可读文本。"""
+        item_type = cls._item_type(item)
+        if item_type == 1:
+            return str(item.get("text_item", {}).get("text", ""))
+        if item_type == 3:
+            return str(item.get("voice_item", {}).get("text", ""))
+        if item_type == 4:
+            return str(item.get("file_item", {}).get("file_name", ""))
+        return ""
+
+    @classmethod
+    def _item_media_kind(cls, item: dict[str, Any]) -> str:
+        """返回媒体类型名，供引用提示与缓存检索。"""
+        item_type = cls._item_type(item)
+        if item_type is None:
+            return ""
+        return {
+            2: "image",
+            3: "voice",
+            4: "file",
+            5: "video",
+        }.get(item_type, "")
+
+    async def _cache_quote_message(
+        self,
+        msg: dict[str, Any],
+        *,
+        text: str,
+        media_kind: str = "",
+        media_url: str = "",
+        role: str = "user",
+    ) -> None:
+        """按 Bot/会话/svr_id 持久化引用语料，失败不影响消息主流程。"""
+        if not settings.wechat_quote_cache_enabled:
+            return
+        session_key = self._quote_session_key(msg)
+        ids = self._quote_svr_ids(msg)
+        if not session_key or not ids:
+            return
+        try:
+            from app.db.repositories.wechat_quote_repo import (
+                WeChatQuoteCacheRepository,
+            )
+
+            repo = WeChatQuoteCacheRepository()
+            now = time.monotonic()
+            if now - self._last_quote_purge >= 3600:
+                self._last_quote_purge = now
+                spawn(repo.purge_expired())
+            for svr_id in ids:
+                await repo.upsert(
+                    bot_id=self.bot_id,
+                    account_id=self.account_id,
+                    session_key=session_key,
+                    svr_id=svr_id,
+                    message_id=str(msg.get("message_id", "")),
+                    role=role,
+                    text=text,
+                    media_kind=media_kind,
+                    media_url=media_url,
+                )
+        except Exception as exc:
+            logger.warning("%s 引用缓存写入失败: %s", self._label, exc)
+
+    async def _cache_message_without_reply(self, msg: dict[str, Any]) -> None:
+        """缓存 Bot 回显消息，供其被引用时还原。"""
+        texts = [
+            self._item_text(item)
+            for item in msg.get("item_list", []) or []
+            if isinstance(item, dict)
+        ]
+        media_items = [
+            item for item in msg.get("item_list", []) or []
+            if isinstance(item, dict) and self._item_media_kind(item)
+        ]
+        await self._cache_quote_message(
+            msg,
+            text="\n".join(part for part in texts if part),
+            media_kind=(
+                self._item_media_kind(media_items[-1]) if media_items else ""
+            ),
+            role="assistant",
+        )
+
+    @staticmethod
+    def _nth_index(
+        text: str, value: str, occurrence: int, start: int = 0
+    ) -> int:
+        """按官方语义查找第 occurrence 次出现的子串。"""
+        if not text or not value or occurrence < 0:
+            return -1
+        position = start
+        for current in range(occurrence + 1):
+            position = text.find(value, position)
+            if position < 0:
+                return -1
+            if current < occurrence:
+                position += len(value)
+        return position
+
+    @classmethod
+    def _partial_quote_candidate(
+        cls,
+        full_text: str,
+        partial: dict[str, Any],
+        end_search_mode: str,
+    ) -> str:
+        """按全局/相对索引两种官方口径截取局部引用。"""
+        start_text = str(partial.get("start", ""))
+        end_text = str(partial.get("end", ""))
+        if not start_text or not end_text:
+            return ""
+        try:
+            start_index = int(partial.get("startindex", 0))
+            end_index = int(partial.get("endindex", 0))
+        except (TypeError, ValueError):
+            return ""
+        start = cls._nth_index(full_text, start_text, start_index)
+        if start < 0:
+            return ""
+        end_from = start + len(start_text) if end_search_mode == "relative" else 0
+        end = cls._nth_index(full_text, end_text, end_index, end_from)
+        if end < start:
+            return ""
+        return full_text[start:end + len(end_text)]
+
+    @classmethod
+    def _resolve_partial_quote(
+        cls, full_text: str, partial: dict[str, Any]
+    ) -> str:
+        """还原局部引用并用 quotemd5 消歧，校验失败不伪造内容。"""
+        candidates: list[str] = []
+        for mode in ("global", "relative"):
+            value = cls._partial_quote_candidate(full_text, partial, mode)
+            if value and value not in candidates:
+                candidates.append(value)
+        if not candidates:
+            return ""
+        expected = str(partial.get("quotemd5", "")).strip().lower()
+        if not expected:
+            return candidates[0]
+        for value in candidates:
+            if hashlib.md5(value.encode("utf-8")).hexdigest() == expected:
+                return value
+        return ""
+
+    async def _resolve_quote_context(
+        self, item: dict[str, Any], msg: dict[str, Any]
+    ) -> str:
+        """还原整条/局部引用与媒体提示，缓存未命中时给出明确占位。"""
+        ref = item.get("ref_msg")
+        if not isinstance(ref, dict):
+            return ""
+        ref_items: list[dict[str, Any]] = []
+        message_item = ref.get("message_item")
+        if isinstance(message_item, dict):
+            ref_items.append(message_item)
+        direct_text = str(ref.get("title", "")).strip()
+        if message_item:
+            direct_text = self._item_text(message_item).strip() or direct_text
+        ref_media = self._item_media_kind(message_item) if message_item else ""
+        if not ref_media:
+            for item_type, key in (
+                ("image", "image_item"),
+                ("voice", "voice_item"),
+                ("file", "file_item"),
+                ("video", "video_item"),
+            ):
+                if isinstance(ref.get(key), dict):
+                    ref_media = item_type
+                    break
+        svr_id = ""
+        for key in ("svr_id", "message_id", "msg_id"):
+            value = ref.get(key)
+            if value not in (None, "", 0, "0"):
+                svr_id = str(value)
+                break
+        if not svr_id and isinstance(message_item, dict):
+            # 官方客户端在无 svr_id 时回退到被引用消息项的 msg_id。
+            nested_msg_id = message_item.get("msg_id")
+            if nested_msg_id not in (None, "", 0, "0"):
+                svr_id = str(nested_msg_id)
+        raw_partial = ref.get("partial_text")
+        partial: dict[str, Any] = (
+            raw_partial if isinstance(raw_partial, dict) else {}
+        )
+        has_partial = bool(partial)
+        partial_invalid = False
+        cached_text = ""
+        cached_media = ""
+        selected_text = ""
+        if svr_id and settings.wechat_quote_cache_enabled:
+            try:
+                from app.db.repositories.wechat_quote_repo import (
+                    WeChatQuoteCacheRepository,
+                )
+
+                cached = await WeChatQuoteCacheRepository().find(
+                    bot_id=self.bot_id,
+                    session_key=self._quote_session_key(msg),
+                    svr_id=svr_id,
+                )
+                if cached:
+                    cached_text = str(cached.get("text", ""))
+                    cached_media = str(cached.get("media_kind", ""))
+                    if has_partial and cached_text:
+                        selected_text = self._resolve_partial_quote(
+                            cached_text, partial
+                        )
+                        partial_invalid = not selected_text
+            except Exception as exc:
+                logger.warning("%s 引用缓存读取失败: %s", self._label, exc)
+        if has_partial:
+            # 局部引用不得退化为整条正文，避免把用户未选中的内容注入上下文。
+            content = selected_text or direct_text
+        else:
+            content = direct_text or cached_text
+        media_kind = ref_media or cached_media
+        parts: list[str] = []
+        if content:
+            parts.append(f"【引用消息】{content[:2000]}")
+        elif media_kind:
+            parts.append(f"【引用{media_kind}】")
+        elif has_partial and partial_invalid and cached_text:
+            parts.append("【引用消息：局部引用校验失败】")
+        elif svr_id:
+            parts.append("【引用消息：本地缓存未命中】")
+        if media_kind and content:
+            parts.append(f"（引用中包含{media_kind}媒体）")
+        return "\n".join(parts)
 
     # ── 消息处理 ──────────────────────────────────────
 
     async def _handle_message(self, msg: dict) -> None:
-        """处理单条消息（支持文本、图片、语音）。"""
-        # 1. 消息去重（基于官方 message_id）
+        """处理单条消息（支持文本、图片、语音、文件、视频和引用）。"""
+        # 1. 缓存 per-user context_token 并持久化到 MongoDB
         msg_id = msg.get("message_id", 0)
-        if msg_id and await self._is_msg_duplicate(msg_id):
-            return
-
-        # 2. 缓存 per-user context_token 并持久化到 MongoDB
         from_user_id = msg.get("from_user_id", "")
         msg_ctx_token = msg.get("context_token", "")
         if msg_ctx_token and from_user_id:
@@ -494,19 +982,59 @@ class WeChatClient(ChannelAdapter):
                 self._persist_context_token(from_user_id, msg_ctx_token)
             )
 
+        # Bot 回显只进引用缓存，绝不能再次进入对话引擎形成自问自答。
+        if msg.get("message_type") == 2:
+            await self._cache_message_without_reply(msg)
+            return
+
+        item_shapes = [
+            {
+                "type": item.get("type"),
+                "keys": sorted(item.keys()),
+                "ref_type": type(item.get("ref_msg")).__name__,
+            }
+            for item in msg.get("item_list", []) or []
+            if isinstance(item, dict)
+        ]
+        ref_shapes: list[dict[str, Any]] = []
+        for item in msg.get("item_list", []) or []:
+            ref = item.get("ref_msg") if isinstance(item, dict) else None
+            if not isinstance(ref, dict):
+                continue
+            message_item = ref.get("message_item")
+            ref_shapes.append({
+                "keys": sorted(ref.keys()),
+                "svr_id": bool(ref.get("svr_id")),
+                "title_len": len(str(ref.get("title", ""))),
+                "has_partial": isinstance(ref.get("partial_text"), dict),
+                "message_item": {
+                    "type": message_item.get("type"),
+                    "keys": sorted(message_item.keys()),
+                } if isinstance(message_item, dict) else None,
+            })
+        has_ref = bool(ref_shapes)
         logger.info(
-            "%s 收到消息: msg_id=%s, from=%s, has_ctx=%s",
+            "%s 收到消息: msg_id=%s, from=%s, has_ctx=%s, has_ref=%s, items=%s, refs=%s",
             self._label, msg_id, from_user_id, bool(msg_ctx_token),
+            has_ref, item_shapes, ref_shapes,
         )
 
         # 3. 发送打字状态
         spawn(self._send_typing(from_user_id, status=1))
 
-        # 4. 解析 item_list
+        # 4. 解析 item_list（引用先还原，媒体再下载与分析）
         item_list = msg.get("item_list", [])
         text = ""
         media_url: Optional[str] = None
         content_type = "text"
+        quote_context = ""
+        for candidate in item_list:
+            if isinstance(candidate, dict) and candidate.get("ref_msg"):
+                quote_context = await self._resolve_quote_context(
+                    candidate, msg
+                )
+                if quote_context:
+                    break
 
         for item in item_list:
             item_type = item.get("type")
@@ -550,15 +1078,82 @@ class WeChatClient(ChannelAdapter):
                 if not text:
                     text = "[身份发送了一条语音消息]"
 
+            elif item_type == 4:  # FILE
+                content_type = "file"
+                file_item = item.get("file_item", {})
+                file_name = str(file_item.get("file_name", "文件"))
+                decrypted = await self._download_cdn_media(file_item)
+                if decrypted:
+                    try:
+                        from app.services.file_text import extract_text_from_file
+                        from app.services.media_storage import (
+                            save_file_from_bytes,
+                        )
+
+                        media_url = await save_file_from_bytes(
+                            decrypted,
+                            filename=file_name,
+                            content_type="application/octet-stream",
+                        )
+                        extracted = await asyncio.to_thread(
+                            extract_text_from_file, decrypted, file_name
+                        )
+                        if extracted:
+                            text = (
+                                f"[身份发送了文件：{file_name}]\n"
+                                f"{extracted}"
+                            )
+                        else:
+                            text = (
+                                f"[身份发送了文件：{file_name}，"
+                                "文件已保存，暂不支持解析正文]"
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "%s 入站文件处理失败: %s", self._label, exc
+                        )
+                if not text:
+                    text = f"[身份发送了文件：{file_name}，下载失败]"
+
             elif item_type == 5:  # VIDEO
                 content_type = "video"
-                text = "[身份发送了一个视频]"
+                video_item = item.get("video_item", {})
+                decrypted = await self._download_cdn_media(video_item)
+                if decrypted:
+                    try:
+                        from app.services.media_storage import (
+                            save_file_from_bytes,
+                        )
+
+                        media_url = await save_file_from_bytes(
+                            decrypted,
+                            filename="video.mp4",
+                            content_type="video/mp4",
+                        )
+                        text = "[身份发送了一个视频，视频已保存]"
+                    except Exception as exc:
+                        logger.warning(
+                            "%s 入站视频保存失败: %s", self._label, exc
+                        )
+                if not text:
+                    text = "[身份发送了一个视频，下载失败]"
 
         if not text:
             logger.debug("%s 消息无可处理文本", self._label)
             # 取消打字状态
             spawn(self._send_typing(from_user_id, status=2))
             return
+
+        # 引用只在进入引擎前拼接；缓存保存原始正文，避免重复嵌套引用。
+        cache_text = text
+        if quote_context:
+            text = f"{quote_context}\n{text}"
+        await self._cache_quote_message(
+            msg,
+            text=cache_text,
+            media_kind=content_type if content_type in ("image", "voice", "file", "video") else "",
+            media_url=media_url or "",
+        )
 
         # 5. 调用对话引擎（result 预置 None，确保异常路径下变量已定义）
         result = None
@@ -671,13 +1266,14 @@ class WeChatClient(ChannelAdapter):
             cdn_media.get("aes_key", "") or media_item.get("aeskey", "")
         )
 
-        if not encrypt_query_param or not aes_key_b64:
+        full_url = cdn_media.get("full_url", "").strip()
+        if (not full_url and not encrypt_query_param) or not aes_key_b64:
             logger.warning("%s CDN 媒体缺少必要字段，跳过下载", self._label)
             return None
 
-        # 构造下载 URL
-        download_url = "%s/download?encrypted_query_param=%s" % (
-            CDN_BASE_URL, encrypt_query_param
+        # 完整下载地址优先；旧参数必须作为查询值完整编码。
+        download_url = full_url or "%s/download?encrypted_query_param=%s" % (
+            CDN_BASE_URL, quote(encrypt_query_param, safe="")
         )
 
         # 解析 per-item AES 密钥
@@ -733,22 +1329,24 @@ class WeChatClient(ChannelAdapter):
             filesize=len(encrypted),
             no_need_thumb=True,
             aeskey=aes_key_hex,
-            base_info={"channel_version": "1.0.0"},
         )
         if not upload_info:
             return None
 
-        # 5. 从响应中提取 upload_param，构造 CDN 上传 URL
+        # 5. 完整上传地址优先，旧 upload_param 回退并正确编码查询值。
+        upload_full_url = upload_info.get("upload_full_url", "").strip()
         upload_param = upload_info.get("upload_param", "")
-        if not upload_param:
-            logger.error("%s getuploadurl 未返回 upload_param", self._label)
+        if upload_full_url:
+            cdn_upload_url = upload_full_url
+        elif upload_param:
+            cdn_upload_url = "%s/upload?encrypted_query_param=%s&filekey=%s" % (
+                CDN_BASE_URL,
+                quote(upload_param, safe=""),
+                quote(filekey, safe=""),
+            )
+        else:
+            logger.error("%s getuploadurl 未返回可用上传地址", self._label)
             return None
-
-        from urllib.parse import quote
-
-        cdn_upload_url = "%s/upload?encrypted_query_param=%s&filekey=%s" % (
-            CDN_BASE_URL, quote(upload_param), quote(filekey)
-        )
 
         # 6. 上传加密数据到 CDN
         try:
@@ -797,12 +1395,16 @@ class WeChatClient(ChannelAdapter):
                 "%s getuploadurl 请求字段: %s",
                 self._label, list(kwargs.keys()),
             )
+            payload = {**kwargs, "base_info": _build_base_info()}
             async with session.post(
-                GETUPLOADURL_URL,
+                self._bot_url("/ilink/bot/getuploadurl"),
                 headers=self._get_headers(),
-                json=kwargs,
+                json=payload,
             ) as resp:
                 text = await resp.text()
+                if resp.status != 200:
+                    logger.error("%s getuploadurl HTTP %s", self._label, resp.status)
+                    return None
                 try:
                     data = json.loads(text)
                 except json.JSONDecodeError:
@@ -925,6 +1527,95 @@ class WeChatClient(ChannelAdapter):
         """
         return bool(self._context_tokens.get(user_id, ""))
 
+    async def _cache_outbound_quote(
+        self, payload: dict[str, Any], response: dict[str, Any]
+    ) -> None:
+        """发送成功后按服务端 message_id 缓存出站正文/媒体类型。"""
+        server_message_id = str(
+            response.get("message_id", response.get("msg_id", ""))
+        )
+        if not server_message_id:
+            return
+        msg = payload.get("msg", {})
+        if not isinstance(msg, dict):
+            return
+        to_user_id = str(msg.get("to_user_id", ""))
+        if not to_user_id:
+            return
+        text_parts: list[str] = []
+        media_kind = ""
+        for item in msg.get("item_list", []) or []:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type == 1:
+                text_parts.append(
+                    str(item.get("text_item", {}).get("text", ""))
+                )
+            elif item_type == 2:
+                media_kind = "image"
+            elif item_type == 3:
+                media_kind = "voice"
+            elif item_type == 4:
+                media_kind = "file"
+                text_parts.append(
+                    str(item.get("file_item", {}).get("file_name", ""))
+                )
+            elif item_type == 5:
+                media_kind = "video"
+        body = "\n".join(part for part in text_parts if part).strip()
+        if not body and not media_kind:
+            return
+        await self._cache_quote_message(
+            {"from_user_id": to_user_id, "message_id": server_message_id},
+            text=body,
+            media_kind=media_kind,
+            role="assistant",
+        )
+
+    async def _send_message_payload(
+        self, payload: dict[str, Any], message_kind: str
+    ) -> bool:
+        """统一发送文本/图片/文件，并同时校验 HTTP 与平台 ret。"""
+        try:
+            session = await self._ensure_session()
+            async with session.post(
+                self._bot_url("/ilink/bot/sendmessage"),
+                headers=self._get_headers(),
+                json=payload,
+            ) as resp:
+                resp_text = await resp.text()
+                if resp.status != 200:
+                    self._last_send_error = "HTTP %s" % resp.status
+                    logger.error(
+                        "%s 发送%s失败: %s",
+                        self._label, message_kind, self._last_send_error,
+                    )
+                    return False
+                try:
+                    data = json.loads(resp_text)
+                except json.JSONDecodeError:
+                    self._last_send_error = "响应解析失败"
+                    logger.error("%s 发送%s响应解析失败", self._label, message_kind)
+                    return False
+                ret = data.get("ret", data.get("errcode", 0))
+                if ret != 0:
+                    self._last_send_error = str(
+                        data.get("msg") or data.get("errmsg") or f"ret={ret}"
+                    )
+                    logger.error(
+                        "%s 发送%s失败: %s",
+                        self._label, message_kind, self._last_send_error,
+                    )
+                    return False
+                self._last_send_error = ""
+                await self._cache_outbound_quote(payload, data)
+                return True
+        except Exception as e:
+            self._last_send_error = str(e)
+            logger.error("%s 发送%s异常: %s", self._label, message_kind, e)
+            return False
+
     async def send_text(self, to_user_id: str, text: str) -> bool:
         """发送文本消息，返回平台是否确认成功。
 
@@ -936,7 +1627,6 @@ class WeChatClient(ChannelAdapter):
             logger.info("%s 跳过空文本发送: to=%s", self._label, to_user_id)
             self._last_send_error = "空文本"
             return False
-        session = await self._ensure_session()
         payload: dict = {
             "msg": {
                 "from_user_id": "",
@@ -949,7 +1639,7 @@ class WeChatClient(ChannelAdapter):
                     {"type": 1, "text_item": {"text": text}}
                 ],
             },
-            "base_info": {"channel_version": "2.0.0"},
+            "base_info": _build_base_info(),
         }
 
         logger.info(
@@ -958,57 +1648,23 @@ class WeChatClient(ChannelAdapter):
             bool(self._get_context_token(to_user_id)),
         )
 
-        try:
-            async with session.post(
-                SENDMESSAGE_URL,
-                headers=self._get_headers(),
-                json=payload,
-            ) as resp:
-                resp_text = await resp.text()
-                try:
-                    data = json.loads(resp_text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s sendmessage 响应解析失败: %s",
-                        self._label, resp_text[:100],
-                    )
-                    self._last_send_error = "响应解析失败"
-                    return False
-                ret = data.get("ret", data.get("errcode"))
-                if ret is not None and ret != 0:
-                    self._last_send_error = str(
-                        data.get("msg")
-                        or data.get("errmsg")
-                        or f"ret={ret}"
-                    )
-                    logger.error(
-                        "%s 发送文本失败: %s",
-                        self._label,
-                        brief_json(data, ("ret", "errcode", "errmsg")),
-                    )
-                    return False
-                self._last_send_error = ""
-                logger.info(
-                    "%s 文本已发送给 %s", self._label, to_user_id
-                )
-                return True
-        except Exception as e:
-            self._last_send_error = str(e)
-            logger.error("%s 发送文本异常: %s", self._label, e)
-            return False
+        sent = await self._send_message_payload(payload, "文本")
+        if sent:
+            logger.info("%s 文本已发送给 %s", self._label, to_user_id)
+        return sent
 
-    async def send_image(self, to_user_id: str, image_data: bytes) -> None:
+    async def send_image(self, to_user_id: str, image_data: bytes) -> bool:
         """发送图片（官方 CDN 上传）。"""
         upload_result = await self._upload_cdn_media(
             image_data, to_user_id, "image"
         )
         if not upload_result:
-            raise RuntimeError("图片 CDN 上传失败")
+            self._last_send_error = "图片 CDN 上传失败"
+            return False
 
         cdn_media = upload_result["cdn_media"]
         cipher_size = upload_result["cipher_size"]
 
-        session = await self._ensure_session()
         payload: dict = {
             "msg": {
                 "from_user_id": "",
@@ -1027,52 +1683,28 @@ class WeChatClient(ChannelAdapter):
                     }
                 ],
             },
-            "base_info": {"channel_version": "2.0.0"},
+            "base_info": _build_base_info(),
         }
 
-        try:
-            async with session.post(
-                SENDMESSAGE_URL,
-                headers=self._get_headers(),
-                json=payload,
-            ) as resp:
-                resp_text = await resp.text()
-                try:
-                    data = json.loads(resp_text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s 图片 sendmessage 响应解析失败: %s",
-                        self._label, resp_text[:100],
-                    )
-                    return
-                ret = data.get("ret")
-                if ret is not None and ret != 0:
-                    logger.error(
-                        "%s 发送图片失败: %s",
-                        self._label,
-                        brief_json(data, ("ret", "errcode", "msg", "errmsg")),
-                    )
-                else:
-                    logger.info(
-                        "%s 图片已发送给 %s", self._label, to_user_id
-                    )
-        except Exception as e:
-            logger.error("%s 发送图片异常: %s", self._label, e)
+        sent = await self._send_message_payload(payload, "图片")
+        if sent:
+            logger.info("%s 图片已发送给 %s", self._label, to_user_id)
+        return sent
 
     async def send_file(
         self, to_user_id: str, file_data: bytes, file_name: str
-    ) -> None:
+    ) -> bool:
         """发送文件（官方 CDN 上传，用于 MP3 语音等场景）。"""
         upload_result = await self._upload_cdn_media(
             file_data, to_user_id, "file"
         )
         if not upload_result:
-            raise RuntimeError("文件 CDN 上传失败")
+            self._last_send_error = "文件 CDN 上传失败"
+            return False
 
         cdn_media = upload_result["cdn_media"]
         raw_size = upload_result["raw_size"]
 
-        session = await self._ensure_session()
         payload: dict = {
             "msg": {
                 "from_user_id": "",
@@ -1087,43 +1719,51 @@ class WeChatClient(ChannelAdapter):
                         "file_item": {
                             "media": cdn_media,
                             "file_name": file_name,
-                            "file_size": raw_size,
+                            "len": str(raw_size),
                         },
                     }
                 ],
             },
-            "base_info": {"channel_version": "2.0.0"},
+            "base_info": _build_base_info(),
         }
 
-        try:
-            async with session.post(
-                SENDMESSAGE_URL,
-                headers=self._get_headers(),
-                json=payload,
-            ) as resp:
-                resp_text = await resp.text()
-                try:
-                    data = json.loads(resp_text)
-                except json.JSONDecodeError:
-                    logger.error(
-                        "%s 文件 sendmessage 响应解析失败: %s",
-                        self._label, resp_text[:100],
-                    )
-                    return
-                ret = data.get("ret")
-                if ret is not None and ret != 0:
-                    logger.error(
-                        "%s 发送文件失败: %s",
-                        self._label,
-                        brief_json(data, ("ret", "errcode", "msg", "errmsg")),
-                    )
-                else:
-                    logger.info(
-                        "%s 文件已发送给 %s (%s)",
-                        self._label, to_user_id, file_name,
-                    )
-        except Exception as e:
-            logger.error("%s 发送文件异常: %s", self._label, e)
+        sent = await self._send_message_payload(payload, "文件")
+        if sent:
+            logger.info("%s 文件已发送给 %s (%s)", self._label, to_user_id, file_name)
+        return sent
+
+    async def send_video(self, to_user_id: str, video_data: bytes) -> bool:
+        """发送视频（type=5），发送前按官方 CDN 流程加密上传。"""
+        upload_result = await self._upload_cdn_media(
+            video_data, to_user_id, "video"
+        )
+        if not upload_result:
+            self._last_send_error = "视频 CDN 上传失败"
+            return False
+        cdn_media = upload_result["cdn_media"]
+        cipher_size = upload_result["cipher_size"]
+        payload: dict = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": "ec-%s" % uuid.uuid4().hex[:12],
+                "message_type": 2,
+                "message_state": 2,
+                "context_token": self._get_context_token(to_user_id),
+                "item_list": [{
+                    "type": 5,
+                    "video_item": {
+                        "media": cdn_media,
+                        "video_size": cipher_size,
+                    },
+                }],
+            },
+            "base_info": _build_base_info(),
+        }
+        sent = await self._send_message_payload(payload, "视频")
+        if sent:
+            logger.info("%s 视频已发送给 %s", self._label, to_user_id)
+        return sent
 
     # ── sendtyping 打字状态 ───────────────────────────
 
@@ -1134,9 +1774,9 @@ class WeChatClient(ChannelAdapter):
         try:
             session = await self._ensure_session()
             async with session.post(
-                GETCONFIG_URL,
+                self._bot_url("/ilink/bot/getconfig"),
                 headers=self._get_headers(),
-                json={"base_info": {"channel_version": "1.0.0"}},
+                json={"base_info": _build_base_info()},
             ) as resp:
                 text = await resp.text()
                 try:
@@ -1157,11 +1797,12 @@ class WeChatClient(ChannelAdapter):
             "typing_ticket": self._typing_ticket,
             "ilink_user_id": to_user_id,
             "status": status,
+            "base_info": _build_base_info(),
         }
         try:
             session = await self._ensure_session()
             async with session.post(
-                SENDTYPING_URL,
+                self._bot_url("/ilink/bot/sendtyping"),
                 headers=self._get_headers(),
                 json=payload,
             ):
@@ -1317,7 +1958,8 @@ class WeChatClient(ChannelAdapter):
                         "%s 图片保存到DB失败: %s", self._label, e
                     )
 
-            await self.send_image(to_user_id, img_bytes)
+            if not await self.send_image(to_user_id, img_bytes):
+                raise RuntimeError(self._last_send_error or "图片发送失败")
             logger.info(
                 "%s 图片已发送, prompt=%s", self._label, task.prompt[:40]
             )
@@ -1347,7 +1989,8 @@ class WeChatClient(ChannelAdapter):
                 )
                 return
 
-            await self.send_image(to_user_id, media_doc["data"])
+            if not await self.send_image(to_user_id, media_doc["data"]):
+                raise RuntimeError(self._last_send_error or "表情包发送失败")
             logger.info(
                 "%s 表情包已发送, desc=%s", self._label, task.description[:20]
             )
@@ -1417,7 +2060,8 @@ class WeChatClient(ChannelAdapter):
                 emotion_tag=voice_emotion_tag,
             )
 
-            await self.send_file(to_user_id, mp3_bytes, "voice_reply.mp3")
+            if not await self.send_file(to_user_id, mp3_bytes, "voice_reply.mp3"):
+                raise RuntimeError(self._last_send_error or "语音文件发送失败")
             logger.info("%s TTS 语音文件已发送", self._label)
 
         except Exception as e:
@@ -1478,6 +2122,7 @@ class WeChatBotManager:
             bot_id=cfg.id,
             bot_token=cfg.bot_token,
             on_token_update=self._on_token_update,
+            account_id=cfg.account_id,
         )
         task = asyncio.create_task(self._supervised_run(cfg.id, client))
         self._registry[cfg.id] = (cfg, client, task)
@@ -1601,6 +2246,7 @@ class WeChatBotManager:
         client = WeChatClient(
             bot_id=created.id,
             on_token_update=self._on_token_update,
+            account_id=account_id,
         )
         self._pending_clients[created.id] = client
         return client
@@ -1660,10 +2306,17 @@ class WeChatBotManager:
         )
 
     async def remove_bot(self, config_id: str) -> None:
-        """删除Bot。"""
+        """删除 Bot，并清理只属于该渠道的游标、引用缓存与登录状态。"""
         await self.cancel_bot_task(config_id)
         # 移除 pending
         self._pending_clients.pop(config_id, None)
+        from app.db.mongo import get_database
+        from app.db.repositories.wechat_quote_repo import (
+            WeChatQuoteCacheRepository,
+        )
+
+        await WeChatQuoteCacheRepository().delete_by_bot(config_id)
+        await get_database().wechat_sync_state.delete_one({"bot_id": config_id})
         await self._repo.delete(config_id)
         logger.info("[WeChatBotManager] Bot %s 已删除", config_id)
 

@@ -11,14 +11,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import collections
+import hashlib
 import json
 import logging
 import random
 import re
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import websockets
@@ -26,7 +28,7 @@ import websockets
 from app.bot_config import BotConfig, async_load_bots_config
 from app.utils.tasks import spawn
 from app.config import settings
-from app.conversation.engine import ConversationEngine
+from app.conversation.engine import ConversationEngine, StreamEvent
 from app.conversation.human_rhythm import pacing_delay_seconds
 from app.conversation.image_task import ImageTask
 from app.conversation.message_splitter import limit_messages
@@ -36,7 +38,7 @@ from app.conversation.sticker_task import (
     StickerTask,
 )
 from app.services.voice_window import voice_window
-from app.utils.redaction import brief_json, mask_secret
+from app.utils.redaction import mask_secret
 
 if TYPE_CHECKING:
     from app.services.asr_service import ASRService
@@ -46,10 +48,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# QQ Bot API URLs
+# QQ Bot API v2 官方基址：正式环境统一走 api.bot.qq.com，沙箱保持独立
+API_BASE_URL_PROD = "https://api.bot.qq.com"
+API_BASE_URL_SANDBOX = "https://sandbox.api.sgroup.qq.com"
 TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
-GATEWAY_URL_SANDBOX = "https://sandbox.api.sgroup.qq.com/gateway"
-GATEWAY_URL_PROD = "https://api.sgroup.qq.com/gateway"
+GATEWAY_URL_SANDBOX = f"{API_BASE_URL_SANDBOX}/gateway"
+GATEWAY_URL_PROD = f"{API_BASE_URL_PROD}/gateway"
 
 # WebSocket op codes
 OP_DISPATCH = 0
@@ -60,8 +64,18 @@ OP_INVALID_SESSION = 9
 OP_HELLO = 10
 OP_HEARTBEAT_ACK = 11
 
-# Intents
+# Intents：主动授权互动事件在独立的 INTERACTION 分组中
 INTENT_GROUP_AND_C2C = 1 << 25
+INTENT_INTERACTION = 1 << 26
+
+# 稳定限流信号：HTTP 429 或 QQ 稳定业务码；不得匹配可变的错误文案。
+# 50002 为流式消息限流；40034122 为互动召回周期上限（旧 code 过渡兼容）。
+RATE_LIMIT_ERROR_CODES = frozenset({"40034122", "50002"})
+
+# 富媒体阈值与上限（官方 SDK：超过 5MB 走分片，视频/文件硬上限 100MB）
+MEDIA_CHUNK_THRESHOLD = 5 * 1024 * 1024
+MEDIA_MAX_SIZE = 100 * 1024 * 1024
+MD5_10M_SIZE = 10_002_432
 
 # 匹配 QQ 内置表情标签的正则（真实格式：<faceType=1,faceId="269",ext="base64json">）
 _QQ_FACE_RE = re.compile(r'<faceType=\d+,faceId="\d+",ext="([^"]*)">')
@@ -76,6 +90,36 @@ def _decode_qq_face(match: re.Match[str]) -> str:
         return "[表情:%s]" % desc if desc else "[表情]"
     except Exception:
         return "[表情]"
+
+
+@dataclass(frozen=True)
+class QQResponseError:
+    """QQ HTTP、网络、JSON 或业务错误的统一安全描述。"""
+
+    status_code: int = 0
+    code: str = ""
+    message: str = ""
+    trace_id: str = ""
+    category: str = "http"
+
+    def describe(self) -> str:
+        """只组合白名单字段，不拼接完整响应体或鉴权信息。"""
+        parts: list[str] = []
+        if self.status_code:
+            parts.append(f"HTTP {self.status_code}")
+        if self.code:
+            parts.append(f"QQ错误 {self.code}")
+        if not parts:
+            parts.append({
+                "network": "网络错误",
+                "json": "JSON解析错误",
+                "business": "QQ业务错误",
+            }.get(self.category, "QQ请求错误"))
+        if self.message:
+            parts.append(self.message)
+        if self.trace_id:
+            parts.append(f"trace_id={self.trace_id}")
+        return ": ".join(parts)
 
 
 class QQWebSocketClient:
@@ -105,67 +149,173 @@ class QQWebSocketClient:
         self._rate_limited_openids: dict[str, datetime] = {}
         # 最近一次发送失败的详情（QQ 错误码/消息），供主动消息记录留痕
         self._last_send_error: str = ""
+        # 主动消息平台授权：(c2c/group, openid) → 明确允许/拒绝；缺省一律拒绝
+        self._proactive_authorizations: dict[tuple[str, str], bool] = {}
         # 多媒体服务（延迟导入，按需实例化）
         self._asr: ASRService | None = None
         self._vision = None
         self._tts: TTSService | None = None
         self._imagegen: ImageGenService | None = None
+        # 最近发送的平台消息，供两分钟撤回与互动反馈回查。
+        # 撤回必须按会话目标隔离，避免一个聊天里的 /recall 撤掉别人的消息。
+        self._last_sent_message_id: str = ""
+        self._recent_outbound: collections.OrderedDict[str, float] = (
+            collections.OrderedDict()
+        )
+        self._last_sent_by_target: dict[str, tuple[str, float]] = {}
+        # 全量群上下文单独去重，不能占用 @ 消息的回复去重键
+        self._processed_group_context_ids: collections.OrderedDict[str, float] = (
+            collections.OrderedDict()
+        )
+
+    @staticmethod
+    def _parse_response(
+        resp: httpx.Response,
+    ) -> tuple[dict[str, object], QQResponseError | None]:
+        """统一解析 HTTP 状态、JSON 及新旧 QQ 业务错误字段。"""
+        status_code = resp.status_code
+        if status_code == 204:
+            return {}, None
+        try:
+            raw_data = resp.json()
+        except (TypeError, ValueError):
+            error = QQResponseError(
+                status_code=status_code,
+                category="json" if 200 <= status_code < 300 else "http",
+                message="响应不是有效 JSON" if 200 <= status_code < 300 else "",
+            )
+            return {}, error
+        if not isinstance(raw_data, dict):
+            return {}, QQResponseError(
+                status_code=status_code,
+                category="json",
+                message="响应 JSON 不是对象",
+            )
+
+        data: dict[str, object] = raw_data
+        raw_code = data.get(
+            "err_code", data.get("code", data.get("errcode", ""))
+        )
+        code = "" if raw_code in (None, "", 0, "0") else str(raw_code)
+        raw_message = data.get("message") or data.get("errmsg") or ""
+        message = raw_message.strip() if isinstance(raw_message, str) else ""
+        raw_trace_id = data.get("trace_id", "")
+        trace_id = str(raw_trace_id).strip() if raw_trace_id else ""
+        if not 200 <= status_code < 300 or code:
+            return data, QQResponseError(
+                status_code=status_code,
+                code=code,
+                message=message,
+                trace_id=trace_id,
+                category="business" if code else "http",
+            )
+        return data, None
+
+    def _safe_error_detail(self, error: QQResponseError) -> str:
+        """脱敏并限制错误长度，避免令牌或完整鉴权响应进入日志。"""
+        detail = error.describe()
+        for secret in (self._access_token, self.bot_config.app_secret):
+            if secret:
+                detail = detail.replace(secret, "***")
+        detail = re.sub(
+            r"(?i)\b(QQBot|Bearer)\s+[^\s,;]+", r"\1 ***", detail
+        )
+        detail = re.sub(
+            r"(?i)(access_token|refresh_token|clientSecret|appSecret)"
+            r"(\"?\s*[:=]\s*\"?)[^\",;\s}]+",
+            r"\1\2***",
+            detail,
+        )
+        return detail[:300]
+
+    @property
+    def _api_base_url(self) -> str:
+        """按环境返回唯一 REST 基址，避免各发送路径硬编码漂移。"""
+        return (
+            API_BASE_URL_SANDBOX
+            if self.bot_config.sandbox_mode
+            else API_BASE_URL_PROD
+        )
 
     async def get_access_token(self) -> str:
-        """获取或刷新 access_token"""
+        """获取或刷新 access_token。"""
         now = time.time()
         if self._access_token and now < self._token_expires_at - 60:
             return self._access_token
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(TOKEN_URL, json={
-                "appId": self.bot_config.app_id,
-                "clientSecret": self.bot_config.app_secret,
-            })
-            data = resp.json()
-            # 该响应含 access_token 与 refresh_token，原文一律不许落日志：只记字段名，
-            # 有效期在下面的成功分支单独打印（同 app/utils/redaction.py 的写侧约定）
-            logger.info("%s Token 响应字段: %s", self._label, list(data.keys()))
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(TOKEN_URL, json={
+                    "appId": self.bot_config.app_id,
+                    "clientSecret": self.bot_config.app_secret,
+                })
+        except httpx.HTTPError as exc:
+            network_error = QQResponseError(category="network", message=str(exc))
+            raise RuntimeError(
+                f"{self._label} 获取 access_token 失败: "
+                f"{self._safe_error_detail(network_error)}"
+            ) from exc
 
-            if "access_token" not in data:
-                raise RuntimeError(
-                    f"{self._label} 获取 access_token 失败: "
-                    f"errcode={data.get('errcode')} errmsg={data.get('errmsg')}"
-                )
-
-            self._access_token = data["access_token"]
-            expires_in = int(data.get("expires_in", 7200))
-            self._token_expires_at = now + expires_in
-            logger.info(
-                "%s access_token 有效期 %d 秒",
-                self._label,
-                expires_in,
+        data, error = self._parse_response(resp)
+        # 该响应含 access_token 与 refresh_token，原文一律不许落日志：只记字段名
+        logger.info("%s Token 响应字段: %s", self._label, list(data.keys()))
+        if error is not None:
+            raise RuntimeError(
+                f"{self._label} 获取 access_token 失败: "
+                f"{self._safe_error_detail(error)}"
             )
-            return self._access_token
+        access_token = data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise RuntimeError(f"{self._label} 获取 access_token 失败: 响应缺少令牌")
+
+        self._access_token = access_token
+        raw_expires_in = data.get("expires_in", 7200)
+        try:
+            expires_in = (
+                int(raw_expires_in)
+                if isinstance(raw_expires_in, (str, int, float))
+                else 7200
+            )
+        except ValueError:
+            expires_in = 7200
+        self._token_expires_at = now + expires_in
+        logger.info(
+            "%s access_token 有效期 %d 秒",
+            self._label,
+            expires_in,
+        )
+        return self._access_token
 
     async def get_gateway_url(self) -> str:
-        """获取 WebSocket 网关地址"""
+        """获取 WebSocket 网关地址。"""
         token = await self.get_access_token()
         gateway_url = (
             GATEWAY_URL_SANDBOX
             if self.bot_config.sandbox_mode
             else GATEWAY_URL_PROD
         )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(gateway_url, headers={
+                    "Authorization": f"QQBot {token}",
+                })
+        except httpx.HTTPError as exc:
+            network_error = QQResponseError(category="network", message=str(exc))
+            raise RuntimeError(
+                f"{self._label} 获取网关地址失败: "
+                f"{self._safe_error_detail(network_error)}"
+            ) from exc
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(gateway_url, headers={
-                "Authorization": f"QQBot {token}",
-            })
-            data = resp.json()
-
-            ws_url = data.get("url", "")
-            if not ws_url:
-                raise RuntimeError(
-                    f"{self._label} 获取网关地址失败: "
-                    f"{data}"
-                )
-
-            return ws_url
+        data, error = self._parse_response(resp)
+        if error is not None:
+            raise RuntimeError(
+                f"{self._label} 获取网关地址失败: "
+                f"{self._safe_error_detail(error)}"
+            )
+        ws_url = data.get("url", "")
+        if not isinstance(ws_url, str) or not ws_url:
+            raise RuntimeError(f"{self._label} 获取网关地址失败: 响应缺少 url")
+        return ws_url
 
     async def _send_identify(self):
         """发送鉴权信息"""
@@ -174,7 +324,7 @@ class QQWebSocketClient:
             "op": OP_IDENTIFY,
             "d": {
                 "token": f"QQBot {token}",
-                "intents": INTENT_GROUP_AND_C2C,
+                "intents": INTENT_GROUP_AND_C2C | INTENT_INTERACTION,
                 "shard": [0, 1],
             },
         }
@@ -214,6 +364,18 @@ class QQWebSocketClient:
             await self._handle_message_event(
                 event_type, event_data
             )
+        elif event_type in (
+            "C2C_MSG_RECEIVE",
+            "C2C_MSG_REJECT",
+            "GROUP_MSG_RECEIVE",
+            "GROUP_MSG_REJECT",
+        ):
+            await self._handle_proactive_switch_event(event_type, event_data)
+        elif event_type == "GROUP_MESSAGE_CREATE":
+            if settings.qq_full_group_context_enabled:
+                await self._handle_group_context_event(event_data)
+        elif event_type == "INTERACTION_CREATE":
+            await self._handle_interaction_event(event_data)
         elif event_type == "READY":
             bot_name = event_data.get("user", {}).get(
                 "username", "unknown"
@@ -226,6 +388,268 @@ class QQWebSocketClient:
             )
         elif event_type == "RESUMED":
             logger.info("%s 连接已恢复", self._label)
+
+    async def _store_proactive_authorization(
+        self,
+        target_type: str,
+        target_id: str,
+        allowed: bool,
+        event_type: str,
+    ) -> None:
+        """缓存并持久化平台授权；数据库异常不改变平台刚刚下发的事实。"""
+        if not target_id:
+            logger.warning("%s 忽略缺少 openid 的授权事件: %s", self._label, event_type)
+            return
+        self._proactive_authorizations[(target_type, target_id)] = allowed
+        try:
+            from app.db.repositories.qq_proactive_auth_repo import (
+                QQProactiveAuthRepository,
+            )
+
+            await QQProactiveAuthRepository().upsert(
+                bot_id=self.bot_config.id,
+                target_type=target_type,
+                target_id=target_id,
+                allowed=allowed,
+                event_type=event_type,
+            )
+        except Exception as exc:
+            logger.error(
+                "%s 主动消息授权持久化失败: type=%s allowed=%s error=%s",
+                self._label, target_type, allowed, exc,
+            )
+        logger.info(
+            "%s 主动消息授权更新: type=%s allowed=%s",
+            self._label, target_type, allowed,
+        )
+
+    async def _restore_proactive_authorizations(self) -> None:
+        """启动时恢复该 Bot 的 C2C/群授权，未知目标仍保持拒绝。"""
+        from app.db.repositories.qq_proactive_auth_repo import (
+            QQProactiveAuthRepository,
+        )
+
+        docs = await QQProactiveAuthRepository().list_by_bot(self.bot_config.id)
+        restored: dict[tuple[str, str], bool] = {}
+        for doc in docs:
+            target_type = doc.get("target_type")
+            target_id = doc.get("target_id")
+            allowed = doc.get("allowed")
+            if (
+                target_type in ("c2c", "group")
+                and isinstance(target_id, str)
+                and target_id
+                and isinstance(allowed, bool)
+            ):
+                restored[(target_type, target_id)] = allowed
+        self._proactive_authorizations = restored
+        logger.info("%s 已恢复 %d 条主动消息授权", self._label, len(restored))
+
+    async def _handle_proactive_switch_event(
+        self, event_type: str, data: dict
+    ) -> None:
+        """处理资料页主动消息开关的官方 RECEIVE/REJECT 事件。"""
+        is_group = event_type.startswith("GROUP_")
+        target_type = "group" if is_group else "c2c"
+        target_id = data.get("group_openid" if is_group else "openid", "")
+        await self._store_proactive_authorization(
+            target_type=target_type,
+            target_id=target_id if isinstance(target_id, str) else "",
+            allowed=event_type.endswith("_RECEIVE"),
+            event_type=event_type,
+        )
+
+    async def _handle_interaction_event(self, data: dict) -> None:
+        """按互动类型分发主动授权、按钮指令与 LIKE/UNLIKE 反馈。"""
+        interaction_type = data.get("type", 0)
+        nested = data.get("data", {})
+        if not isinstance(nested, dict):
+            nested = {}
+        resolved = nested.get("resolved", {})
+        if not isinstance(resolved, dict):
+            resolved = {}
+
+        if interaction_type in (18, "18", 19, "19"):
+            await self._handle_interaction_authorization(data, resolved)
+            return
+
+        interaction_id = str(data.get("id", ""))
+        if interaction_type in (11, "11", 12, "12"):
+            # 按钮/菜单类互动必须回执，否则客户端一直转圈。
+            if interaction_id:
+                await self._ack_interaction(interaction_id)
+            button_data = str(resolved.get("button_data", "")).strip()
+            if button_data.startswith("/"):
+                await self._run_interaction_command(data, button_data)
+            return
+
+        feedback_opt = str(
+            resolved.get("feedback_opt", nested.get("feedback_opt", ""))
+        ).upper()
+        if feedback_opt in ("LIKE", "UNLIKE"):
+            await self._record_interaction_feedback(data, resolved, feedback_opt)
+
+    async def _handle_interaction_authorization(
+        self, data: dict, resolved: dict
+    ) -> None:
+        """处理 INTERACTION_CREATE 的 type=18/19 主动消息授权事件。"""
+        interaction_type = data.get("type", 0)
+        authorize_data = resolved.get("authorize_data", {})
+        if not isinstance(authorize_data, dict):
+            authorize_data = {}
+        scope = authorize_data.get("scope", "")
+        if interaction_type in (18, "18") and scope in ("", "c2c_push"):
+            target_type = "c2c"
+            target_id = data.get("user_openid", "")
+        elif interaction_type in (19, "19") and scope in ("", "group_push"):
+            target_type = "group"
+            target_id = data.get("group_openid", "")
+        else:
+            return
+        await self._store_proactive_authorization(
+            target_type=target_type,
+            target_id=target_id if isinstance(target_id, str) else "",
+            allowed=True,
+            event_type=f"INTERACTION_CREATE:{interaction_type}",
+        )
+
+    async def _ack_interaction(self, interaction_id: str) -> None:
+        """按钮类互动回执；失败只告警，不影响消息主链路。"""
+        try:
+            token = await self.get_access_token()
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.put(
+                    f"{self._api_base_url}/interactions/{interaction_id}",
+                    json={"code": 0},
+                    headers={"Authorization": f"QQBot {token}"},
+                )
+            _data, error = self._parse_response(resp)
+            if error is not None:
+                logger.warning(
+                    "%s 互动回执失败: %s",
+                    self._label, self._safe_error_detail(error),
+                )
+        except Exception as exc:
+            logger.warning("%s 互动回执异常: %s", self._label, exc)
+
+    async def _run_interaction_command(self, data: dict, command: str) -> None:
+        """执行键盘按钮命令；普通文本聊天仍需回调消息事件。"""
+        user_id = str(data.get("user_openid", ""))
+        group_id = str(data.get("group_openid", ""))
+        is_group = bool(group_id)
+        if not user_id and is_group:
+            user_id = str(data.get("group_member_openid", ""))
+        if not user_id:
+            return
+        response = self._handle_command(command)
+        await self._send_reply(
+            user_id,
+            response,
+            "",
+            is_group,
+            group_id,
+            conversation_id="",
+            attach_keyboard=command.lower() in ("/help", "/帮助", "/menu", "/菜单"),
+        )
+
+    async def _record_interaction_feedback(
+        self, data: dict, resolved: dict, feedback_opt: str
+    ) -> None:
+        """把平台 LIKE/UNLIKE 幂等写入现有离线克隆评审队列。"""
+        event_id = str(data.get("id", ""))
+        platform_message_id = str(
+            resolved.get("message_id", data.get("message_id", ""))
+        )
+        if not event_id or not platform_message_id:
+            logger.warning("%s 反馈事件缺少 event_id 或 message_id", self._label)
+            return
+        try:
+            from app.db.mongo import get_database
+
+            binding = await get_database().qq_message_bindings.find_one({
+                "bot_id": self.bot_config.id,
+                "platform_message_id": platform_message_id,
+            })
+            if not binding:
+                logger.warning(
+                    "%s 反馈消息未找到会话映射: %s",
+                    self._label, platform_message_id,
+                )
+                return
+            conversation_id = str(binding.get("conversation_id", ""))
+            if not conversation_id:
+                return
+            from app.db.repositories.clone_repo import CloneFeedbackRepository
+            from app.db.repositories.conversation_repo import ConversationRepository
+            from app.db.repositories.message_repo import MessageRepository
+            from app.db.repositories.profile_repo import ProfileRepository
+            from app.db.repositories.service_repo import ServiceRepository
+            from app.models.clone import CloneFeedbackInDB
+
+            conversation = await ConversationRepository().find_by_id(conversation_id)
+            if conversation is None:
+                return
+            service = await ServiceRepository().find_by_id(conversation.service_id)
+            if service is None:
+                return
+            profile = await ProfileRepository().find_by_id(service.profile_id)
+            recent = await MessageRepository().get_recent(conversation_id, 10)
+            assistant = next(
+                (m for m in reversed(recent) if m.role == "assistant"), None
+            )
+            if assistant is None or profile is None:
+                return
+            feedback = CloneFeedbackInDB(
+                account_id=service.account_id,
+                service_id=service.id,
+                conversation_id=conversation_id,
+                message_id=assistant.id,
+                profile_id=profile.id,
+                clone_version=getattr(profile, "clone_version", 0),
+                rating="like" if feedback_opt == "LIKE" else "dislike",
+                source="qq",
+                platform_event_id=f"{self.bot_config.id}:{event_id}",
+                platform_message_id=platform_message_id,
+            )
+            await CloneFeedbackRepository().upsert_platform_event(feedback)
+            logger.info(
+                "%s 原生反馈已入库: %s message=%s",
+                self._label, feedback_opt, platform_message_id,
+            )
+        except Exception as exc:
+            logger.error("%s 原生反馈写入失败: %s", self._label, exc)
+
+    async def _handle_group_context_event(self, data: dict) -> None:
+        """全量群消息仅补充上下文，默认不回复、不触发 LLM。"""
+        msg_id = str(data.get("id", ""))
+        content = str(data.get("content", ""))
+        if not content.strip() or "<@!" in content:
+            # 带 @ 的消息由 GROUP_AT_MESSAGE_CREATE 处理，避免同一句入历史两次
+            return
+        if msg_id:
+            if msg_id in self._processed_group_context_ids:
+                return
+            self._processed_group_context_ids[msg_id] = time.time()
+            while len(self._processed_group_context_ids) > self._dedup_max_size:
+                self._processed_group_context_ids.popitem(last=False)
+        author = data.get("author", {})
+        if author.get("bot"):
+            return
+        user_id = str(
+            author.get("member_openid", author.get("user_openid", ""))
+        )
+        content = _QQ_FACE_RE.sub(_decode_qq_face, content).strip()
+        if not user_id or not content:
+            return
+        try:
+            await self.engine.record_context_message(
+                platform="qq",
+                platform_id=user_id,
+                text=content,
+                nickname=str(author.get("username", "QQ身份")),
+            )
+        except Exception as exc:
+            logger.warning("%s 群上下文写入失败: %s", self._label, exc)
 
     async def _handle_message_event(
         self, event_type: str, data: dict
@@ -338,12 +762,54 @@ class QQWebSocketClient:
 
         # 在分支前初始化 result，确保所有路径下变量已定义
         result = None
+        is_command = content.startswith("/") or content.startswith("\uff0f")
+        command = content.replace("\uff0f", "/").split(maxsplit=1)[0].lower()
 
-        if content.startswith("/") or content.startswith("\uff0f"):
-            response_text = self._handle_command(content)
+        if is_command:
+            if command in ("/recall", "/撤回"):
+                recalled = await self.recall_last_message(
+                    user_id, is_group=is_group, group_id=group_id
+                )
+                response_text = (
+                    "已撤回最近一条消息。"
+                    if recalled
+                    else "没有可撤回的消息，或已超过两分钟。"
+                )
+            else:
+                response_text = self._handle_command(content)
             image_tasks: list[ImageTask] = []
             conv_id = ""
         else:
+            user_sent_voice = bool(voice_wav_url or voice_asr_text)
+            if not is_group:
+                spawn(self._send_input_notify(user_id, msg_id))
+            use_stream = (
+                settings.qq_stream_enabled
+                and not is_group
+                and not user_sent_voice
+            )
+            if use_stream and settings.tts_enabled:
+                # 仅当该会话确实处于语音动态窗口时才放弃流式，避免整类
+                # “开启 TTS 的部署”永久用不上 C2C 流式。
+                conversation_hint = await self._latest_conversation_id(user_id)
+                if (
+                    conversation_hint
+                    and voice_window.is_active(conversation_hint)
+                ):
+                    use_stream = False
+            if use_stream:
+                await self._handle_stream_turn(
+                    user_id=user_id,
+                    content=content,
+                    nickname=nickname,
+                    msg_id=msg_id,
+                    local_media_url=local_media_url or "",
+                    content_type=(
+                        "voice" if user_sent_voice
+                        else ("image" if image_url else "text")
+                    ),
+                )
+                return
             try:
                 result = await self.engine.handle_message(
                     platform="qq",
@@ -418,7 +884,19 @@ class QQWebSocketClient:
                     # min(len*per_char, max_delay) 逐字等价，开启 human 档才叠启动/昼夜
                     await asyncio.sleep(pacing_delay_seconds(text, settings))
                 await self._send_reply(
-                    user_id, text, msg_id, is_group, group_id
+                    user_id,
+                    text,
+                    msg_id,
+                    is_group,
+                    group_id,
+                    use_markdown=settings.qq_markdown_enabled,
+                    attach_keyboard=(
+                        settings.qq_keyboard_enabled
+                        and is_command
+                        and command in ("/help", "/帮助", "/menu", "/菜单")
+                        and i == len(texts) - 1
+                    ),
+                    conversation_id=conv_id,
                 )
 
         # 异步发送图片（fire-and-forget）
@@ -457,19 +935,393 @@ class QQWebSocketClient:
         cmd = content.replace("\uff0f", "/").strip()
         command = cmd.split(maxsplit=1)[0].lower()
 
-        if command in ("/help", "/帮助"):
+        if command in ("/help", "/帮助", "/menu", "/菜单"):
             return (
                 "爱易聊 使用帮助\n"
                 "━━━━━━━━━━\n"
-                "/help - 显示此帮助信息\n"
+                "/help - 显示帮助与快捷指令\n"
+                "/status - 查看当前对话状态\n"
+                "/recall - 撤回两分钟内最近一条消息\n"
                 "━━━━━━━━━━\n"
                 "直接发送文字即可开始对话"
             )
+
+        if command == "/status":
+            return "当前对话服务正常，直接发送消息即可继续。"
+
+        if command in ("/recall", "/撤回"):
+            return "正在尝试撤回最近一条消息。"
 
         return (
             f"未知指令：{command}\n"
             "发送 /help 查看帮助"
         )
+
+    async def _send_input_notify(self, user_id: str, msg_id: str) -> None:
+        """发送 C2C 原生输入状态；失败不阻塞本轮回复。"""
+        try:
+            token = await self.get_access_token()
+            self._msg_seq += 1
+            payload: dict[str, Any] = {
+                "msg_type": 6,
+                "input_notify": {"input_type": 1, "input_second": 60},
+                "msg_seq": self._msg_seq,
+            }
+            if msg_id:
+                payload["msg_id"] = msg_id
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{self._api_base_url}/v2/users/{user_id}/messages",
+                    json=payload,
+                    headers={"Authorization": f"QQBot {token}"},
+                )
+            _data, error = self._parse_response(resp)
+            if error is not None:
+                logger.debug(
+                    "%s 输入状态发送失败: %s",
+                    self._label, self._safe_error_detail(error),
+                )
+        except Exception as exc:
+            logger.debug("%s 输入状态异常: %s", self._label, exc)
+
+    @staticmethod
+    def _target_key(user_id: str, is_group: bool, group_id: str) -> str:
+        """撤回记录按会话目标隔离，群聊与私聊互不影响。"""
+        return f"group:{group_id}" if is_group and group_id else f"user:{user_id}"
+
+    def _remember_outbound(
+        self,
+        message_id: str,
+        user_id: str,
+        is_group: bool,
+        group_id: str,
+    ) -> None:
+        """记录最近一条已发送消息及其会话目标。"""
+        if not message_id:
+            return
+        now = time.time()
+        self._last_sent_message_id = message_id
+        self._recent_outbound[message_id] = now
+        self._last_sent_by_target[
+            self._target_key(user_id, is_group, group_id)
+        ] = (message_id, now)
+        while len(self._recent_outbound) > 100:
+            self._recent_outbound.popitem(last=False)
+
+    async def recall_last_message(
+        self,
+        user_id: str,
+        is_group: bool = False,
+        group_id: str = "",
+        max_age_seconds: int = 120,
+    ) -> bool:
+        """撤回当前会话最近一条消息；超过两分钟边界直接拒绝。"""
+        target_key = self._target_key(user_id, is_group, group_id)
+        message_id, sent_at = self._last_sent_by_target.get(
+            target_key, ("", 0.0)
+        )
+        if not message_id or not sent_at:
+            return False
+        if time.time() - sent_at > max_age_seconds:
+            self._last_sent_by_target.pop(target_key, None)
+            self._recent_outbound.pop(message_id, None)
+            return False
+        target_id = group_id if is_group and group_id else user_id
+        scope = "groups" if is_group and group_id else "users"
+        try:
+            token = await self.get_access_token()
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.delete(
+                    f"{self._api_base_url}/v2/{scope}/{target_id}/messages/{message_id}",
+                    headers={"Authorization": f"QQBot {token}"},
+                )
+            _data, error = self._parse_response(resp)
+            if error is not None:
+                logger.warning(
+                    "%s 撤回失败: %s",
+                    self._label, self._safe_error_detail(error),
+                )
+                return False
+            self._recent_outbound.pop(message_id, None)
+            self._last_sent_by_target.pop(target_key, None)
+            if self._last_sent_message_id == message_id:
+                self._last_sent_message_id = ""
+            logger.info("%s 消息已撤回: %s", self._label, message_id)
+            return True
+        except Exception as exc:
+            logger.warning("%s 撤回异常: %s", self._label, exc)
+            return False
+
+    async def _send_stream_frame(
+        self,
+        user_id: str,
+        msg_id: str,
+        event_id: str,
+        msg_seq: int,
+        index: int,
+        content: str,
+        input_state: int,
+        stream_msg_id: str = "",
+    ) -> tuple[int, str] | None:
+        """发送一次流式替换帧；限流按官方建议退避重试。"""
+        token = await self.get_access_token()
+        current_index = index
+        for attempt in range(3):
+            payload: dict[str, Any] = {
+                "input_mode": "replace",
+                "input_state": input_state,
+                "content_type": "markdown",
+                "content_raw": content,
+                "event_id": event_id,
+                "msg_id": msg_id,
+                "msg_seq": msg_seq,
+                "index": current_index,
+            }
+            if stream_msg_id:
+                payload["stream_msg_id"] = stream_msg_id
+            try:
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    resp = await client.post(
+                        f"{self._api_base_url}/v2/users/{user_id}/stream_messages",
+                        json=payload,
+                        headers={"Authorization": f"QQBot {token}"},
+                    )
+            except Exception as exc:
+                logger.warning("%s 流式帧网络异常: %s", self._label, exc)
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    current_index += 1
+                    continue
+                return None
+            data, error = self._parse_response(resp)
+            if error is not None:
+                if (
+                    resp.status_code == 429
+                    or error.code in RATE_LIMIT_ERROR_CODES
+                ) and attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    current_index += 1
+                    continue
+                logger.warning(
+                    "%s 流式帧失败: %s",
+                    self._label, self._safe_error_detail(error),
+                )
+                return None
+            new_stream_id = str(data.get("id", "")) or stream_msg_id
+            return current_index + 1, new_stream_id
+        return None
+
+    async def _send_stream_media(
+        self, user_id: str, event: StreamEvent
+    ) -> None:
+        """流式收尾产生的图片/表情包沿用普通富媒体发送链路。"""
+        if event.media_kind not in ("image", "sticker") or not event.media_url:
+            logger.debug("%s 流式媒体暂不发送: %s", self._label, event.media_kind)
+            return
+        try:
+            from app.db.repositories.media_repo import MediaRepository
+
+            media_id = event.media_url.rsplit("/", 1)[-1]
+            doc = await MediaRepository().find_by_id(media_id)
+            if not doc or not doc.get("data"):
+                return
+            await self._send_media_reply(
+                user_id,
+                doc["data"],
+                file_type=1,
+                msg_id="",
+                is_group=False,
+                group_id="",
+            )
+        except Exception as exc:
+            logger.warning("%s 流式媒体发送失败: %s", self._label, exc)
+
+    async def _handle_stream_turn(
+        self,
+        user_id: str,
+        content: str,
+        nickname: str,
+        msg_id: str,
+        local_media_url: str,
+        content_type: str,
+    ) -> None:
+        """消费引擎流并把全量文本替换帧推给 QQ；失败后仅降级发送，不重跑引擎。"""
+        current = ""
+        stream_msg_id = ""
+        msg_seq = self._msg_seq = (self._msg_seq + 1) % 65536
+        index = 0
+        last_flush = 0.0
+        stream_available = True
+        try:
+            async for event in self.engine.handle_message_stream(
+                platform="qq",
+                platform_id=user_id,
+                text=content,
+                nickname=nickname,
+                content_type=content_type,
+                media_url=local_media_url,
+            ):
+                if isinstance(event, StreamEvent):
+                    if event.kind == "reset":
+                        current = ""
+                        continue
+                    if event.kind == "media":
+                        await self._send_stream_media(user_id, event)
+                        continue
+                    delta = event.text
+                else:
+                    delta = str(event)
+                current += delta
+                now = time.monotonic()
+                if stream_available and current.strip() and now - last_flush >= 0.5:
+                    frame = await self._send_stream_frame(
+                        user_id, msg_id, msg_id, msg_seq, index,
+                        current, 1, stream_msg_id,
+                    )
+                    if frame is None:
+                        stream_available = False
+                    else:
+                        index, stream_msg_id = frame
+                        last_flush = now
+        except asyncio.CancelledError:
+            # 停止 Bot 时尽量把平台气泡收尾，避免客户端一直显示“生成中”。
+            if stream_available and current.strip():
+                await asyncio.shield(self._send_stream_frame(
+                    user_id, msg_id, msg_id, msg_seq, index,
+                    current, 10, stream_msg_id,
+                ))
+            raise
+        except Exception as exc:
+            logger.error("%s 流式引擎异常: %s", self._label, exc)
+
+        if not current.strip():
+            if not stream_available:
+                await self._send_reply(
+                    user_id, "网络有点开小差了，你可以再发一次吗？",
+                    msg_id, False, "",
+                )
+            return
+        if stream_available:
+            frame = await self._send_stream_frame(
+                user_id, msg_id, msg_id, msg_seq, index,
+                current, 10, stream_msg_id,
+            )
+            if frame is not None:
+                self._remember_outbound(frame[1], user_id, False, "")
+                if frame[1]:
+                    conversation_id = await self._latest_conversation_id(user_id)
+                    await self._record_outbound_binding(
+                        frame[1], conversation_id, user_id, False, ""
+                    )
+                return
+        await self._send_reply(
+            user_id,
+            current,
+            msg_id,
+            False,
+            "",
+            use_markdown=settings.qq_markdown_enabled,
+        )
+
+    @staticmethod
+    def _help_keyboard() -> dict[str, Any]:
+        """构造帮助/指令键盘；平台未授权时由调用方降级为普通文本。"""
+        return {
+            "content": {
+                "rows": [{
+                    "buttons": [
+                        {
+                            "id": "help",
+                            "render_data": {
+                                "label": "使用帮助",
+                                "visited_label": "已打开帮助",
+                                "style": 1,
+                            },
+                            "action": {
+                                "type": 2,
+                                "permission": {"type": 2},
+                                "data": "/help",
+                            },
+                        },
+                        {
+                            "id": "status",
+                            "render_data": {
+                                "label": "当前状态",
+                                "visited_label": "状态已发送",
+                                "style": 0,
+                            },
+                            "action": {
+                                "type": 2,
+                                "permission": {"type": 2},
+                                "data": "/status",
+                            },
+                        },
+                    ]
+                }]
+            }
+        }
+
+    async def _latest_conversation_id(self, user_id: str) -> str:
+        """流式接口不返回会话 ID，按身份与服务反查最近会话供反馈映射。"""
+        try:
+            from app.db.repositories.conversation_repo import (
+                ConversationRepository,
+            )
+            from app.db.repositories.identity_repo import IdentityRepository
+            from app.db.repositories.service_repo import ServiceRepository
+
+            identity = await IdentityRepository().find_by_platform(
+                "qq", user_id
+            )
+            if identity is None:
+                return ""
+            service = await ServiceRepository().find_by_identity_and_bot(
+                identity.id, self.bot_config.id
+            )
+            if service is None:
+                return ""
+            conversation = await ConversationRepository().find_latest_by_service(
+                service.id
+            )
+            return conversation.id if conversation is not None else ""
+        except Exception as exc:
+            logger.debug("%s 流式会话映射查询失败: %s", self._label, exc)
+            return ""
+
+    async def _record_outbound_binding(
+        self,
+        platform_message_id: str,
+        conversation_id: str,
+        user_id: str,
+        is_group: bool,
+        group_id: str,
+    ) -> None:
+        """保存平台消息到内部会话的映射，供 LIKE/UNLIKE 精确回查。"""
+        if not platform_message_id or not conversation_id:
+            return
+        try:
+            from app.db.mongo import get_database
+
+            now = datetime.now(timezone.utc)
+            await get_database().qq_message_bindings.update_one(
+                {
+                    "bot_id": self.bot_config.id,
+                    "platform_message_id": platform_message_id,
+                },
+                {
+                    "$set": {
+                        "conversation_id": conversation_id,
+                        "user_openid": user_id,
+                        "group_openid": group_id if is_group else "",
+                        "is_group": is_group,
+                        "updated_at": now,
+                    },
+                    "$setOnInsert": {"created_at": now},
+                },
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.warning("%s 消息映射保存失败: %s", self._label, exc)
 
     async def _send_reply(
         self,
@@ -479,14 +1331,11 @@ class QQWebSocketClient:
         is_group: bool,
         group_id: str,
         is_wakeup: bool = False,
-    ):
-        """
-        通过 REST API 发送回复消息。
-
-        Args:
-            is_wakeup: 是否使用互动召回能力（与 msg_id 互斥）。
-                       设置为 True 时不传 msg_id，用于主动触达身份。
-        """
+        use_markdown: bool = False,
+        attach_keyboard: bool = False,
+        conversation_id: str = "",
+    ) -> bool:
+        """通过 REST API 发送回复；Markdown/键盘失败自动降级普通文本。"""
         if not content.strip():
             # 最后一道闸：空 content 平台直接 400（40034030），失败只落日志等于已读不回
             logger.warning("%s 拒绝发送空内容: user=%s", self._label, user_id)
@@ -497,25 +1346,20 @@ class QQWebSocketClient:
                 "Authorization": f"QQBot {token}",
                 "Content-Type": "application/json",
             }
-
-            base = (
-                "https://sandbox.api.sgroup.qq.com"
-                if self.bot_config.sandbox_mode
-                else "https://api.sgroup.qq.com"
-            )
-
             if is_group and group_id:
-                url = f"{base}/v2/groups/{group_id}/messages"
+                url = f"{self._api_base_url}/v2/groups/{group_id}/messages"
             else:
                 # `/v2/users/` 是 QQ 官方路径字面量，非本项目命名，禁止改名
-                url = f"{base}/v2/users/{user_id}/messages"
+                url = f"{self._api_base_url}/v2/users/{user_id}/messages"
 
             self._msg_seq += 1
-            payload = {
-                "content": content,
-                "msg_type": 0,
-                "msg_seq": self._msg_seq,
-            }
+            payload: dict[str, Any] = {"msg_seq": self._msg_seq}
+            if use_markdown:
+                payload.update({"markdown": {"content": content}, "msg_type": 2})
+            else:
+                payload.update({"content": content, "msg_type": 0})
+            if attach_keyboard and settings.qq_keyboard_enabled:
+                payload["keyboard"] = self._help_keyboard()
             # 互动召回与 msg_id 互斥：is_wakeup 优先
             if is_wakeup:
                 payload["is_wakeup"] = True
@@ -523,72 +1367,97 @@ class QQWebSocketClient:
                 payload["msg_id"] = msg_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    url, json=payload, headers=headers
-                )
-                if resp.status_code in (200, 201, 204):
-                    self._last_send_error = ""
-                    logger.info(
-                        "%s 消息发送成功 -> %s (wakeup=%s)",
-                        self._label,
+                resp = await client.post(url, json=payload, headers=headers)
+            data, error = self._parse_response(resp)
+            if error is None:
+                self._last_send_error = ""
+                response_id = str(data.get("id", ""))
+                if response_id:
+                    self._remember_outbound(
+                        response_id, user_id, is_group, group_id
+                    )
+                    await self._record_outbound_binding(
+                        response_id,
+                        conversation_id,
                         user_id,
-                        is_wakeup,
+                        is_group,
+                        group_id,
                     )
-                    return True
-                else:
-                    logger.error(
-                        "%s 消息发送失败: %d %s",
-                        self._label,
-                        resp.status_code,
-                        resp.text,
+                logger.info(
+                    "%s 消息发送成功 -> %s (wakeup=%s, markdown=%s, keyboard=%s)",
+                    self._label, user_id, is_wakeup, use_markdown,
+                    attach_keyboard and settings.qq_keyboard_enabled,
+                )
+                return True
+
+            self._last_send_error = self._safe_error_detail(error)
+            logger.error("%s 消息发送失败: %s", self._label, self._last_send_error)
+            rate_limit_id = group_id if is_group and group_id else user_id
+            self._check_rate_limit_error(resp, rate_limit_id, error)
+            if use_markdown or (attach_keyboard and settings.qq_keyboard_enabled):
+                logger.warning("%s Markdown/键盘不可用，降级普通文本", self._label)
+                return await self._send_reply(
+                    user_id=user_id,
+                    content=content,
+                    msg_id=msg_id,
+                    is_group=is_group,
+                    group_id=group_id,
+                    is_wakeup=is_wakeup,
+                    use_markdown=False,
+                    attach_keyboard=False,
+                    conversation_id=conversation_id,
+                )
+            return False
+        except Exception as exc:
+            error = QQResponseError(category="network", message=str(exc))
+            self._last_send_error = self._safe_error_detail(error)
+            logger.error("%s 发送消息异常: %s", self._label, self._last_send_error)
+            if use_markdown or attach_keyboard:
+                try:
+                    return await self._send_reply(
+                        user_id=user_id,
+                        content=content,
+                        msg_id=msg_id,
+                        is_group=is_group,
+                        group_id=group_id,
+                        is_wakeup=is_wakeup,
+                        conversation_id=conversation_id,
                     )
-                    # 保留平台真实错误码/消息，供主动消息失败记录诊断
-                    self._last_send_error = self._describe_send_error(resp)
-                    # 检测限流错误码，记录退避
-                    self._check_rate_limit_error(resp, user_id)
-                    return False
-        except Exception as e:
-            logger.error(
-                "%s 发送消息异常: %s", self._label, e
-            )
-            self._last_send_error = f"发送异常: {e}"
+                except Exception:
+                    pass
             return False
 
-    @staticmethod
-    def _describe_send_error(resp: "httpx.Response") -> str:
-        """从 QQ 失败响应中提取可读的错误详情（code + message）。"""
-        try:
-            data = resp.json()
-            code = data.get("code", "")
-            message = str(data.get("message", "")).strip()
-            if code or message:
-                return f"QQ错误 {code}: {message}".strip()
-        except Exception:
-            pass  # 响应体非 JSON 时回退到 HTTP 状态码
-        return f"HTTP {resp.status_code}"
+    def _describe_send_error(self, resp: httpx.Response) -> str:
+        """从统一解析结果生成脱敏错误详情，保留旧诊断入口。"""
+        _data, error = self._parse_response(resp)
+        return self._safe_error_detail(error) if error is not None else ""
 
     @property
     def last_send_error(self) -> str:
         """最近一次发送失败的平台错误详情（发送成功后清空）。"""
         return self._last_send_error
 
-    def _check_rate_limit_error(self, resp: "httpx.Response", user_id: str) -> None:
-        """检测 QQ 限流错误，记录退避时间（1小时内不再向该身份发送主动消息）。"""
-        try:
-            error_data = resp.json()
-            error_code = error_data.get("code", 0)
-            error_message = error_data.get("message", "")
-            if error_code == 40034122 or "召回消息已达区间上限" in error_message:
-                expire_at = datetime.now(timezone.utc) + timedelta(hours=1)
-                self._rate_limited_openids[user_id] = expire_at
-                logger.warning(
-                    "QQ 限流，身份 %s 退避至 %s", user_id, expire_at.isoformat()
-                )
-        except Exception:
-            pass  # 响应体非 JSON 时忽略
+    def _check_rate_limit_error(
+        self,
+        resp: httpx.Response,
+        user_id: str,
+        error: QQResponseError | None = None,
+    ) -> None:
+        """仅按 HTTP 429 或稳定错误码退避，兼容旧 code 字段。"""
+        if error is None:
+            _data, error = self._parse_response(resp)
+        if error is None:
+            error = QQResponseError(status_code=resp.status_code)
+        if resp.status_code != 429 and error.code not in RATE_LIMIT_ERROR_CODES:
+            return
+        expire_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        self._rate_limited_openids[user_id] = expire_at
+        logger.warning(
+            "QQ 限流，目标 %s 退避至 %s", user_id, expire_at.isoformat()
+        )
 
     def _is_rate_limited(self, user_id: str) -> bool:
-        """检查身份是否在限流退避期内。"""
+        """检查目标是否在限流退避期内。"""
         expire_time = self._rate_limited_openids.get(user_id)
         if expire_time is None:
             return False
@@ -598,12 +1467,37 @@ class QQWebSocketClient:
             return False
         return True
 
-    def can_send_proactive(self, user_id: str) -> bool:
-        """主动消息发送前的轻量预检：处于限流退避期则不可发送。
+    def _has_proactive_authorization(
+        self, user_id: str, is_group: bool, group_id: str
+    ) -> bool:
+        """平台授权是硬门槛：仅明确允许返回 True，未知和拒绝均拦截。"""
+        if is_group:
+            if not group_id:
+                return False
+            key = ("group", group_id)
+        else:
+            if not user_id:
+                return False
+            key = ("c2c", user_id)
+        return self._proactive_authorizations.get(key) is True
 
-        供调度器在调用 LLM 生成内容之前调用，避免为注定失败的发送浪费额度。
-        """
-        return not self._is_rate_limited(user_id)
+    def _can_send_proactive_target(
+        self, user_id: str, is_group: bool, group_id: str = ""
+    ) -> bool:
+        """组合授权与限流预检，不产生网络请求或 LLM 消耗。"""
+        if not self._has_proactive_authorization(user_id, is_group, group_id):
+            return False
+        rate_limit_id = group_id if is_group else user_id
+        return not self._is_rate_limited(rate_limit_id)
+
+    def can_send_proactive(self, user_id: str) -> bool:
+        """LLM 前轻量预检；群目标接受 ``group_openid::member_openid``。"""
+        if "::" in user_id:
+            group_id, member_openid = user_id.split("::", 1)
+            return self._can_send_proactive_target(
+                member_openid, is_group=True, group_id=group_id
+            )
+        return self._can_send_proactive_target(user_id, is_group=False)
 
     async def send_proactive(
         self,
@@ -612,26 +1506,17 @@ class QQWebSocketClient:
         is_group: bool = False,
         group_id: str = "",
     ) -> bool:
-        """
-        主动发送消息给身份（使用互动召回 is_wakeup 能力）。
-
-        用于定时关怀、主动触达等场景。不需要前置的对方消息。
-        限制：身份对话后30天内，按周期下发（当天/1-3天/3-7天/7-30天各1条）。
-
-        Args:
-            user_id: 目标身份的 openid
-            content: 消息文本内容
-            is_group: 是否群聊（互动召回仅支持C2C，群聊使用普通主动消息）
-            group_id: 群ID（仅群聊时需要）
-
-        Returns:
-            发送是否成功
-        """
-        # 限流退避检查：处于退避期内的身份跳过发送
-        if self._is_rate_limited(user_id):
-            logger.warning("身份 %s 处于限流退避期，跳过发送", user_id)
+        """主动发送消息；平台未明确授权或处于限流期时直接失败。"""
+        if not self._has_proactive_authorization(user_id, is_group, group_id):
+            target_id = group_id if is_group else user_id
+            logger.warning("%s 主动消息未获平台授权，跳过发送", self._label)
+            self._last_send_error = f"QQ 主动消息未授权或已拒绝: {target_id}"
+            return False
+        if not self._can_send_proactive_target(user_id, is_group, group_id):
+            rate_limit_id = group_id if is_group else user_id
+            logger.warning("%s 主动消息目标处于限流退避期，跳过发送", self._label)
             self._last_send_error = (
-                f"QQ 召回限流退避中，身份 {user_id} 本轮不可发送"
+                f"QQ 召回限流退避中，目标 {rate_limit_id} 本轮不可发送"
             )
             return False
 
@@ -844,6 +1729,7 @@ class QQWebSocketClient:
             await self._send_media_reply(
                 user_id, send_data, file_type=1,
                 msg_id=msg_id, is_group=is_group, group_id=group_id,
+                conversation_id=conv_id,
             )
             logger.info(
                 "%s 图片已发送, prompt=%s", self._label, task.prompt[:40]
@@ -898,6 +1784,7 @@ class QQWebSocketClient:
             await self._send_media_reply(
                 user_id, send_data, file_type=1,
                 msg_id=msg_id, is_group=is_group, group_id=group_id,
+                conversation_id=conv_id,
             )
             logger.info(
                 "%s 表情包已发送, desc=%s", self._label, task.description[:20]
@@ -922,6 +1809,179 @@ class QQWebSocketClient:
         except Exception as e:
             logger.error("%s 表情包发送失败: %s", self._label, e)
 
+    def _media_scope_path(self, user_id: str, is_group: bool, group_id: str) -> str:
+        """返回 C2C/群目标下的统一媒体路径前缀。"""
+        if is_group and group_id:
+            return f"{self._api_base_url}/v2/groups/{group_id}"
+        return f"{self._api_base_url}/v2/users/{user_id}"
+
+    async def _upload_media_small(
+        self,
+        user_id: str,
+        file_data: bytes,
+        file_type: int,
+        is_group: bool,
+        group_id: str,
+        file_name: str = "",
+    ) -> str | None:
+        """一次 Base64 上传（官方 ≤20MB，实践中 5MB 以上走分片）。"""
+        token = await self.get_access_token()
+        payload: dict[str, Any] = {
+            "file_type": file_type,
+            "file_data": base64.b64encode(file_data).decode(),
+            "srv_send_msg": False,
+        }
+        if file_type == 4 and file_name:
+            payload["file_name"] = file_name
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{self._media_scope_path(user_id, is_group, group_id)}/files",
+                json=payload,
+                headers={"Authorization": f"QQBot {token}"},
+            )
+        data, error = self._parse_response(resp)
+        if error is not None:
+            self._last_send_error = self._safe_error_detail(error)
+            return None
+        file_info = data.get("file_info", "")
+        if isinstance(file_info, str) and file_info:
+            return file_info
+        self._last_send_error = "QQ 上传响应缺少 file_info"
+        return None
+
+    async def _upload_media_chunked(
+        self,
+        user_id: str,
+        file_data: bytes,
+        file_type: int,
+        is_group: bool,
+        group_id: str,
+        file_name: str = "",
+    ) -> str | None:
+        """按官方 SDK 执行 prepare → 分片 PUT/finish → complete。"""
+        if len(file_data) > MEDIA_MAX_SIZE:
+            self._last_send_error = "QQ 媒体超过 100MB 上限"
+            return None
+        path_prefix = self._media_scope_path(user_id, is_group, group_id)
+        token = await self.get_access_token()
+        md5 = hashlib.md5(file_data).hexdigest()
+        sha1 = hashlib.sha1(file_data).hexdigest()
+        md5_10m = (
+            hashlib.md5(file_data[:MD5_10M_SIZE]).hexdigest()
+            if len(file_data) > MD5_10M_SIZE else md5
+        )
+        prepare_body: dict[str, Any] = {
+            "file_type": file_type,
+            "file_name": file_name or "media.bin",
+            "file_size": len(file_data),
+            "md5": md5,
+            "sha1": sha1,
+            "md5_10m": md5_10m,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{path_prefix}/upload_prepare",
+                json=prepare_body,
+                headers={"Authorization": f"QQBot {token}"},
+            )
+        prepare, error = self._parse_response(resp)
+        if error is not None:
+            self._last_send_error = self._safe_error_detail(error)
+            return None
+        upload_id = str(prepare.get("upload_id", ""))
+        raw_block_size = prepare.get("block_size", 0)
+        block_size = (
+            int(raw_block_size)
+            if isinstance(raw_block_size, (str, int, float))
+            else 0
+        )
+        raw_parts = prepare.get("parts", [])
+        if not upload_id or block_size <= 0 or not isinstance(raw_parts, list):
+            self._last_send_error = "QQ 分片上传准备响应不完整"
+            return None
+        for raw_part in raw_parts:
+            if not isinstance(raw_part, dict):
+                return None
+            part_index = int(raw_part.get("index", 0) or 0)
+            presigned_url = str(raw_part.get("presigned_url", ""))
+            if part_index <= 0 or not presigned_url:
+                return None
+            offset = (part_index - 1) * block_size
+            part_data = file_data[offset:offset + block_size]
+            part_md5 = hashlib.md5(part_data).hexdigest()
+            put_ok = False
+            for attempt in range(3):
+                try:
+                    async with httpx.AsyncClient(timeout=300.0) as client:
+                        put_resp = await client.put(
+                            presigned_url,
+                            content=part_data,
+                            headers={"Content-Type": "application/octet-stream"},
+                        )
+                    if put_resp.status_code in (200, 201, 204):
+                        put_ok = True
+                        break
+                    if 400 <= put_resp.status_code < 500:
+                        self._last_send_error = (
+                            f"QQ 分片上传 HTTP {put_resp.status_code}"
+                        )
+                        return None
+                except Exception as exc:
+                    self._last_send_error = f"QQ 分片上传网络异常: {exc}"
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+            if not put_ok:
+                return None
+
+            finish_ok = False
+            for attempt in range(3):
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    finish_resp = await client.post(
+                        f"{path_prefix}/upload_part_finish",
+                        json={
+                            "upload_id": upload_id,
+                            "part_index": part_index,
+                            "block_size": len(part_data),
+                            "md5": part_md5,
+                        },
+                        headers={"Authorization": f"QQBot {token}"},
+                    )
+                _finish, finish_error = self._parse_response(finish_resp)
+                if finish_error is None:
+                    finish_ok = True
+                    break
+                self._last_send_error = self._safe_error_detail(finish_error)
+                if finish_resp.status_code != 429 and (
+                    finish_error.code not in RATE_LIMIT_ERROR_CODES
+                ):
+                    return None
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+            if not finish_ok:
+                return None
+        for attempt in range(3):
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                complete_resp = await client.post(
+                    f"{path_prefix}/files",
+                    json={"upload_id": upload_id},
+                    headers={"Authorization": f"QQBot {token}"},
+                )
+            complete, complete_error = self._parse_response(complete_resp)
+            if complete_error is None:
+                file_info = complete.get("file_info", "")
+                if isinstance(file_info, str) and file_info:
+                    return file_info
+                self._last_send_error = "QQ 分片上传完成响应缺少 file_info"
+                return None
+            self._last_send_error = self._safe_error_detail(complete_error)
+            if complete_resp.status_code != 429 and (
+                complete_error.code not in RATE_LIMIT_ERROR_CODES
+            ):
+                return None
+            if attempt < 2:
+                await asyncio.sleep(2 ** attempt)
+        return None
+
     async def _send_media_reply(
         self,
         user_id: str,
@@ -930,88 +1990,113 @@ class QQWebSocketClient:
         msg_id: str,
         is_group: bool,
         group_id: str,
-    ):
-        """
-        上传富媒体文件到 QQ 并发送。
-
-        Args:
-            file_data: 文件二进制数据
-            file_type: 1=图片, 3=语音
-        """
-        token = await self.get_access_token()
-        headers = {
-            "Authorization": f"QQBot {token}",
-            "Content-Type": "application/json",
-        }
-
-        base = (
-            "https://sandbox.api.sgroup.qq.com"
-            if self.bot_config.sandbox_mode
-            else "https://api.sgroup.qq.com"
-        )
-
-        # Step 1: 上传文件
-        if is_group and group_id:
-            upload_url = f"{base}/v2/groups/{group_id}/files"
-        else:
-            upload_url = f"{base}/v2/users/{user_id}/files"
-
-        file_b64 = base64.b64encode(file_data).decode()
-        upload_payload = {
-            "file_type": file_type,
-            "file_data": file_b64,
-            "srv_send_msg": False,
-        }
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                upload_url, json=upload_payload, headers=headers
-            )
-            if resp.status_code not in (200, 201):
-                logger.error(
-                    "%s 文件上传失败: %d %s",
-                    self._label, resp.status_code, resp.text,
+        file_name: str = "",
+        conversation_id: str = "",
+    ) -> bool:
+        """上传富媒体并发送；小文件 Base64，大文件分片，失败统一返回 False。"""
+        if not file_data:
+            self._last_send_error = "空媒体文件"
+            return False
+        try:
+            if len(file_data) > MEDIA_CHUNK_THRESHOLD:
+                file_info = await self._upload_media_chunked(
+                    user_id, file_data, file_type, is_group, group_id, file_name
                 )
-                return
-            upload_data = resp.json()
-            file_info = upload_data.get("file_info", "")
+            else:
+                file_info = await self._upload_media_small(
+                    user_id, file_data, file_type, is_group, group_id, file_name
+                )
             if not file_info:
                 logger.error(
-                    "%s 上传返回无 file_info: %s",
-                    self._label, brief_json(upload_data, ("code", "message")),
+                    "%s 文件上传失败: %s", self._label, self._last_send_error
                 )
-                return
+                return False
 
-        # Step 2: 发送富媒体消息
-        if is_group and group_id:
-            msg_url = f"{base}/v2/groups/{group_id}/messages"
-        else:
-            msg_url = f"{base}/v2/users/{user_id}/messages"
-
-        self._msg_seq += 1
-        msg_payload = {
-            "msg_type": 7,
-            "media": {"file_info": file_info},
-            "msg_seq": self._msg_seq,
-        }
-        if msg_id:
-            msg_payload["msg_id"] = msg_id
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                msg_url, json=msg_payload, headers=headers
+            token = await self.get_access_token()
+            msg_url = (
+                f"{self._api_base_url}/v2/groups/{group_id}/messages"
+                if is_group and group_id
+                else f"{self._api_base_url}/v2/users/{user_id}/messages"
             )
-            if resp.status_code not in (200, 201, 204):
-                logger.error(
-                    "%s 富媒体消息发送失败: %d %s",
-                    self._label, resp.status_code, resp.text,
+            self._msg_seq += 1
+            msg_payload: dict[str, Any] = {
+                "msg_type": 7,
+                "media": {"file_info": file_info},
+                "msg_seq": self._msg_seq,
+            }
+            if msg_id:
+                msg_payload["msg_id"] = msg_id
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    msg_url,
+                    json=msg_payload,
+                    headers={"Authorization": f"QQBot {token}"},
                 )
+            data, error = self._parse_response(resp)
+            if error is not None:
+                self._last_send_error = self._safe_error_detail(error)
+                logger.error(
+                    "%s 富媒体消息发送失败: %s",
+                    self._label, self._last_send_error,
+                )
+                return False
+            response_id = str(data.get("id", ""))
+            if response_id:
+                self._remember_outbound(
+                    response_id, user_id, is_group, group_id
+                )
+                await self._record_outbound_binding(
+                    response_id, conversation_id, user_id, is_group, group_id
+                )
+            self._last_send_error = ""
+            return True
+        except Exception as exc:
+            error = QQResponseError(category="network", message=str(exc))
+            self._last_send_error = self._safe_error_detail(error)
+            logger.error(
+                "%s 富媒体消息发送异常: %s", self._label, self._last_send_error
+            )
+            return False
+
+    async def send_file(
+        self,
+        user_id: str,
+        file_data: bytes,
+        file_name: str,
+        msg_id: str = "",
+        is_group: bool = False,
+        group_id: str = "",
+    ) -> bool:
+        """发送普通文件（type=4），支持分片上传。"""
+        return await self._send_media_reply(
+            user_id, file_data, 4, msg_id, is_group, group_id,
+            file_name=file_name,
+        )
+
+    async def send_video(
+        self,
+        user_id: str,
+        video_data: bytes,
+        msg_id: str = "",
+        is_group: bool = False,
+        group_id: str = "",
+    ) -> bool:
+        """发送视频（type=2），支持分片上传。"""
+        return await self._send_media_reply(
+            user_id, video_data, 2, msg_id, is_group, group_id,
+            file_name="video.mp4",
+        )
 
     async def run(self):
-        """启动 WebSocket 客户端主循环（含指数退避重连）"""
+        """启动 WebSocket 客户端主循环（含授权恢复与指数退避重连）。"""
         self._running = True
         self._reconnect_delay = 5  # 初始重连间隔（秒）
         MAX_RECONNECT_DELAY = 120  # 最大重连间隔
+        try:
+            await self._restore_proactive_authorizations()
+        except Exception as exc:
+            # 恢复失败时缓存保持为空，主动消息 fail-closed，不影响被动回复上线
+            logger.error("%s 主动消息授权恢复失败: %s", self._label, exc)
 
         while self._running:
             try:

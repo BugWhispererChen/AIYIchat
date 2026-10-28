@@ -122,4 +122,9 @@ class CloneFeedbackInDB(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     edited_reply: str = ""
     status: Literal["pending", "reviewed", "rejected"] = "pending"
+    # 平台原生反馈（QQ LIKE/UNLIKE）用事件 ID 幂等；网页反馈保持 source=web
+    source: Literal["web", "qq"] = "web"
+    platform_event_id: str = ""
+    platform_message_id: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

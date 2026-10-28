@@ -188,6 +188,28 @@ class CloneFeedbackRepository:
         await self._collection().insert_one(feedback.model_dump())
         return feedback
 
+    async def upsert_platform_event(
+        self, feedback: CloneFeedbackInDB
+    ) -> CloneFeedbackInDB:
+        """以平台事件 ID 为确定性主键写入，重复推送只更新同一条记录。"""
+        if not feedback.platform_event_id:
+            raise ValueError("平台原生反馈缺少 event_id")
+        now = datetime.now(timezone.utc)
+        feedback.updated_at = now
+        feedback.id = f"platform_{feedback.platform_event_id}"
+        doc = feedback.model_dump()
+        doc["_id"] = f"platform:{feedback.platform_event_id}"
+        doc.pop("created_at", None)
+        await self._collection().update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": doc,
+                "$setOnInsert": {"created_at": feedback.created_at},
+            },
+            upsert=True,
+        )
+        return feedback
+
     async def list_recent(self, limit: int = 100) -> list[CloneFeedbackInDB]:
         docs = await (
             self._collection()

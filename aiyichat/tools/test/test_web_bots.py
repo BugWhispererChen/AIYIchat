@@ -580,9 +580,14 @@ class TestWebBotQrFlows:
                     "qrcode": "qr-1",
                 }
 
-            async def poll_qrcode_status(self, qrcode: str) -> str:
+            async def poll_qrcode_status(
+                self, qrcode: str, verify_code: str = ""
+            ) -> dict:
                 assert qrcode == "qr-1"
-                return "wechat-token-1"
+                return {
+                    "status": "confirmed",
+                    "bot_token": "wechat-token-1",
+                }
 
             def set_bot_token(self, token: str) -> None:
                 self.token = token

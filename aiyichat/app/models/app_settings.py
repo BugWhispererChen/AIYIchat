@@ -324,6 +324,13 @@ class AppSettingsDocument(BaseModel):
     sticker_reply_probability: float = 0.5  # 对方仅发表情包时以图回图的概率（0~1）
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
 
+    # 渠道原生能力开关：默认关闭，按平台实际授权逐项灰度
+    qq_stream_enabled: bool = False
+    qq_markdown_enabled: bool = False
+    qq_keyboard_enabled: bool = False
+    qq_full_group_context_enabled: bool = False
+    wechat_quote_cache_enabled: bool = True
+
     # C 端网页账号（自助注册 / 登录 / 会话）
     # 注意：存量 DB 的 app_settings 文档不会重新 seed，缺失字段由 from_mongo 用此处
     # 模型默认值补齐，故"默认关闭"的开关必须与 _RuntimeSettings 保持一致地写 False，

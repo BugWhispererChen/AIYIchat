@@ -100,6 +100,32 @@ _AUDIO_EXT_MAP = {
 }
 
 
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 通用文件/视频上限 100 MB
+
+
+async def save_file_from_bytes(
+    data: bytes,
+    filename: str = "file.bin",
+    content_type: str = "application/octet-stream",
+) -> str:
+    """二进制文件/视频原样存入媒体库，返回可鉴权的 /api/media/{id}。"""
+    if len(data) > MAX_FILE_SIZE:
+        raise ValueError(
+            f"文件过大 ({len(data) / 1024 / 1024:.1f} MB)，"
+            f"上限 {MAX_FILE_SIZE / 1024 / 1024:.0f} MB"
+        )
+    doc_id = await _media_repo.create(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+    )
+    logger.info(
+        "File saved to DB: id=%s, size=%d, type=%s",
+        mask_secret(doc_id), len(data), content_type,
+    )
+    return f"/api/media/{doc_id}"
+
+
 async def save_audio_from_bytes(data: bytes, content_type: str = "audio/mpeg") -> str:
     """二进制音频 → 存入 MongoDB → 返回 /api/media/{id}。
 

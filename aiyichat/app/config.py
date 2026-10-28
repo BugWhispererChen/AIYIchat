@@ -322,6 +322,13 @@ class _RuntimeSettings:
     sticker_casual_probability: float = 0.15  # 普通聊天时概率性穿插表情包的概率（0~1）
     sticker_max_dimension: int = 500  # 表情包尺寸阈值（宽或高中较大者，像素）
 
+    # 渠道原生能力开关：默认关闭，按平台实际授权逐项灰度
+    qq_stream_enabled: bool = False  # C2C 流式消息，失败自动降级普通文本
+    qq_markdown_enabled: bool = False  # Markdown 消息权限
+    qq_keyboard_enabled: bool = False  # 键盘/指令面板权限
+    qq_full_group_context_enabled: bool = False  # 仅补群上下文，不触发回复
+    wechat_quote_cache_enabled: bool = True  # 引用消息持久缓存与还原
+
     # C 端网页账号（自助注册 / 登录 / 会话）
     # 默认值必须与 AppSettingsDocument 中的同名字段一致，详见该类的说明注释
     web_auth_enabled: bool = False  # 网页鉴权总开关（关闭时网页注册/登录/会话接口全部拒绝）
@@ -499,6 +506,8 @@ class _RuntimeSettings:
             "sticker_enabled", "sticker_seed_enabled", "sticker_max_per_turn",
             "sticker_similarity_threshold", "sticker_reply_probability",
             "sticker_casual_probability", "sticker_max_dimension",
+            "qq_stream_enabled", "qq_markdown_enabled", "qq_keyboard_enabled",
+            "qq_full_group_context_enabled", "wechat_quote_cache_enabled",
             "web_auth_enabled", "web_register_enabled",
             "web_register_require_review", "web_captcha_enabled",
             "web_bot_id", "web_default_profile_slug", "web_free_quota_template_id",
@@ -688,6 +697,11 @@ def _bootstrap_settings_to_dict() -> dict[str, Any]:
         sticker_reply_probability: float = Field(default=0.5)
         sticker_casual_probability: float = Field(default=0.15)
         sticker_max_dimension: int = Field(default=500)
+        qq_stream_enabled: bool = Field(default=False)
+        qq_markdown_enabled: bool = Field(default=False)
+        qq_keyboard_enabled: bool = Field(default=False)
+        qq_full_group_context_enabled: bool = Field(default=False)
+        wechat_quote_cache_enabled: bool = Field(default=True)
         web_auth_enabled: bool = Field(default=False)
         web_register_enabled: bool = Field(default=False)
         web_register_require_review: bool = Field(default=True)

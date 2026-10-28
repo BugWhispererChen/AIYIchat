@@ -373,9 +373,9 @@ async def create_wechat_qrcode(request: Request, bot_id: str) -> JSONResponse:
 
 @web_bots_router.get("/{bot_id}/wechat/poll-qr")
 async def poll_wechat_qrcode(
-    request: Request, bot_id: str, qrcode: str
+    request: Request, bot_id: str, qrcode: str, verify_code: str = ""
 ) -> JSONResponse:
-    """轮询微信登录状态；成功后 token 落库并启动轮询任务。"""
+    """轮询微信登录状态，可提交验证码；成功后 token 落库并启动任务。"""
     principal, err = await _principal(request)
     if err is not None or principal is None:
         return err or _bad("unauthorized", "请先登录", 401)
@@ -393,7 +393,7 @@ async def poll_wechat_qrcode(
         return _bad("platform_mismatch", "仅微信渠道支持扫码登录", 400)
     return JSONResponse(
         status_code=200,
-        content=await bot_qr_service.poll_wechat_login(bot_id, qrcode),
+        content=await bot_qr_service.poll_wechat_login(bot_id, qrcode, verify_code),
     )
 
 

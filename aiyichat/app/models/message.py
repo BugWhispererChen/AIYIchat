@@ -13,7 +13,9 @@ class MessageInDB(BaseModel):
     # （db/mongo.py 的 messages.role 索引）。本项目把"身份"改称"身份"后，此字面量仍禁止改名。
     role: Literal["user", "assistant", "system"]
     content: str
-    content_type: Literal["text", "voice", "image", "emoji"] = "text"  # 消息内容类型
+    content_type: Literal[
+        "text", "voice", "image", "emoji", "file", "video"
+    ] = "text"  # 消息内容类型
     media_url: Optional[str] = None
     emotion_tag: Optional[str] = None
     token_count: Optional[int] = None

@@ -1014,7 +1014,7 @@ class ProactiveScheduler:
         """发送前的轻量通道预检（不消耗 LLM 额度）。
 
         在调用 LLM 生成内容之前判断目标通道是否可用：
-        - QQ：处于限流退避期则不可发；
+        - QQ：未获平台主动消息授权或处于限流退避期则不可发；
         - 微信：无缓存的 context_token 则不可发（服务重启后常见）。
         客户端不存在或未实现预检方法时保守返回 True，交由实际发送环节处理。
         """
@@ -1034,10 +1034,10 @@ class ProactiveScheduler:
             checker = getattr(client, "can_send_proactive", None)
             if checker is None:
                 return True
-            # 群聊对方：platform_id 格式为 group_id::member_openid，
-            # 限流预检使用 member_openid 部分
+            # QQ 群授权按 group_openid 判定，LLM 前预检必须保留联合键；
+            # 其他平台沿用 member_openid 部分的旧预检口径。
             check_id = platform_id
-            if "::" in platform_id:
+            if platform != "qq" and "::" in platform_id:
                 check_id = platform_id.split("::", 1)[1]
             return bool(checker(check_id))
         except Exception as e:

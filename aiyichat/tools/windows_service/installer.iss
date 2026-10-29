@@ -1,6 +1,6 @@
 ; 爱易聊 AIYIchat Windows 安装包（Inno Setup 6）
 ; 由 build_installer.py 调用 ISCC 编译，可传入预处理定义：
-;   /DMyAppVersion=1.0.0 /DMyBuildDate=YYYYMMDD /DAppSourceDir=... /DMongoDir=... /DOutputDir=...
+;   /DMyAppVersion=1.0.0 /DMyBranch=developing /DMyBuildDate=YYYYMMDD /DAppSourceDir=... /DMongoDir=... /DOutputDir=...
 ;
 ; 安装内容：GUI 服务面板（含 FastAPI Web 服务）+ 捆绑 MongoDB + ffmpeg + 证书
 ; 安装动作：注册 mongod 为 Windows 服务并启动、可选开机自启服务面板、首次生成 .env、创建快捷方式
@@ -8,6 +8,9 @@
 #define MyAppName "爱易聊 AIYIchat"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
+#endif
+#ifndef MyBranch
+  #define MyBranch "developing"
 #endif
 #ifndef AppSourceDir
   #define AppSourceDir "dist\AIYIchatService"
@@ -37,7 +40,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 OutputDir={#OutputDir}
-OutputBaseFilename=AIYIchat_Setup_{#MyAppVersion}{#OutputSuffix}
+OutputBaseFilename=AIYIchat_Setup_{#MyBranch}{#OutputSuffix}
 SetupIconFile=assets\app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes

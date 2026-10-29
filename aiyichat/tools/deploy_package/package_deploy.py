@@ -11,11 +11,12 @@ EXE 安装包，由本机 tools/windows_service/ 工具链构建，不走本脚�
 
 环境变量：
     AIYICHAT_GIT_BARE_DIR  Git 仓库路径（裸仓库或工作仓库均可，`--from-git` 必填）
-    AIYICHAT_GIT_BRANCH    打包分支（默认 developing）
+    AIYICHAT_GIT_BRANCH    打包分支（`--from-git` 默认 developing）
 """
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,9 +25,32 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+DEFAULT_BRANCH = "developing"
+
 # Git 仓库（版本历史权威来源，`--from-git` 模式下打包内容必须与之一致）
 GIT_BARE_DIR = os.environ.get("AIYICHAT_GIT_BARE_DIR", "")
-GIT_BRANCH = os.environ.get("AIYICHAT_GIT_BRANCH", "developing")
+GIT_BRANCH = os.environ.get("AIYICHAT_GIT_BRANCH", "")
+
+
+def sanitize_branch(name: str) -> str:
+    """把分支名转成可用于文件名/目录名的形式。"""
+    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "-", name.strip()).strip("-")
+    return cleaned or DEFAULT_BRANCH
+
+
+def resolve_branch() -> str:
+    """解析打包分支：环境变量优先，否则取当前工作树分支。"""
+    if GIT_BRANCH:
+        return sanitize_branch(GIT_BRANCH)
+    root = Path(__file__).resolve().parent.parent.parent
+    code, stdout, _ = run_command(
+        ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"]
+    )
+    if code == 0:
+        name = stdout.strip()
+        if name and name != "HEAD":
+            return sanitize_branch(name)
+    return DEFAULT_BRANCH
 
 
 def run_command(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
@@ -54,7 +78,8 @@ def pull_from_git(temp_dir: Path) -> Path | None:
             file=sys.stderr,
         )
         return None
-    print(f"[1/4] 从 Git 仓库导出最新代码（{GIT_BARE_DIR} @ {GIT_BRANCH}）...")
+    branch = GIT_BRANCH or DEFAULT_BRANCH
+    print(f"[1/4] 从 Git 仓库导出最新代码（{GIT_BARE_DIR} @ {branch}）...")
     archive_path = temp_dir / "aiyichat-latest.tar.gz"
     with archive_path.open("wb") as f:
         result = subprocess.run(
@@ -63,7 +88,7 @@ def pull_from_git(temp_dir: Path) -> Path | None:
                 f"--git-dir={GIT_BARE_DIR}",
                 "archive",
                 "--format=tar.gz",
-                GIT_BRANCH,
+                branch,
                 "aiyichat",
             ],
             stdout=f,
@@ -89,7 +114,7 @@ def pull_from_git(temp_dir: Path) -> Path | None:
 
     # 显示导出的最新提交
     returncode, stdout, _ = run_command(
-        ["git", f"--git-dir={GIT_BARE_DIR}", "log", "--oneline", "-1", GIT_BRANCH]
+        ["git", f"--git-dir={GIT_BARE_DIR}", "log", "--oneline", "-1", branch]
     )
     if returncode == 0:
         print(f"最新提交: {stdout.strip()}")
@@ -259,7 +284,9 @@ def main() -> int:
     # 脚本位于 tools/deploy_package/ 下，项目根为上三级
     current_root = Path(__file__).resolve().parent.parent.parent
     date_str = datetime.now().strftime("%Y%m%d")
+    branch_name = resolve_branch()
     platforms = [args.platform]
+    print(f"打包分支: {branch_name}")
 
     # 创建临时目录
     with tempfile.TemporaryDirectory(prefix="aiyichat_deploy_") as temp_dir_str:
@@ -288,7 +315,7 @@ def main() -> int:
 
         # 2~4. 组装、打包并输出清单
         for platform in platforms:
-            package_name = f"aiyichat-deploy-{date_str}-{platform}"
+            package_name = f"aiyichat-deploy-{branch_name}-{date_str}-{platform}"
             package_dir = temp_dir / package_name
             package_dir.mkdir()
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 一键打包脚本：取最新代码生成部署包，并自动执行校验与可用性测试。
-# 仅产出 Linux 包（aiyichat-deploy-<日期>-linux.tar.gz）；
+# 仅产出 Linux 包（aiyichat-deploy-<分支>-<日期>-linux.tar.gz）；
 # Windows 产物形态为单独 EXE 安装包，由本地 tools/windows_service/ 工具链构建。
 #
 # 用法（任意目录均可，脚本自动切到 aiyichat/）：

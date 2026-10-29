@@ -3,15 +3,19 @@
 流程：
 1. 若 dist/AIYIchatService 不存在则先执行 build_app.py
 2. 确保 vendor/mongodb/bin/mongod.exe 存在（缺失时下载 MongoDB 免安装 zip）
-3. 调用 ISCC 编译 installer.iss，产出 dist/AIYIchat_Setup_<版本>.exe
+3. 调用 ISCC 编译 installer.iss，产出 dist/AIYIchat_Setup_<分支>_<日期>.exe
 
 依赖：
 - pip install -r tools/windows_service/requirements-windows.txt
 - Inno Setup 6（缺失时提示：winget install JRSoftware.InnoSetup）
+
+环境变量：
+- AIYICHAT_BRANCH：指定产物名中的分支标识（默认取当前 Git 分支）
 """
 
 import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +23,7 @@ import urllib.request
 from datetime import datetime
 
 APP_VERSION = "1.0.0"
+DEFAULT_BRANCH = "developing"
 # 构建日期（YYYYMMDD）：随产物文件名发布，便于区分不同日期的安装包
 
 # MongoDB 免安装提取（Windows x64）：下载官方 MSI 后用 msiexec /a 解压 mongod。
@@ -40,6 +45,24 @@ _ISCC_CANDIDATES = [
     r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     r"C:\Program Files\Inno Setup 6\ISCC.exe",
 ]
+
+
+def _resolve_branch() -> str:
+    """解析构建分支：环境变量优先，否则取当前 Git 分支。"""
+    name = os.environ.get("AIYICHAT_BRANCH", "").strip()
+    if not name:
+        result = subprocess.run(
+            ["git", "-C", _SCRIPT_DIR, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        if result.returncode == 0:
+            name = result.stdout.strip()
+    if not name or name == "HEAD":
+        name = DEFAULT_BRANCH
+    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "-", name).strip("-")
+    return cleaned or DEFAULT_BRANCH
 
 
 def _find_iscc() -> str:
@@ -158,8 +181,9 @@ def _ensure_mongodb() -> None:
 
 def main() -> None:
     """执行安装包构建。"""
+    branch = _resolve_branch()
     print("=" * 60)
-    print(f"  爱易聊 Windows 安装包构建（v{APP_VERSION}）")
+    print(f"  爱易聊 Windows 安装包构建（分支 {branch} / 版本 {APP_VERSION}）")
     print("=" * 60)
 
     build_date = datetime.now().strftime("%Y%m%d")
@@ -172,6 +196,7 @@ def main() -> None:
     cmd = [
         iscc,
         f"/DMyAppVersion={APP_VERSION}",
+        f"/DMyBranch={branch}",
         f"/DMyBuildDate={build_date}",
         f"/DAppSourceDir={_APP_DIR}",
         f"/DMongoDir={_MONGO_DIR}",
@@ -184,7 +209,7 @@ def main() -> None:
         sys.exit(1)
 
     installer = os.path.join(
-        _DIST_DIR, f"AIYIchat_Setup_{APP_VERSION}_{build_date}.exe"
+        _DIST_DIR, f"AIYIchat_Setup_{branch}_{build_date}.exe"
     )
     if os.path.exists(installer):
         size_mb = os.path.getsize(installer) / 1024 / 1024

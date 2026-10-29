@@ -54,7 +54,7 @@ echo "[1/6] 解压部署包到隔离目录 $TEST_ROOT ..."
 rm -rf "$TEST_ROOT"
 mkdir -p "$TEST_ROOT"
 tar -xzf "$PKG" -C "$TEST_ROOT"
-# 部署包顶层为 aiyichat-deploy-<日期>-linux/，进入该目录
+# 部署包顶层为 aiyichat-deploy-<分支>-<日期>-linux/，进入该目录
 PKG_DIR=$(find "$TEST_ROOT" -maxdepth 1 -type d -name 'aiyichat-deploy-*' | head -1)
 if [ -z "$PKG_DIR" ]; then
     echo "FAIL: 解压后未找到 aiyichat-deploy-* 顶层目录"

@@ -36,7 +36,7 @@
 2. **打包 + 自动可用性测试**：在 `aiyichat/` 目录执行
    `bash tools/deploy_package/build_package.sh`（脚本内部会自行定位到 `aiyichat/`）
    - 自动完成：取源码 → 组装 → 打包 → 静态校验 → 运行级可用性测试（仅产出 Linux 包）
-   - 产物：`aiyichat-deploy-YYYYMMDD-linux.tar.gz`
+   - 产物：`aiyichat-deploy-<分支>-YYYYMMDD-linux.tar.gz`
 
 ## 使用方法
 
@@ -48,14 +48,15 @@ python tools/deploy_package/package_deploy.py              # 用当前目录代�
 python tools/deploy_package/package_deploy.py --from-git   # 先经 Git 导出再打包（需配环境变量）
 ```
 
-生成的部署包位于 `aiyichat/` 目录：`aiyichat-deploy-{YYYYMMDD}-linux.tar.gz`。
+生成的部署包位于 `aiyichat/` 目录：`aiyichat-deploy-{分支}-{YYYYMMDD}-linux.tar.gz`。
+分支默认取当前工作树分支；`--from-git` 时取 `AIYICHAT_GIT_BRANCH`。
 仅产出 Linux 包（`--platform` 参数保留且仅支持 `linux`）。
 
 ### 校验与测试
 
 ```bash
 # 同样在 aiyichat/ 目录执行
-bash tools/deploy_package/verify_package.sh aiyichat-deploy-YYYYMMDD-linux.tar.gz
+bash tools/deploy_package/verify_package.sh aiyichat-deploy-developing-YYYYMMDD-linux.tar.gz
 bash tools/deploy_package/test_deploy_package.sh
 ```
 

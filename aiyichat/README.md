@@ -14,8 +14,8 @@
 ### 1. 解压部署包
 
 ```bash
-tar -xzf aiyichat-deploy-YYYYMMDD-linux.tar.gz
-cd aiyichat-deploy-YYYYMMDD-linux
+tar -xzf aiyichat-deploy-developing-YYYYMMDD-linux.tar.gz
+cd aiyichat-deploy-developing-YYYYMMDD-linux
 ```
 
 ### 2. 配置环境变量
@@ -123,7 +123,7 @@ chmod +x deploy.sh
 ## 目录结构
 
 ```
-aiyichat-deploy-YYYYMMDD-linux/
+aiyichat-deploy-developing-YYYYMMDD-linux/
 ├── app/                    # 业务代码（Python 源码）
 │   ├── main.py            # 入口薄壳
 │   └── ...                # 各业务模块

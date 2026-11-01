@@ -541,6 +541,63 @@ class TestStickerSeeder:
 
         run_with_db(body)
 
+    def test_seed_repairs_missing_media(self, tmp_path: Path) -> None:
+        """哈希命中的老表情包若媒体已被误删，启动时重建媒体并回填 URL。"""
+        fake_img = b"\x89PNG repaired image bytes" * 10
+        (tmp_path / "st_001_repair.gif").write_bytes(fake_img)
+        (tmp_path / "manifest.json").write_text(json.dumps([
+            {
+                "file": "st_001_repair.gif",
+                "name": "待修复表情",
+                "tags": ["修复"],
+                "description": "媒体丢失的表情包",
+                "source": "ChineseBQB",
+                "group": "",
+                "enabled": True,
+            }
+        ]), encoding="utf-8")
+
+        async def body() -> None:
+            import hashlib
+
+            import app.services.sticker_seeder as seeder_mod
+            import app.utils.tasks as tasks_mod
+            from app.db.repositories.media_repo import MediaRepository
+            from app.models.sticker import StickerDocument
+
+            def fake_spawn(coro) -> None:
+                coro.close()
+
+            sticker_repo = StickerRepository()
+            content_hash = hashlib.sha256(fake_img).hexdigest()
+            await sticker_repo.create(StickerDocument(
+                name="待修复表情",
+                media_url="/api/media/deadbeefdeadbeefdeadbeef",
+                content_hash=content_hash,
+                source="ChineseBQB",
+            ))
+
+            old_dir = seeder_mod.STICKERS_DIR
+            old_spawn = tasks_mod.spawn
+            old_seed_enabled = settings.sticker_seed_enabled
+            seeder_mod.STICKERS_DIR = tmp_path
+            tasks_mod.spawn = fake_spawn  # type: ignore[assignment]
+            settings.sticker_seed_enabled = True
+            try:
+                await seeder_mod.seed_stickers()
+                stickers = await sticker_repo.list_enabled()
+                assert len(stickers) == 1
+                assert stickers[0].media_url != "/api/media/deadbeefdeadbeefdeadbeef"
+                media_id = stickers[0].media_url.rsplit("/", 1)[-1]
+                media = await MediaRepository().find_by_id(media_id)
+                assert media is not None and media["data"] == fake_img
+            finally:
+                seeder_mod.STICKERS_DIR = old_dir
+                tasks_mod.spawn = old_spawn
+                settings.sticker_seed_enabled = old_seed_enabled
+
+        run_with_db(body)
+
     def test_seed_disabled(self, tmp_path: Path) -> None:
         """sticker_seed_enabled=False 时跳过导入。"""
         (tmp_path / "manifest.json").write_text("[]", encoding="utf-8")

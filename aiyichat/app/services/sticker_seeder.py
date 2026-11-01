@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from app.config import settings
 from app.models.sticker import StickerDocument
@@ -54,7 +55,10 @@ async def seed_stickers() -> None:
         logger.info("未发现预置表情包资源（%s）", STICKERS_DIR)
         return
 
-    from app.db.repositories.media_repo import MediaRepository
+    from app.db.repositories.media_repo import (
+        MediaRepository,
+        media_ids_from_message_docs,
+    )
     from app.db.repositories.sticker_group_repo import StickerGroupRepository
     from app.db.repositories.sticker_repo import StickerRepository
     from app.models.sticker_group import StickerGroupDocument
@@ -84,6 +88,7 @@ async def seed_stickers() -> None:
     imported = 0
     skipped = 0
     backfilled = 0
+    repaired = 0
     imported_ids: list[str] = []
 
     for entry in entries:
@@ -97,21 +102,34 @@ async def seed_stickers() -> None:
             data = file_path.read_bytes()
             content_hash = hashlib.sha256(data).hexdigest()
             group_id = await _resolve_group_id(str(entry.get("group", "")).strip())
-
-            # 幂等去重：同内容已导入则跳过（仅幂等回填缺失的分组）
-            existing = await sticker_repo.get_by_hash(content_hash)
-            if existing:
-                skipped += 1
-                if group_id and not existing.group_id:
-                    await sticker_repo.update_fields(
-                        existing.id, {"group_id": group_id}
-                    )
-                    backfilled += 1
-                continue
-
             content_type = _CONTENT_TYPE_MAP.get(
                 file_path.suffix.lower(), "image/jpeg"
             )
+
+            # 幂等去重：同内容已导入则跳过；媒体被误删时重建并回填，
+            # 否则一次错误的级联删除会让表情包永久破图。
+            existing = await sticker_repo.get_by_hash(content_hash)
+            if existing:
+                skipped += 1
+                updates: dict[str, Any] = {}
+                if group_id and not existing.group_id:
+                    updates["group_id"] = group_id
+                refs = media_ids_from_message_docs(
+                    [{"media_url": existing.media_url}]
+                )
+                if not refs or await media_repo.find_by_id(refs[0]) is None:
+                    media_id = await media_repo.create(
+                        data=data, content_type=content_type, filename=filename
+                    )
+                    updates["media_url"] = f"/api/media/{media_id}"
+                    updates["content_type"] = content_type
+                    repaired += 1
+                if updates:
+                    await sticker_repo.update_fields(existing.id, updates)
+                    if "group_id" in updates:
+                        backfilled += 1
+                continue
+
             media_id = await media_repo.create(
                 data=data, content_type=content_type, filename=filename
             )
@@ -134,8 +152,8 @@ async def seed_stickers() -> None:
 
     logger.info(
         "预置表情包 seed 完成: 导入 %d 张, 跳过 %d 张（已存在）, "
-        "分组回填 %d 张, 分组总数 %d",
-        imported, skipped, backfilled, len(group_id_cache),
+        "媒体修复 %d 张, 分组回填 %d 张, 分组总数 %d",
+        imported, skipped, repaired, backfilled, len(group_id_cache),
     )
 
     # 新数据入库后失效检索缓存，使后台改动即时生效

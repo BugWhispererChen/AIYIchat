@@ -649,6 +649,16 @@ class TestDataModule:
                                                headers=_h(token), json={"confirm": False})
                     assert unconfirmed.status_code == 400
 
+                    # 引用缓存保存消息正文，清空对话必须一并回收
+                    await mongo.get_database().wechat_quote_cache.insert_one({
+                        "_id": f"{WEB_BOT_ID}:session:svr-1",
+                        "bot_id": WEB_BOT_ID,
+                        "account_id": seeded["identity"].account_id,
+                        "session_key": "session",
+                        "svr_id": "svr-1",
+                        "text": "这条正文不应在清空后残留",
+                    })
+
                     resp = await c.post("/api/web/account/data/conversations/clear",
                                          headers=_h(token), json={"confirm": True})
                     assert resp.status_code == 200, resp.text
@@ -657,9 +667,13 @@ class TestDataModule:
                     assert stats["messages"] == 2
                     assert stats["media"] == 1
                     assert stats["snapshots"] == 1
+                    assert stats["wechat_quote_cache"] == 1
 
                     assert await ConversationRepository().list_by_identity(seeded["identity"].id) == []
                     assert await MediaRepository().find_by_id(seeded["media_id"]) is None
+                    assert await mongo.get_database().wechat_quote_cache.count_documents(
+                        {"account_id": seeded["identity"].account_id}
+                    ) == 0
                     assert await InjectionSnapshotRepository().list_by_service(
                         seeded["service"].context_key) == []
                     # 记忆保留，别人的数据不受影响
@@ -670,6 +684,105 @@ class TestDataModule:
 
                     after = await c.get("/api/web/account/data", headers=_h(token))
                     assert after.json()["counts"]["messages"] == 0
+            finally:
+                await _teardown()
+
+        _run(flow())
+
+    def test_clear_conversations_skips_shared_group_of_other_accounts(self) -> None:
+        """共享组里仍有别家服务时，即使会话身份属于本人也不能清空（会误删别人历史）。"""
+
+        async def flow() -> None:
+            app = await _setup_app("acct_clear_shared_group")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "iris")
+                    seeded = await _seed_full_data("iris")
+                    # 本人也加入该共享组
+                    await ServiceRepository().create(
+                        ServiceCreate(
+                            account_id=seeded["identity"].account_id,
+                            identity_id=seeded["identity"].id,
+                            bot_id=seeded["service"].bot_id,
+                            profile_id=seeded["service"].profile_id,
+                            share_group_id="grp-shared",
+                        )
+                    )
+                    # 组内另一账号的服务
+                    other = await AccountRepository().create(AccountCreate(name="other-acct"))
+                    other_identity = await IdentityRepository().create(
+                        IdentityCreate(
+                            account_id=other.id, name="other", platform="qq",
+                            platform_id="openid-shared",
+                        )
+                    )
+                    await ServiceRepository().create(
+                        ServiceCreate(
+                            name="other-svc", account_id=other.id,
+                            identity_id=other_identity.id, bot_id=WEB_BOT_ID,
+                            profile_id=PUBLIC_SLUG, share_group_id="grp-shared",
+                        )
+                    )
+                    # 组会话恰好挂在本人身份上，但内容被两家服务共用
+                    shared_conv = await ConversationRepository().create(
+                        seeded["identity"].id, PUBLIC_SLUG, "grp-shared"
+                    )
+                    await MessageRepository().create(
+                        shared_conv.id, "user", "组内共享的正文"
+                    )
+
+                    resp = await c.post(
+                        "/api/web/account/data/conversations/clear",
+                        headers=_h(token), json={"confirm": True},
+                    )
+                    assert resp.status_code == 200, resp.text
+                    assert resp.json()["conversations"] == 1
+                    assert await ConversationRepository().find_by_id(
+                        shared_conv.id
+                    ) is not None, "共享组历史被误删"
+                    assert await MessageRepository().get_all_for_conversation(
+                        shared_conv.id
+                    ), "共享组消息被误删"
+            finally:
+                await _teardown()
+
+        _run(flow())
+
+    def test_deleted_service_history_can_be_exported_and_cleared(self) -> None:
+        """删服务后历史仍可被账号中心统计、导出与清空（P1）。"""
+
+        async def flow() -> None:
+            app = await _setup_app("acct_deleted_svc_history")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "nora")
+                    seeded = await _seed_full_data("nora")
+                    # 只删服务行，模拟 C 端「删除服务但保留对话历史」
+                    assert await ServiceRepository().delete(seeded["service"].id)
+
+                    data = await c.get("/api/web/account/data", headers=_h(token))
+                    assert data.status_code == 200, data.text
+                    counts = data.json()["counts"]
+                    assert counts["services"] == 0
+                    assert counts["conversations"] == 1
+                    assert counts["messages"] == 2
+
+                    exported = await c.get("/api/web/account/export", headers=_h(token))
+                    assert exported.status_code == 200, exported.text
+                    conversations = exported.json()["conversations"]
+                    assert len(conversations) == 1
+                    assert conversations[0]["messages"][0]["content"] == "帮我画只猫"
+
+                    cleared = await c.post(
+                        "/api/web/account/data/conversations/clear",
+                        headers=_h(token),
+                        json={"confirm": True},
+                    )
+                    assert cleared.status_code == 200, cleared.text
+                    assert cleared.json()["conversations"] == 1
+                    assert await ConversationRepository().list_by_identity(
+                        seeded["identity"].id
+                    ) == []
             finally:
                 await _teardown()
 

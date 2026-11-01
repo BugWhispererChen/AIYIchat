@@ -274,5 +274,14 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         db.wechat_context_tokens,
         [("bot_id", 1), ("user_id", 1)],
     )
+    # 微信引用缓存：按 bot/会话/svr_id 还原；过期记录由 TTL 索引自动回收，
+    # 不能只依赖"有新消息时惰性清理"（长期无消息时正文会一直留着）
+    await _safe_create_index(
+        db.wechat_quote_cache,
+        [("bot_id", 1), ("session_key", 1), ("svr_id", 1)],
+    )
+    await _safe_create_index(
+        db.wechat_quote_cache, "expires_at", expireAfterSeconds=0
+    )
     # 会话列表按最后一条消息时间排序（后台与 C 端历史页）
     await _safe_create_index(db.conversations, "last_message_at")

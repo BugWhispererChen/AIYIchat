@@ -17,13 +17,11 @@ from typing import Any, Optional
 
 from bson import ObjectId
 
+from app.db.mongo import get_database
 from app.db.repositories.account_repo import AccountRepository
 from app.db.repositories.conversation_repo import ConversationRepository
+from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.injection_snapshot_repo import InjectionSnapshotRepository
-from app.db.repositories.media_repo import (
-    MediaRepository,
-    media_ids_from_message_docs,
-)
 from app.db.repositories.message_repo import MessageRepository
 from app.db.repositories.order_repo import OrderRepository
 from app.db.repositories.profile_repo import ProfileRepository
@@ -31,6 +29,7 @@ from app.db.repositories.quota_repo import QuotaRepository
 from app.db.repositories.service_memory_repo import ServiceMemoryRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.db.repositories.web_session_repo import WebSessionRepository
+from app.db.repositories.wechat_quote_repo import WeChatQuoteCacheRepository
 from app.models.account import AccountInDB, AccountUpdate
 from app.models.order import OrderInDB
 from app.models.profile import PromptProfileInDB
@@ -257,13 +256,35 @@ async def _owned_services(account_id: str) -> list[ServiceInDB]:
 async def _owned_conversations(
     account_id: str, services: list[ServiceInDB]
 ) -> list[Any]:
-    """按服务及账号独占共享组汇总会话。"""
+    """按身份、服务及账号独占共享组汇总会话。
+
+    身份维度必须先扫：删除服务只删服务行、保留对话历史，若只从当前服务
+    出发，这些"保留"的历史会永久不可见、不可导出，也无法被清空。
+    服务维度只补充账号独占的共享组，避免把组内其他账号的会话算进来。
+    """
     keys = {svc.id for svc in services}
     for svc in services:
         if svc.share_group_id and await _group_is_exclusive(svc, account_id):
             keys.add(svc.share_group_id)
     repo = ConversationRepository()
     conversations: dict[str, Any] = {}
+    identity_ids = await IdentityRepository().list_ids_by_account(account_id)
+    identity_convs = await repo.list_by_identity_ids(identity_ids)
+    # 共享组会话可能被其他账号的服务复用：只要组内仍有别家服务，
+    # 就不能按"我名下的身份"把它算作可清空数据，否则会删掉别人的历史。
+    candidate_keys = {conv.service_id for conv in identity_convs if conv.service_id}
+    shared_keys: set[str] = set()
+    if candidate_keys:
+        async for doc in get_database().services.find(
+            {"share_group_id": {"$in": list(candidate_keys)}},
+            {"share_group_id": 1, "account_id": 1},
+        ):
+            if doc.get("account_id") != account_id and doc.get("share_group_id"):
+                shared_keys.add(doc["share_group_id"])
+    for conv in identity_convs:
+        if conv.service_id in shared_keys:
+            continue
+        conversations[conv.id] = conv
     for key in sorted(keys):
         for conv in await repo.list_by_service(key):
             conversations[conv.id] = conv
@@ -357,27 +378,41 @@ def _memory_item(service: ServiceInDB, memory: ServiceMemoryInDB) -> dict[str, A
 
 
 async def clear_conversations(account_id: str, username: str) -> dict[str, int]:
-    """清空账号自有服务及账号独占共享组的全部对话。"""
+    """清空账号自有身份、服务及账号独占共享组的全部对话。
+
+    引用缓存同样保存消息正文，必须随"清空对话"一起回收；否则页面显示已清空，
+    最近 30 天的正文仍留在库中。
+    """
     services = await _owned_services(account_id)
     conversations = await _owned_conversations(account_id, services)
+    quotes_deleted = await WeChatQuoteCacheRepository().delete_by_account(account_id)
     if not conversations:
-        return {"conversations": 0, "messages": 0, "snapshots": 0, "media": 0}
+        return {
+            "conversations": 0,
+            "messages": 0,
+            "snapshots": 0,
+            "media": 0,
+            "wechat_quote_cache": quotes_deleted,
+        }
     conv_ids = [conv.id for conv in conversations]
-    messages = await MessageRepository().list_by_conversation_ids(conv_ids)
-    media_ids = media_ids_from_message_docs(messages)
-    msg_deleted = await MessageRepository().delete_by_conversation_ids(conv_ids)
-    snap_deleted = await InjectionSnapshotRepository().delete_by_conversation_ids(conv_ids)
-    conv_deleted = await ConversationRepository().delete_by_ids(conv_ids)
-    media_deleted = await MediaRepository().delete_by_ids(media_ids)
+    # 复用级联删除：消息按 ObjectId/字符串双形态匹配，快照与媒体同步回收；
+    # 媒体删除受全局引用保护（表情包/公开角色图不会被误删）。
+    stats = await ConversationRepository().delete_cascade_by_ids(conv_ids)
     logger.info(
-        "网页账号 %s 清空对话记录：会话 %d / 消息 %d / 快照 %d / 媒体 %d",
-        username, conv_deleted, msg_deleted, snap_deleted, media_deleted,
+        "网页账号 %s 清空对话记录：会话 %d / 消息 %d / 快照 %d / 媒体 %d / 引用缓存 %d",
+        username,
+        stats["conversations"],
+        stats["messages"],
+        stats["injection_snapshots"],
+        stats["media"],
+        quotes_deleted,
     )
     return {
-        "conversations": conv_deleted,
-        "messages": msg_deleted,
-        "snapshots": snap_deleted,
-        "media": media_deleted,
+        "conversations": stats["conversations"],
+        "messages": stats["messages"],
+        "snapshots": stats["injection_snapshots"],
+        "media": stats["media"],
+        "wechat_quote_cache": quotes_deleted,
     }
 
 

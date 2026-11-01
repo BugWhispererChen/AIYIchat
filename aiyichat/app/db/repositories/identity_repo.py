@@ -1,10 +1,18 @@
 """身份的数据库访问层。"""
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
+from pymongo.errors import DuplicateKeyError
+
 from app.db.mongo import get_database
 from app.models.identity import IdentityCreate, IdentityInDB, IdentityUpdate
+
+# 外部渠道首条消息可能并发进入：按 (platform, platform_id) 串行化"查不到就建"，
+# 与 identities 上 (platform, platform_id) 的部分唯一索引一起兜住竞态
+_find_or_create_locks: dict[tuple[str, str], asyncio.Lock] = {}
+_LOCK_MAP_CAP = 4096
 
 
 class IdentityRepository:
@@ -52,24 +60,41 @@ class IdentityRepository:
         account_id: str,
         nickname: str = "",
     ) -> IdentityInDB:
-        """查找或创建身份。"""
-        identity = await self.find_by_platform(platform, platform_id)
-        if identity is not None:
-            await self._collection().update_one(
-                {"id": identity.id},
-                {"$set": {
-                    "last_active_at": datetime.now(timezone.utc),
-                }},
-            )
-            return identity
-        return await self.create(
-            IdentityCreate(
-                account_id=account_id,
-                platform_id=platform_id,
-                platform=platform,
-                nickname=nickname,
-            )
-        )
+        """查找或创建身份（同平台 openid 串行，唯一索引冲突时回查）。"""
+        key = (platform, platform_id)
+        if len(_find_or_create_locks) > _LOCK_MAP_CAP:
+            for stale_key, stale in [
+                (k, v) for k, v in _find_or_create_locks.items() if not v.locked()
+            ]:
+                _find_or_create_locks.pop(stale_key, None)
+        lock = _find_or_create_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _find_or_create_locks[key] = lock
+        async with lock:
+            identity = await self.find_by_platform(platform, platform_id)
+            if identity is not None:
+                await self._collection().update_one(
+                    {"id": identity.id},
+                    {"$set": {
+                        "last_active_at": datetime.now(timezone.utc),
+                    }},
+                )
+                return identity
+            try:
+                return await self.create(
+                    IdentityCreate(
+                        account_id=account_id,
+                        platform_id=platform_id,
+                        platform=platform,
+                        nickname=nickname,
+                    )
+                )
+            except DuplicateKeyError:
+                raced = await self.find_by_platform(platform, platform_id)
+                if raced is not None:
+                    return raced
+                raise
 
     async def update(
         self, identity_id: str, update: IdentityUpdate
@@ -124,6 +149,11 @@ class IdentityRepository:
             .limit(limit)
         )
         return [IdentityInDB.from_mongo(doc) async for doc in cursor]
+
+    async def list_ids_by_account(self, account_id: str) -> list[str]:
+        """取账号全部身份 ID（不受列表分页上限影响，供历史归档预扫描）。"""
+        cursor = self._collection().find({"account_id": account_id}, {"id": 1})
+        return [doc["id"] async for doc in cursor if doc.get("id")]
 
     async def list_all(
         self, skip: int = 0, limit: int = 50

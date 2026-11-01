@@ -26,7 +26,7 @@ import httpx
 import websockets
 
 from app.bot_config import BotConfig, async_load_bots_config
-from app.utils.tasks import spawn
+from app.utils.tasks import spawn, spawn_with_limit
 from app.config import settings
 from app.conversation.engine import ConversationEngine, StreamEvent
 from app.conversation.human_rhythm import pacing_delay_seconds
@@ -2137,7 +2137,9 @@ class QQWebSocketClient:
                             )
 
                         elif op == OP_DISPATCH:
-                            spawn(
+                            # 每个事件直接 spawn 会让突发消息拉起无界并发；
+                            # 有界信号量先兜住资源，会话内顺序由引擎锁保证
+                            spawn_with_limit(
                                 self._handle_dispatch(data)
                             )
 

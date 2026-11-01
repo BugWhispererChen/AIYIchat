@@ -211,6 +211,28 @@ REPEAT_RETRY_HINT = (
     "请从完全不同的角度回应，提供新的信息或视角。"
 )
 
+# 同一会话的整轮处理必须串行：外部渠道并发投递时，两条消息会各自读到
+# 对方尚未落库的旧上下文，后一条的回复可能基于前一条之前的快照，顺序也会乱。
+# 按 (bot, platform, 会话目标, 服务) 加进程锁；多实例需改用分布式锁。
+_session_locks: dict[tuple[str, str, str, str], asyncio.Lock] = {}
+_SESSION_LOCK_CAP = 4096
+
+
+def _get_session_lock(
+    bot_id: str, platform: str, target: str, scope: str = ""
+) -> asyncio.Lock:
+    if len(_session_locks) > _SESSION_LOCK_CAP:
+        for stale_key, stale in [
+            (k, v) for k, v in _session_locks.items() if not v.locked()
+        ]:
+            _session_locks.pop(stale_key, None)
+    key = (bot_id, platform, target, scope)
+    lock = _session_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _session_locks[key] = lock
+    return lock
+
 
 @dataclass
 class EngineResult:
@@ -267,6 +289,35 @@ class ConversationEngine:
         self._snapshot_repo = InjectionSnapshotRepository()
 
     async def handle_message(
+        self,
+        platform: str,
+        platform_id: str,
+        text: str,
+        nickname: str = "",
+        media_url: Optional[str] = None,
+        content_type: str = "text",
+        is_group: bool = False,
+        group_id: str = "",
+    ) -> EngineResult:
+        """串行化同一会话的整轮处理，避免并发消息乱序与上下文断裂。"""
+        target = (
+            f"{group_id}::{platform_id}"
+            if is_group and group_id
+            else platform_id
+        )
+        async with _get_session_lock(self.bot_id, platform, target):
+            return await self._handle_message_locked(
+                platform=platform,
+                platform_id=platform_id,
+                text=text,
+                nickname=nickname,
+                media_url=media_url,
+                content_type=content_type,
+                is_group=is_group,
+                group_id=group_id,
+            )
+
+    async def _handle_message_locked(
         self,
         platform: str,
         platform_id: str,
@@ -861,6 +912,36 @@ class ConversationEngine:
         return True
 
     async def handle_message_stream(
+        self,
+        platform: str,
+        platform_id: str,
+        text: str,
+        nickname: str = "",
+        content_type: str = "text",
+        service_id: str = "",
+        identity_id: str = "",
+        media_url: str = "",
+        voice_reply: bool = False,
+    ):
+        """串行化同一会话的流式整轮处理（与非流式共用会话锁）。"""
+        target = identity_id or platform_id
+        async with _get_session_lock(
+            self.bot_id, platform, target, service_id
+        ):
+            async for item in self._handle_message_stream_locked(
+                platform=platform,
+                platform_id=platform_id,
+                text=text,
+                nickname=nickname,
+                content_type=content_type,
+                service_id=service_id,
+                identity_id=identity_id,
+                media_url=media_url,
+                voice_reply=voice_reply,
+            ):
+                yield item
+
+    async def _handle_message_stream_locked(
         self,
         platform: str,
         platform_id: str,

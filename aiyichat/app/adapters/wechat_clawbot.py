@@ -2310,13 +2310,9 @@ class WeChatBotManager:
         await self.cancel_bot_task(config_id)
         # 移除 pending
         self._pending_clients.pop(config_id, None)
-        from app.db.mongo import get_database
-        from app.db.repositories.wechat_quote_repo import (
-            WeChatQuoteCacheRepository,
-        )
+        from app.services.bot_state_cleanup import cleanup_bot_side_state
 
-        await WeChatQuoteCacheRepository().delete_by_bot(config_id)
-        await get_database().wechat_sync_state.delete_one({"bot_id": config_id})
+        await cleanup_bot_side_state(config_id)
         await self._repo.delete(config_id)
         logger.info("[WeChatBotManager] Bot %s 已删除", config_id)
 

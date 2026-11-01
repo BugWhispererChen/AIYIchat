@@ -25,7 +25,10 @@ from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceInDB, ServiceUpdate
 from app.services import web_channel_service
 from app.services.auth_service import ensure_account_web_bot
-from app.services.service_cleanup import purge_service_memory
+from app.services.service_cleanup import (
+    purge_service_memory,
+    release_identity_binding,
+)
 from app.services.web_channel_service import ChannelError
 
 logger = logging.getLogger(__name__)
@@ -334,5 +337,10 @@ async def delete_web_service(request: Request, service_id: str) -> JSONResponse:
 
     if not await _service_repo.delete(svc.id):
         return _bad("not_found", "服务不存在", 404)
+    # 与删除渠道/管理端保持同一口径：身份没有其它外部服务时释放 openid 绑定，
+    # 让用户能按"零服务"引导重新创建服务
+    bot = await _bot_config_repo.find_by_id(svc.bot_id)
+    if bot is not None:
+        await release_identity_binding(svc.identity_id, svc.bot_id, bot.platform)
     logger.info("网页账号 %s 删除服务 %s", principal.username, svc.name)
     return JSONResponse(status_code=200, content={"id": svc.id, "deleted": True})

@@ -225,7 +225,7 @@ class TestAccountRepository:
             await db.proactive_records.insert_one({"id": "pr-9", "identity_id": "u-9"})
             await db.orders.insert_one({"id": "o-9", "account_id": acc.id})
 
-            async def _boom(self, media_ids):
+            async def _boom(self, media_ids, **kwargs):
                 raise RuntimeError("模拟级联中途失败")
 
             monkeypatch.setattr(MediaRepository, "delete_by_ids", _boom)

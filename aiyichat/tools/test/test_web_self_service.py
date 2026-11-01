@@ -963,3 +963,59 @@ class TestCrossChannelAccess:
                 mongo._db = None
 
         _run(flow())
+
+
+def test_delete_last_external_service_releases_identity_binding() -> None:
+    """C 端删掉最后一个 QQ/微信服务后，身份应恢复可绑定，能按零服务重建。"""
+
+    async def flow() -> None:
+        app = await _setup_app("svc_binding_release")
+        try:
+            async with _client(app) as c:
+                token = await _signup(c, "alice")
+                identity = await _default_identity_model(c, token)
+                assert identity is not None
+                await _default_service(c, token)
+                qq_bot = await BotConfigRepository().create(
+                    BotConfigCreate(
+                        account_id=identity.account_id,
+                        name="QQ 渠道",
+                        platform="qq",
+                        origin="web",
+                    )
+                )
+                await IdentityRepository().bind_platform_id(
+                    identity.id, "openid-ext", platform="qq"
+                )
+                service = await ServiceRepository().create(
+                    ServiceCreate(
+                        account_id=identity.account_id,
+                        identity_id=identity.id,
+                        bot_id=qq_bot.id,
+                        profile_id=PUBLIC_SLUG,
+                    )
+                )
+
+                resp = await c.delete(
+                    f"/api/web/services/{service.id}", headers=_h(token)
+                )
+                assert resp.status_code == 200, resp.text
+                reloaded = await IdentityRepository().find_by_id(identity.id)
+                assert reloaded is not None
+                assert reloaded.platform_id == "", "删除外部服务后 openid 仍绑定"
+                assert reloaded.platform is None
+
+                rebuilt = await c.post(
+                    "/api/web/services",
+                    json={
+                        "profile_id": PUBLIC_SLUG,
+                        "identity_id": identity.id,
+                        "bot_id": qq_bot.id,
+                    },
+                    headers=_h(token),
+                )
+                assert rebuilt.status_code == 201, rebuilt.text
+        finally:
+            mongo._db = None
+
+    _run(flow())

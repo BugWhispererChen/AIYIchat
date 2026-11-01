@@ -1201,11 +1201,69 @@ class TestP2VideoAndCacheLifecycle:
                     bot_id="bot-remove", session_key="u-1", svr_id="s-1",
                     account_id="acc-1", text="hi",
                 )
+                # 渠道删除必须连带回收会话凭据与同步游标
+                await mongo.get_database().wechat_context_tokens.insert_one({
+                    "bot_id": "bot-remove", "user_id": "u-1",
+                    "context_token": "ctx-secret",
+                })
+                await mongo.get_database().wechat_sync_state.insert_one({
+                    "bot_id": "bot-remove", "get_updates_buf": "cursor",
+                })
                 mgr = WeChatBotManager(poll_interval=1)
                 await mgr.remove_bot("bot-remove")
                 assert await WeChatQuoteCacheRepository().find(
                     bot_id="bot-remove", session_key="u-1", svr_id="s-1",
                 ) is None
+                assert await mongo.get_database().wechat_context_tokens.count_documents(
+                    {"bot_id": "bot-remove"}
+                ) == 0, "删除渠道后 context_token 残留"
+                assert await mongo.get_database().wechat_sync_state.count_documents(
+                    {"bot_id": "bot-remove"}
+                ) == 0, "删除渠道后同步游标残留"
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_logout_clears_context_tokens_and_sync_state(self) -> None:
+        """退出登录后重新扫码不能沿用旧游标或用户的 context_token。"""
+        from app.db.repositories.bot_config_repo import BotConfigRepository
+        from app.db.repositories.wechat_quote_repo import (
+            WeChatQuoteCacheRepository,
+        )
+        from app.models.bot_config import BotConfigCreate
+        from app.services.bot_qr_service import logout_wechat
+
+        async def body():
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_logout"]
+            try:
+                await BotConfigRepository().create(BotConfigCreate(
+                    id="bot-logout", account_id="acc-1", name="微信",
+                    platform="wechat",
+                ))
+                await mongo.get_database().wechat_context_tokens.insert_one({
+                    "bot_id": "bot-logout", "user_id": "u-1",
+                    "context_token": "ctx-secret",
+                })
+                await mongo.get_database().wechat_sync_state.insert_one({
+                    "bot_id": "bot-logout", "get_updates_buf": "cursor",
+                })
+                await WeChatQuoteCacheRepository().upsert(
+                    bot_id="bot-logout", session_key="u-1", svr_id="s-1",
+                    account_id="acc-1", text="hi",
+                )
+                assert await logout_wechat("bot-logout") is True
+                assert await mongo.get_database().wechat_context_tokens.count_documents(
+                    {"bot_id": "bot-logout"}
+                ) == 0
+                assert await mongo.get_database().wechat_sync_state.count_documents(
+                    {"bot_id": "bot-logout"}
+                ) == 0
+                # 引用缓存保留 TTL，不清空
+                assert await WeChatQuoteCacheRepository().find(
+                    bot_id="bot-logout", session_key="u-1", svr_id="s-1",
+                ) is not None
             finally:
                 mongo._db = old_db
 

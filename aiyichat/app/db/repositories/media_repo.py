@@ -1,7 +1,7 @@
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 from bson import ObjectId
 
@@ -80,18 +80,54 @@ class MediaRepository:
         result = await self._collection().delete_one(query)
         return result.deleted_count > 0
 
-    async def delete_by_ids(self, media_ids: list[str]) -> int:
+    async def _referenced_ids(
+        self, collection: Any, field: str, media_ids: set[str]
+    ) -> set[str]:
+        """返回媒体 ID 中被指定集合字段引用的子集。
+
+        媒体文档不记归属，只能反查引用方；按 URL 的精确形态查询，避免把
+        整个集合扫一遍。
+        """
+        if not media_ids:
+            return set()
+        urls = [f"/api/media/{mid}" for mid in media_ids]
+        referenced: set[str] = set()
+        async for doc in collection.find({field: {"$in": urls}}, {field: 1}):
+            referenced.update(_MEDIA_URL_RE.findall(doc.get(field) or ""))
+        return referenced & media_ids
+
+    async def delete_by_ids(
+        self,
+        media_ids: list[str],
+        *,
+        owned_profile_media_ids: Iterable[str] = (),
+    ) -> int:
         """按 public_id 或旧 ObjectId 批量删除媒体文件。
 
         media 文档不记归属（只有二进制与上传时间），删除只能由持有消息的一方驱动：
         账号中心清空对话/注销时先从消息的 media_url 反解出 ID，再走这里清理，
         否则用户删完对话，生成的图片仍整份留在库里。
+
+        表情包与角色定妆照是全局/账号级资源，可能同时被历史消息引用：
+        默认保护所有被它们引用的媒体，避免清空某个账号的对话就把全库共享的
+        表情包删成破图。账号注销需要回收自己的私有定妆照时，通过
+        `owned_profile_media_ids` 显式放行这些 ID；表情包保护始终生效。
         """
-        ids = [mid for mid in set(media_ids) if mid]
+        ids = {mid for mid in media_ids if mid}
         if not ids:
             return 0
-        object_ids = [ObjectId(mid) for mid in ids if ObjectId.is_valid(mid)]
-        clauses: list[dict] = [{"public_id": {"$in": ids}}]
+        db = get_database()
+        sticker_refs = await self._referenced_ids(db.stickers, "media_url", ids)
+        profile_refs = await self._referenced_ids(
+            db.profiles, "reference_image_url", ids
+        )
+        owned_profiles = set(owned_profile_media_ids)
+        protected = sticker_refs | (profile_refs - owned_profiles)
+        deletable = [mid for mid in ids if mid not in protected]
+        if not deletable:
+            return 0
+        object_ids = [ObjectId(mid) for mid in deletable if ObjectId.is_valid(mid)]
+        clauses: list[dict] = [{"public_id": {"$in": deletable}}]
         if object_ids:
             clauses.append({"_id": {"$in": object_ids}})
         result = await self._collection().delete_many({"$or": clauses})

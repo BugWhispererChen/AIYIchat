@@ -16,16 +16,17 @@ from typing import Literal, Optional
 
 from app.config import settings
 from app.db.repositories.bot_config_repo import BotConfigRepository
-from app.db.repositories.identity_repo import IdentityRepository
 from app.db.repositories.service_repo import ServiceRepository
 from app.models.bot_config import BotConfigCreate, BotConfigInDB, BotConfigUpdate
 from app.models.profile import PromptProfileInDB
 from app.models.service import ServiceInDB
-from app.services.service_cleanup import purge_service_memory
+from app.services.service_cleanup import (
+    purge_service_memory,
+    release_identity_binding,
+)
 from app.services.service_provisioning import (
     ServiceProvisionError,
     create_service,
-    has_external_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,13 +115,16 @@ async def _assert_bot_quota(account_id: str) -> dict:
 
 
 async def _delete_bot_record(bot: BotConfigInDB) -> None:
-    """删除渠道本身：微信需先停任务，其它直接删 DB。"""
+    """删除渠道本身：微信需先停任务，其它直接删 DB；旁路状态统一清理。"""
     if bot.platform == "wechat":
         from app.adapters.wechat_clawbot import get_wechat_manager
 
         await get_wechat_manager().remove_bot(bot.id)
     else:
         await BotConfigRepository().delete(bot.id)
+        from app.services.bot_state_cleanup import cleanup_bot_side_state
+
+        await cleanup_bot_side_state(bot.id)
 
 
 async def _create_bot_record(
@@ -261,10 +265,8 @@ async def delete_managed_bot(account_id: str, bot_id: str) -> int:
         await repo.delete(svc.id)
     await _delete_bot_record(bot)
 
-    identity_repo = IdentityRepository()
     for identity_id in identity_ids:
-        if not await has_external_service(identity_id):
-            await identity_repo.reset_platform_binding(identity_id, bot.id)
+        await release_identity_binding(identity_id, bot.id, bot.platform)
     try:
         from app.services.bot_qr_service import drop_qq_session
 

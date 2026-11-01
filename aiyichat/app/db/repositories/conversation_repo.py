@@ -18,6 +18,9 @@ from app.models.conversation import ConversationInDB
 _find_or_create_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
 _LOCK_MAP_CAP = 4096
 
+# 共享组按 context_key 串行化：组 key 不限定身份，不同身份并发首轮会各建一条会话
+_group_locks: dict[str, asyncio.Lock] = {}
+
 
 class ConversationRepository:
     """管理对话的增删改查。"""
@@ -120,11 +123,32 @@ class ConversationRepository:
     async def find_or_create_by_key(
         self, identity_id: str, profile_id: str, context_key: str
     ) -> ConversationInDB:
-        """按归属 key 查找活跃对话，不存在时以当前身份与角色创建。"""
-        conv = await self.find_active_by_key(context_key)
-        if conv is not None:
-            return conv
-        return await self.create(identity_id, profile_id, context_key)
+        """按归属 key 查找活跃对话，不存在时以当前身份与角色创建。
+
+        同一共享组可能同时收到不同身份的首条消息：仅靠"先查再插"会建出
+        两条活跃会话，之后 find_active_by_key 随机命中，历史与计数分裂。
+        单实例按 context_key 加进程锁；多实例仍需组 key 的数据库唯一约束。
+        """
+        if len(_group_locks) > _LOCK_MAP_CAP:
+            for stale_key, stale in [
+                (k, v) for k, v in _group_locks.items() if not v.locked()
+            ]:
+                _group_locks.pop(stale_key, None)
+        lock = _group_locks.get(context_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _group_locks[context_key] = lock
+        async with lock:
+            conv = await self.find_active_by_key(context_key)
+            if conv is not None:
+                return conv
+            try:
+                return await self.create(identity_id, profile_id, context_key)
+            except DuplicateKeyError:
+                raced = await self.find_active_by_key(context_key)
+                if raced is not None:
+                    return raced
+                raise
 
     async def update_after_message(self, conversation_id: str, count: int = 1) -> None:
         """更新对话消息计数和最后消息时间。"""
@@ -175,6 +199,17 @@ class ConversationRepository:
         """按身份ID查询对话列表。"""
         cursor = self._collection().find(
             {"identity_id": identity_id}
+        ).sort("last_message_at", -1)
+        return [ConversationInDB.from_mongo(doc) async for doc in cursor]
+
+    async def list_by_identity_ids(
+        self, identity_ids: list[str]
+    ) -> list[ConversationInDB]:
+        """按身份 ID 集合查询对话（含服务已删除的归档会话）。"""
+        if not identity_ids:
+            return []
+        cursor = self._collection().find(
+            {"identity_id": {"$in": identity_ids}}
         ).sort("last_message_at", -1)
         return [ConversationInDB.from_mongo(doc) async for doc in cursor]
 

@@ -207,3 +207,132 @@ def test_message_repo_handles_objectid_typed_ids() -> None:
     finally:
         mongo._db = None
 
+
+
+def test_shared_sticker_media_survives_conversation_cleanup() -> None:
+    """清空对话不能删掉共享表情包媒体（P0）。"""
+    conv_id = ObjectId()
+
+    async def case() -> None:
+        _setup()
+        db = get_database()
+        media_id = uuid.uuid4().hex
+        await db.media.insert_one({
+            "_id": ObjectId(), "public_id": media_id, "data": b"sticker",
+        })
+        await db.stickers.insert_one({
+            "_id": ObjectId(), "id": "sticker-1", "content_hash": "hash-1",
+            "media_url": f"/api/media/{media_id}", "group_id": "",
+        })
+        await db.conversations.insert_one({
+            "_id": conv_id, "identity_id": "id-1", "service_id": "svc-1",
+            "status": "active",
+        })
+        await db.messages.insert_one({
+            "_id": ObjectId(), "conversation_id": str(conv_id),
+            "role": "assistant", "content": "[表情]",
+            "media_url": f"/api/media/{media_id}",
+        })
+
+        stats = await ConversationRepository().delete_cascade_by_ids([str(conv_id)])
+        assert stats["messages"] == 1, stats
+        assert stats["media"] == 0, "共享表情包媒体被级联删除误删"
+        assert await db.media.count_documents({"public_id": media_id}) == 1
+        assert await db.stickers.count_documents({"id": "sticker-1"}) == 1
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None
+
+
+def test_account_cascade_cleans_objectid_messages_and_portrait_but_keeps_sticker() -> None:
+    """注销要删净 ObjectId 形态消息与私有定妆照，但不能删共享表情包媒体。"""
+    conv_id = ObjectId()
+
+    async def case() -> None:
+        _setup()
+        db = get_database()
+        sticker_media = uuid.uuid4().hex
+        portrait_media = uuid.uuid4().hex
+        for media_id, payload in (
+            (sticker_media, b"sticker"),
+            (portrait_media, b"portrait"),
+        ):
+            await db.media.insert_one({
+                "_id": ObjectId(), "public_id": media_id, "data": payload,
+            })
+        await db.stickers.insert_one({
+            "_id": ObjectId(), "id": "sticker-1", "content_hash": "hash-1",
+            "media_url": f"/api/media/{sticker_media}",
+        })
+        await db.accounts.insert_one({"_id": ObjectId(), "id": "acc-1"})
+        await db.identities.insert_one({
+            "_id": ObjectId(), "id": "id-1", "account_id": "acc-1",
+        })
+        await db.services.insert_one({
+            "_id": ObjectId(), "id": "svc-1", "account_id": "acc-1",
+            "identity_id": "id-1",
+        })
+        await db.conversations.insert_one({
+            "_id": conv_id, "identity_id": "id-1", "service_id": "svc-1",
+            "status": "active",
+        })
+        # ObjectId 形态的历史消息 + 消息媒体（表情包）+ 私有角色定妆照
+        await db.messages.insert_one({
+            "_id": ObjectId(), "conversation_id": conv_id,
+            "role": "assistant", "content": "[表情]",
+            "media_url": f"/api/media/{sticker_media}",
+        })
+        await db.injection_snapshots.insert_one({
+            "_id": ObjectId(), "conversation_id": conv_id,
+            "service_id": "svc-1", "reply_text": "正文副本",
+        })
+        await db.profiles.insert_one({
+            "_id": ObjectId(), "id": "p-1", "visibility": "private",
+            "account_id": "acc-1",
+            "reference_image_url": f"/api/media/{portrait_media}",
+        })
+
+        stats = await AccountRepository().delete_cascade("acc-1")
+        assert stats["messages"] == 1, "ObjectId 形态的历史消息漏删"
+        assert stats["injection_snapshots"] == 1, "ObjectId 形态的快照漏删"
+        assert await db.messages.count_documents({}) == 0
+        assert await db.injection_snapshots.count_documents({}) == 0
+        assert await db.media.count_documents({"public_id": portrait_media}) == 0, "定妆照媒体残留"
+        assert await db.media.count_documents({"public_id": sticker_media}) == 1, "共享表情包被注销误删"
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None
+
+
+def test_identity_and_group_creation_are_serialized() -> None:
+    """并发首条消息只建一个身份，共享组只建一条活跃会话。"""
+
+    async def case() -> None:
+        _setup()
+        db = get_database()
+        identities = await asyncio.gather(*[
+            IdentityRepository().find_or_create("qq", "openid-1", "acc-1")
+            for _ in range(10)
+        ])
+        assert len({identity.id for identity in identities}) == 1
+        assert await db.identities.count_documents({"platform_id": "openid-1"}) == 1
+
+        conversations = await asyncio.gather(*[
+            ConversationRepository().find_or_create_by_key(
+                f"id-{i}", "profile-1", "group-1"
+            )
+            for i in range(10)
+        ])
+        assert len({conv.id for conv in conversations}) == 1
+        assert await db.conversations.count_documents(
+            {"service_id": "group-1", "status": "active"}
+        ) == 1
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None

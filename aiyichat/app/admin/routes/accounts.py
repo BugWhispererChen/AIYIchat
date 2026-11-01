@@ -474,6 +474,9 @@ async def account_bot_delete(
         await get_wechat_manager().remove_bot(config_id)
     else:
         await _bot_config_repo.delete(config_id)
+        # 后台删除 QQ Bot 与 C 端同口径：消息映射、主动授权等旁路状态一起下架
+        from app.services.bot_state_cleanup import cleanup_bot_side_state
+        await cleanup_bot_side_state(config_id)
     return RedirectResponse(
         url=f"/admin/accounts/{account_id}",
         status_code=status.HTTP_303_SEE_OTHER,

@@ -8,6 +8,7 @@ from app.db.repositories.media_repo import (
     MediaRepository,
     media_ids_from_message_docs,
 )
+from app.db.repositories.object_id import id_variants_list
 from app.models.account import AccountCreate, AccountInDB, AccountUpdate
 
 
@@ -124,14 +125,21 @@ class AccountRepository:
             for url in private_portrait_urls
             for mid in media_ids_from_message_docs([{"media_url": url}])
         ]
+        portrait_media_ids = list(media_ids)
         if conv_ids:
             msg_docs: list[dict[str, Any]] = [
                 doc
                 async for doc in db.messages.find(
-                    {"conversation_id": {"$in": list(conv_ids)}}, {"media_url": 1}
+                    {
+                        "conversation_id": {
+                            "$in": id_variants_list(list(conv_ids))
+                        }
+                    },
+                    {"media_url": 1},
                 )
             ]
-            media_ids = media_ids_from_message_docs(msg_docs)
+            # 定妆照媒体与消息媒体都必须回收：覆盖赋值会让其中一类永久残留
+            media_ids.extend(media_ids_from_message_docs(msg_docs))
 
         cred_ids: list[str] = [
             doc["id"]
@@ -165,7 +173,9 @@ class AccountRepository:
 
         # 3. 媒体与注入快照：快照存着本轮 AI 回复与被注入的记忆正文，
         #    不删就等于给注销过的账号留了一份完整副本
-        stats["media"] = await MediaRepository().delete_by_ids(media_ids)
+        stats["media"] = await MediaRepository().delete_by_ids(
+            media_ids, owned_profile_media_ids=portrait_media_ids
+        )
         snapshot_count = 0
         if context_keys:
             snapshot_count += (await db.injection_snapshots.delete_many(
@@ -173,13 +183,15 @@ class AccountRepository:
             )).deleted_count
         if conv_ids:
             snapshot_count += (await db.injection_snapshots.delete_many(
-                {"conversation_id": {"$in": list(conv_ids)}}
+                {"conversation_id": {"$in": id_variants_list(list(conv_ids))}}
             )).deleted_count
         stats["injection_snapshots"] = snapshot_count
 
         # 4. 消息与对话
         stats["messages"] = (
-            await db.messages.delete_many({"conversation_id": {"$in": list(conv_ids)}})
+            await db.messages.delete_many(
+                {"conversation_id": {"$in": id_variants_list(list(conv_ids))}}
+            )
         ).deleted_count if conv_ids else 0
         stats["conversations"] = (
             await db.conversations.delete_many({"$or": conv_filters})
@@ -208,8 +220,13 @@ class AccountRepository:
             await db.wechat_sync_state.delete_many({"bot_id": {"$in": bot_ids}})
         ).deleted_count if bot_ids else 0
         stats["wechat_quote_cache"] = (
-            await db.wechat_quote_cache.delete_many({"bot_id": {"$in": bot_ids}})
-        ).deleted_count if bot_ids else 0
+            await db.wechat_quote_cache.delete_many({
+                "$or": [
+                    {"bot_id": {"$in": bot_ids}},
+                    {"account_id": account_id},
+                ]
+            })
+        ).deleted_count
         stats["qq_proactive_authorizations"] = (
             await db.qq_proactive_authorizations.delete_many(
                 {"bot_id": {"$in": bot_ids}}

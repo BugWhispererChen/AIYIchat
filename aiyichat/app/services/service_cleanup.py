@@ -59,3 +59,22 @@ async def purge_service_memory(
         snapshots,
     )
     return {"service_memories": memories, "injection_snapshots": snapshots}
+
+
+async def release_identity_binding(
+    identity_id: str, bot_id: str, platform: str
+) -> bool:
+    """删除外部渠道服务后，若身份已无其它外部服务，释放平台 openid 绑定。
+
+    C 端删除最后一个 QQ/微信服务后身份仍带着真实 openid，再按零服务引导
+    重新创建会被 `identity_bot_error` 判为"已绑定"，形成死路。
+    网页服务不占用外部绑定，直接跳过。
+    """
+    if not identity_id or not bot_id or platform == "web":
+        return False
+    from app.db.repositories.identity_repo import IdentityRepository
+    from app.services.service_provisioning import has_external_service
+
+    if await has_external_service(identity_id):
+        return False
+    return await IdentityRepository().reset_platform_binding(identity_id, bot_id)

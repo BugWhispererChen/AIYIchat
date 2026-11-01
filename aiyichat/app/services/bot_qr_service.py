@@ -213,4 +213,9 @@ async def logout_wechat(config_id: str) -> bool:
     manager = wechat_clawbot.get_wechat_manager()
     await manager.cancel_bot_task(config_id)
     manager._pending_clients.pop(config_id, None)
+    # 退出登录后重新扫码会以空 token 重建客户端，不能再沿用旧游标与
+    # 每个用户的 context_token（两者都是可复用的会话凭据材料）。
+    from app.services.bot_state_cleanup import cleanup_bot_side_state
+
+    await cleanup_bot_side_state(config_id, include_quote_cache=False)
     return await _bot_repo.clear_wechat_auth(config_id)

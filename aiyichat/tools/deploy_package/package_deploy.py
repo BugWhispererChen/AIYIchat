@@ -163,8 +163,13 @@ def assemble_package(
     """
     print("[2/4] 组装部署包（linux）...")
 
-    # 复制 app 源码目录
-    shutil.copytree(project_root / "app", output_dir / "app", dirs_exist_ok=True)
+    # 复制 app 源码目录（排除 __pycache__：本地跑过就会留下 .pyc，
+    # 而部署包承诺纯源码形态，带进去等于交付与源码可能对不上的旧字节码）
+    shutil.copytree(
+        project_root / "app", output_dir / "app",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
 
     # 复制部署文件（Windows 产物为 EXE 安装包，由 tools/windows_service/ 单独构建）
     files_to_copy = [

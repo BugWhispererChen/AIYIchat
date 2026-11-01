@@ -3,6 +3,27 @@
 本目录包含生成 AIYIchat Linux 部署包的完整工具链。部署包为**纯源码形态**
 （不做编译混淆），解压后 `docker compose up -d --build` 即可运行。
 
+## V1.0 交付产物（当前发布版本）
+
+| 产物 | 生成方式 | 说明 |
+|---|---|---|
+| `aiyichat-deploy-v1.0-<日期>-linux.tar.gz` | 本目录 `package_deploy.py`（分支标识 `v1.0`） | 纯源码 Linux 部署包；**包根 `README.md` 即仓库 `aiyichat/README.md` 的副本** |
+| `AIYIchat_Setup_v1.0_<日期>.exe` | `tools/windows_service/`（PyInstaller + Inno Setup） | Windows 安装包，不走本目录流程，包内不含用户文档 |
+
+三条必须知道的同步关系：
+
+1. **分支标识决定产物名**：Linux 取 `AIYICHAT_GIT_BRANCH`（未设置时取当前工作树分支），
+   Windows 取 `build_installer.py::_resolve_branch()`。当前日常分支是 `developing`，
+   因此发布 V1.0 需显式把分支标识设为 `v1.0`，否则产物会叫 `-developing-` 而挂不上 v1.0 Release。
+2. **改了 `aiyichat/README.md` 就要重打 Linux 包**：包内文档是它的副本，
+   不重打就会出现「仓库文档已更新、用户解压看到的还是旧说明」。
+3. **重打后要同步两处**：仓库根 README 的「快速开始（V1.0 部署包）」产物表（文件名 / 体积 / SHA-256），
+   以及 GitHub Release `v1.0` 的附件（先删旧附件再上传，避免同一 Release 里留两份不同日期的包）。
+
+> Windows 重建的三个已知陷阱见本文末「故障排查 · Windows 安装包」，
+> 简版：必须用项目 venv 的 Python；源码有变更须先删 `dist/AIYIchatService` 再重建（否则复用旧产物）；
+> 打包后抽查 `_internal/` 下关键模块确认真实入包。
+
 ## 工具清单
 
 | 文件 | 说明 |
@@ -166,6 +187,27 @@ bash tools/deploy_package/test_deploy_package.sh
 **原因**：服务器磁盘已满
 
 **解决**：清理服务器磁盘空间（至少需要 2GB 可用空间）
+
+### Windows 安装包（不走本目录，但常与本项目一起发布）
+
+**症状**：装完启动即报 `ModuleNotFoundError: No module named 'psutil'`（或 `motor` / `fastapi`）。
+
+**原因**：用系统 Python 执行了 `build_app.py`。系统解释器没有项目依赖，
+PyInstaller 扫不到就产出缺模块的废包。
+
+**解决**：一律用项目 venv 的 Python 构建：
+`aiyichat\.venv\Scripts\python.exe aiyichat/tools/windows_service/build_app.py`。
+
+**症状**：改了源码，安装包里的行为却还是旧的。
+
+**原因**：`build_installer.py` 检测到 `dist/AIYIchatService/AIYIchatService.exe` 已存在时
+**跳过 PyInstaller 重编译**，直接复用旧产物。
+
+**解决**：先删 `aiyichat/tools/windows_service/dist/AIYIchatService` 整个目录，
+再依次执行 `build_app.py` → `build_installer.py`。
+
+**验证**：打包后抽查 `dist/AIYIchatService/_internal/` 下关键模块是否真实入包
+（如 `psutil\*_psutil_windows.pyd`），不要只看 exe 文件时间戳。
 
 ## 维护说明
 

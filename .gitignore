@@ -39,7 +39,10 @@ debug_*.py
 # AI 协作规则与自动生成 Wiki（含服务器 IP、运维路径等敏感信息）
 .qoder/
 # 营销物料与内部文档（推广方案、配置说明、后台截图）
-/docs/
+# 注意：docs 下内容默认全部保密，仅 ARCHITECTURE.md 作为公开技术文档放行
+# （必须用 /docs/* 形式排除内容而非 /docs/ 排除目录，否则 Git 不会进入目录、例外失效）
+/docs/*
+!/docs/ARCHITECTURE.md
 /vibe_images/
 /scripts/
 # 内部发布说明（含授权分级等历史表述）

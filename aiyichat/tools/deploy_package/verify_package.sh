@@ -45,6 +45,12 @@ check_pkg() {
         echo "FAIL: 源码形态部署包不应包含 .so 编译产物"; return 1
     fi
     echo "PASS: 无 .so 编译产物（纯源码形态）"
+    # 本地跑过就会在 app/ 下留下 __pycache__，带进包里等于交付
+    # 与源码可能对不上的旧字节码，因此与 .so 同级拦下
+    if echo "$file_list" | grep -qE "__pycache__/|\.pyc$"; then
+        echo "FAIL: 包内混入 __pycache__ / .pyc 编译缓存"; return 1
+    fi
+    echo "PASS: 无 __pycache__ / .pyc 编译缓存"
 
     # 5. 资源与种子脚本
     local sticker_count portrait_count

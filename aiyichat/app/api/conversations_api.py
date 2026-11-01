@@ -152,6 +152,8 @@ async def get_messages(request: Request, conversation_id: str, limit: int = 50):
             "content": m.content,
             "content_type": m.content_type,
             "media_url": m.media_url,
+            "media_urls": m.media_urls,
+            "media_kinds": m.media_kinds,
             "emotion_tag": m.emotion_tag,
             "created_at": m.created_at.isoformat(),
         }
@@ -298,6 +300,17 @@ async def chat_voice_stream(
             status_code=exc.status_code, detail=exc.message
         ) from exc
 
+    from app.db.repositories.quota_repo import QuotaRepository
+
+    quota_ok, quota_reason = await QuotaRepository().deduct(
+        principal.account_id, "voice", 1
+    )
+    if not quota_ok:
+        raise HTTPException(
+            status_code=429,
+            detail=f"语音额度不足：{quota_reason}",
+        )
+
     transcript = await transcribe_wav(wav_data)
     if not transcript:
         raise HTTPException(status_code=422, detail="没听清，请再说一次")
@@ -306,7 +319,11 @@ async def chat_voice_stream(
     from app.services.media_storage import save_audio_from_bytes
 
     try:
-        user_media_url = await save_audio_from_bytes(mp3_data, "audio/mpeg")
+        user_media_url = await save_audio_from_bytes(
+            mp3_data,
+            "audio/mpeg",
+            owner_account_id=principal.account_id,
+        )
     except Exception:
         logger.exception("网页语音消息保存失败")
         raise HTTPException(

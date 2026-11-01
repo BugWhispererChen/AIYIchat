@@ -94,6 +94,52 @@ def test_conversation_cascade_removes_messages_snapshots_and_media() -> None:
         mongo._db = None
 
 
+def test_cascade_deletes_all_multi_media_urls() -> None:
+    """单条消息带多个媒体时，级联删除必须回收全部媒体，不只首图。"""
+    conv_id = ObjectId()
+
+    async def case() -> None:
+        _setup()
+        db = get_database()
+        await db.conversations.insert_one({
+            "_id": conv_id,
+            "identity_id": "id-1",
+            "service_id": "svc-1",
+            "status": "active",
+        })
+        first_id = uuid.uuid4().hex
+        second_id = uuid.uuid4().hex
+        for media_id in (first_id, second_id):
+            await db.media.insert_one({
+                "_id": ObjectId(),
+                "public_id": media_id,
+                "data": b"img",
+            })
+        await db.messages.insert_one({
+            "_id": ObjectId(),
+            "conversation_id": str(conv_id),
+            "role": "user",
+            "content": "图一 + 语音",
+            "media_url": f"/api/media/{first_id}",
+            "media_urls": [
+                f"/api/media/{first_id}",
+                f"/api/media/{second_id}",
+            ],
+            "media_kinds": ["image", "voice"],
+        })
+
+        stats = await ConversationRepository().delete_cascade_by_ids(
+            [str(conv_id)]
+        )
+        assert stats["media"] == 2, stats
+        assert await db.media.count_documents({}) == 0
+
+    try:
+        asyncio.run(case())
+    finally:
+        mongo._db = None
+
+
 def test_identity_cascade_preserves_web_login_and_removes_records() -> None:
     conv_id = ObjectId()
 

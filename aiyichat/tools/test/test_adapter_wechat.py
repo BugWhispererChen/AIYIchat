@@ -550,6 +550,117 @@ class TestHandleMessage:
 class TestAesMediaAndProactive:
     """CDN 下载解密、图片保存、主动消息。"""
 
+    def test_cdn_download_rejects_over_limit(self) -> None:
+        async def body():
+            key = base64.b64encode(b"0123456789abcdef").decode()
+            client = _make_client()
+            client._session = FakeAiohttpSession([
+                FakeAiohttpResponse(read=b"x" * 20)
+            ])
+            item = {"media": {
+                "full_url": "https://cdn.example.test/download?id=1",
+                "aes_key": key,
+            }}
+            assert await client._download_cdn_media(item, max_bytes=10) is None
+
+        _run(body())
+
+    def test_inbound_image_vision_skipped_when_quota_exhausted(self) -> None:
+        async def body():
+            import io
+
+            import mongomock_motor
+            from PIL import Image
+
+            from app.db import mongo
+
+            buffer = io.BytesIO()
+            Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+            png_bytes = buffer.getvalue()
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_img_quota"]
+
+            client = _make_client(account_id="acc-1")
+            client._download_cdn_media = AsyncMock(return_value=png_bytes)
+            client._handle_image_input = AsyncMock(return_value="不该被调用")
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client.send_text = AsyncMock()
+            client._send_typing = AsyncMock()
+            client._cache_quote_message = AsyncMock()
+            try:
+                from app.config import settings
+
+                with patch.object(settings, "vision_enabled", True), patch(
+                    "app.db.repositories.quota_repo.QuotaRepository.deduct",
+                    AsyncMock(return_value=(False, "额度不足")),
+                ), patch(
+                    "app.adapters.wechat_clawbot.spawn",
+                    lambda coro: coro.close(),
+                ):
+                    await client._handle_message({
+                        "message_id": 601,
+                        "from_user_id": "u-1",
+                        "item_list": [{
+                            "type": 2,
+                            "image_item": {
+                                "media": {
+                                    "encrypt_query_param": "p", "aes_key": "k",
+                                },
+                            },
+                        }],
+                    })
+                client._handle_image_input.assert_not_awaited()
+                kwargs = client.engine.handle_message.await_args.kwargs
+                assert "图片" in kwargs["text"]
+                assert len(kwargs["media_urls"]) == 1
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_inbound_voice_asr_skipped_when_quota_exhausted(self) -> None:
+        async def body():
+            client = _make_client(account_id="acc-1")
+            client._download_cdn_media = AsyncMock(return_value=b"voice-bytes")
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client.send_text = AsyncMock()
+            client._send_typing = AsyncMock()
+            client._cache_quote_message = AsyncMock()
+            from app.config import settings
+
+            with patch.object(settings, "asr_enabled", True), patch(
+                "app.db.repositories.quota_repo.QuotaRepository.deduct",
+                AsyncMock(return_value=(False, "额度不足")),
+            ) as deduct, patch(
+                "app.adapters.wechat_clawbot.spawn",
+                lambda coro: coro.close(),
+            ):
+                await client._handle_message({
+                    "message_id": 602,
+                    "from_user_id": "u-1",
+                    "item_list": [{
+                        "type": 3,
+                        "voice_item": {
+                            "media": {
+                                "encrypt_query_param": "p", "aes_key": "k",
+                            },
+                        },
+                    }],
+                })
+            deduct.assert_awaited_once_with("acc-1", "voice", 1)
+            kwargs = client.engine.handle_message.await_args.kwargs
+            assert "语音消息" in kwargs["text"]
+
+        _run(body())
+
     def test_download_cdn_media_missing_fields(self) -> None:
         async def body():
             client = _make_client()
@@ -1085,6 +1196,69 @@ class TestP1QuoteAndFiles:
                 assert "【引用消息】被引用的原句" in text
                 assert "image" in text
                 assert text.endswith("这条怎么样")
+            finally:
+                mongo._db = old_db
+
+        _run(body())
+
+    def test_multi_item_keeps_text_image_and_voice(self) -> None:
+        """一条消息含文字+图片+语音时，内容与媒体都要保留，不能互相覆盖。"""
+        async def body():
+            import io
+
+            import mongomock_motor
+            from PIL import Image
+
+            from app.db import mongo
+
+            buffer = io.BytesIO()
+            Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+            png_bytes = buffer.getvalue()
+            old_db = mongo._db
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_wx_multi"]
+
+            client = _make_client(account_id="acc-1")
+            client._download_cdn_media = AsyncMock(return_value=png_bytes)
+            client.engine.handle_message = AsyncMock(return_value=SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            ))
+            client.send_text = AsyncMock()
+            client._send_typing = AsyncMock()
+            client._cache_quote_message = AsyncMock()
+            try:
+                from app.config import settings
+
+                with patch.object(settings, "vision_enabled", False), patch(
+                    "app.adapters.wechat_clawbot.spawn",
+                    lambda coro: coro.close(),
+                ):
+                    await client._handle_message({
+                        "message_id": 501,
+                        "from_user_id": "u-1",
+                        "item_list": [
+                            {"type": 1, "text_item": {"text": "看这个"}},
+                            {"type": 2, "image_item": {"media": {
+                                "encrypt_query_param": "p1", "aes_key": "k",
+                            }}},
+                            {"type": 2, "image_item": {"media": {
+                                "encrypt_query_param": "p2", "aes_key": "k",
+                            }}},
+                            {"type": 3, "voice_item": {"text": "语音内容"}},
+                        ],
+                    })
+                kwargs = client.engine.handle_message.await_args.kwargs
+                assert "看这个" in kwargs["text"]
+                assert "语音内容" in kwargs["text"]
+                assert "图片" in kwargs["text"]
+                assert kwargs["content_type"] == "voice"
+                assert len(kwargs["media_urls"]) == 2
+                assert kwargs["media_kinds"] == ["image", "image"]
+                assert kwargs["media_url"] == kwargs["media_urls"][0]
+                # 所有下载媒体都必须被消息引用，不能留下孤儿
+                assert await mongo.get_database().media.count_documents({}) == 2
+                assert len(set(kwargs["media_urls"])) == 2
             finally:
                 mongo._db = old_db
 

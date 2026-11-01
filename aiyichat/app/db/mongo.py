@@ -233,6 +233,12 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await _safe_create_index(
         db.media, "public_id", unique=True, sparse=True
     )
+    # 账号级媒体配额：按归属统计用量，按创建时间最旧优先清理
+    await _safe_create_index(
+        db.media, [("owner_account_id", 1), ("created_at", 1)]
+    )
+    # 消息多值媒体：清理配额时按 URL 反查引用（多键索引）
+    await _safe_create_index(db.messages, "media_urls")
     # 记忆注入快照：按服务（含共享组 key）查询与清理
     await _safe_create_index(db.injection_snapshots, "service_id")
     # 内容安全事件：按类型+时间、创建时间索引（供审计分页/统计）

@@ -36,6 +36,13 @@ from app.conversation.sticker_task import (
 )
 from app.db.repositories.bot_config_repo import BotConfigRepository
 from app.models.bot_config import BotConfigInDB
+from app.services.media_storage import (
+    MAX_AUDIO_SIZE,
+    MAX_FILE_SIZE,
+    MAX_INBOUND_IMAGE_DOWNLOAD,
+    MediaQuotaExceeded,
+    normalize_inbound_image,
+)
 from app.services.voice_window import voice_window
 from app.utils.redaction import brief_json, mask_secret
 from app.utils.tasks import spawn
@@ -1024,8 +1031,9 @@ class WeChatClient(ChannelAdapter):
 
         # 4. 解析 item_list（引用先还原，媒体再下载与分析）
         item_list = msg.get("item_list", [])
-        text = ""
-        media_url: Optional[str] = None
+        text_parts: list[str] = []
+        media_urls: list[str] = []
+        media_kinds: list[str] = []
         content_type = "text"
         quote_context = ""
         for candidate in item_list:
@@ -1036,32 +1044,80 @@ class WeChatClient(ChannelAdapter):
                 if quote_context:
                     break
 
+        def _remember_media(url: str, kind: str) -> None:
+            """记录一个已落库媒体，并把首个媒体类型作为兼容字段。"""
+            nonlocal content_type
+            media_urls.append(url)
+            media_kinds.append(kind)
+            if content_type == "text":
+                content_type = kind
+
+        def _remember_voice() -> None:
+            """语音未单独落媒体，但仍要保留“本轮是语音”的兼容语义。"""
+            nonlocal content_type
+            content_type = "voice"
+
         for item in item_list:
             item_type = item.get("type")
 
             if item_type == 1:  # TEXT
-                text = item.get("text_item", {}).get("text", "")
+                item_text = item.get("text_item", {}).get("text", "")
+                if item_text:
+                    text_parts.append(item_text)
 
             elif item_type == 2:  # IMAGE
-                content_type = "image"
-                text = f"{IMAGE_TRANSCRIBE_PREFIX}]"
                 image_item = item.get("image_item", {})
-                decrypted = await self._download_cdn_media(image_item)
-                if decrypted:
-                    media_url = await self._save_image(decrypted)
-                    if settings.vision_enabled:
-                        desc = await self._handle_image_input(decrypted)
-                        if desc:
-                            is_likely_sticker = self._is_likely_sticker(decrypted)
-                            # 识别为表情包时转写为表情包格式（触发以图回图）
-                            if desc.startswith("[表情包]") or is_likely_sticker:
-                                clean_desc = desc.replace("[表情包]", "").replace("含义：", "").replace("含义:", "").strip()
-                                text = f"{STICKER_TRANSCRIBE_PREFIX}，含义：{clean_desc}]"
-                            else:
-                                text = f"{IMAGE_TRANSCRIBE_PREFIX}，内容：{desc}]"
+                decrypted = await self._download_cdn_media(
+                    image_item, max_bytes=MAX_INBOUND_IMAGE_DOWNLOAD
+                )
+                if not decrypted:
+                    text_parts.append(f"{IMAGE_TRANSCRIBE_PREFIX}，下载失败]")
+                    continue
+                try:
+                    image_data, image_type = await asyncio.to_thread(
+                        normalize_inbound_image, decrypted
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "%s 入站图片校验失败: %s", self._label, exc
+                    )
+                    text_parts.append(f"{IMAGE_TRANSCRIBE_PREFIX}，格式不支持]")
+                    continue
+
+                media_url = await self._save_image(image_data, image_type)
+                if not media_url:
+                    text_parts.append(f"{IMAGE_TRANSCRIBE_PREFIX}，保存失败]")
+                    continue
+                _remember_media(media_url, "image")
+
+                desc = ""
+                if (
+                    settings.vision_enabled
+                    and await self._deduct_inbound_quota("image")
+                ):
+                    desc = await self._handle_image_input(image_data)
+                if desc:
+                    is_likely_sticker = self._is_likely_sticker(image_data)
+                    # 识别为表情包时转写为表情包格式（触发以图回图）
+                    if desc.startswith("[表情包]") or is_likely_sticker:
+                        clean_desc = (
+                            desc.replace("[表情包]", "")
+                            .replace("含义：", "")
+                            .replace("含义:", "")
+                            .strip()
+                        )
+                        text_parts.append(
+                            f"{STICKER_TRANSCRIBE_PREFIX}，含义：{clean_desc}]"
+                        )
+                    else:
+                        text_parts.append(
+                            f"{IMAGE_TRANSCRIBE_PREFIX}，内容：{desc}]"
+                        )
+                else:
+                    text_parts.append(f"{IMAGE_TRANSCRIBE_PREFIX}]")
 
             elif item_type == 3:  # VOICE
-                content_type = "voice"
+                _remember_voice()
                 voice_item = item.get("voice_item", {})
                 # 优先使用官方平台 ASR 结果
                 platform_asr = voice_item.get("text", "")
@@ -1069,80 +1125,124 @@ class WeChatClient(ChannelAdapter):
                     logger.info(
                         "%s 平台ASR: %s", self._label, platform_asr[:60]
                     )
-                    text = platform_asr.strip()
+                    text_parts.append(platform_asr.strip())
                 elif settings.asr_enabled:
-                    # 降级: 下载语音 -> silk_to_wav -> ASR
-                    decrypted = await self._download_cdn_media(voice_item)
+                    # 降级: 下载语音 -> silk_to_wav -> ASR（ASR 按次扣额度）
+                    decrypted = await self._download_cdn_media(
+                        voice_item, max_bytes=MAX_AUDIO_SIZE
+                    )
                     if decrypted:
-                        text = await self._handle_voice_input(decrypted)
-                if not text:
-                    text = "[身份发送了一条语音消息]"
+                        transcribed = await self._handle_voice_input(decrypted)
+                        if transcribed:
+                            text_parts.append(transcribed)
+                        else:
+                            text_parts.append("[身份发送了一条语音消息]")
+                    else:
+                        text_parts.append("[身份发送了一条语音消息]")
+                else:
+                    text_parts.append("[身份发送了一条语音消息]")
 
             elif item_type == 4:  # FILE
-                content_type = "file"
                 file_item = item.get("file_item", {})
                 file_name = str(file_item.get("file_name", "文件"))
-                decrypted = await self._download_cdn_media(file_item)
-                if decrypted:
-                    try:
-                        from app.services.file_text import extract_text_from_file
-                        from app.services.media_storage import (
-                            save_file_from_bytes,
-                        )
+                decrypted = await self._download_cdn_media(
+                    file_item, max_bytes=MAX_FILE_SIZE
+                )
+                if not decrypted:
+                    text_parts.append(
+                        f"[身份发送了文件：{file_name}，下载失败]"
+                    )
+                    continue
 
-                        media_url = await save_file_from_bytes(
-                            decrypted,
-                            filename=file_name,
-                            content_type="application/octet-stream",
-                        )
-                        extracted = await asyncio.to_thread(
-                            extract_text_from_file, decrypted, file_name
-                        )
-                        if extracted:
-                            text = (
-                                f"[身份发送了文件：{file_name}]\n"
-                                f"{extracted}"
-                            )
-                        else:
-                            text = (
-                                f"[身份发送了文件：{file_name}，"
-                                "文件已保存，暂不支持解析正文]"
-                            )
-                    except Exception as exc:
-                        logger.warning(
-                            "%s 入站文件处理失败: %s", self._label, exc
-                        )
-                if not text:
-                    text = f"[身份发送了文件：{file_name}，下载失败]"
+                saved = False
+                try:
+                    from app.services.media_storage import save_file_from_bytes
+
+                    media_url = await save_file_from_bytes(
+                        decrypted,
+                        filename=file_name,
+                        content_type="application/octet-stream",
+                        owner_account_id=self.account_id,
+                    )
+                    _remember_media(media_url, "file")
+                    saved = True
+                except MediaQuotaExceeded as exc:
+                    logger.warning(
+                        "%s 入站文件未保存（媒体配额已满）: %s",
+                        self._label, exc,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "%s 入站文件保存失败: %s", self._label, exc
+                    )
+
+                try:
+                    from app.services.file_text import extract_text_from_file
+
+                    extracted = await asyncio.to_thread(
+                        extract_text_from_file, decrypted, file_name
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "%s 入站文件解析失败: %s", self._label, exc
+                    )
+                    extracted = ""
+
+                if extracted:
+                    text_parts.append(
+                        f"[身份发送了文件：{file_name}]\n{extracted}"
+                    )
+                elif saved:
+                    text_parts.append(
+                        f"[身份发送了文件：{file_name}，"
+                        "文件已保存，暂不支持解析正文]"
+                    )
+                else:
+                    text_parts.append(
+                        f"[身份发送了文件：{file_name}，"
+                        "文件未保存（媒体配额已满或失败）]"
+                    )
 
             elif item_type == 5:  # VIDEO
-                content_type = "video"
                 video_item = item.get("video_item", {})
-                decrypted = await self._download_cdn_media(video_item)
-                if decrypted:
-                    try:
-                        from app.services.media_storage import (
-                            save_file_from_bytes,
-                        )
+                decrypted = await self._download_cdn_media(
+                    video_item, max_bytes=MAX_FILE_SIZE
+                )
+                if not decrypted:
+                    text_parts.append("[身份发送了一个视频，下载失败]")
+                    continue
+                try:
+                    from app.services.media_storage import save_file_from_bytes
 
-                        media_url = await save_file_from_bytes(
-                            decrypted,
-                            filename="video.mp4",
-                            content_type="video/mp4",
-                        )
-                        text = "[身份发送了一个视频，视频已保存]"
-                    except Exception as exc:
-                        logger.warning(
-                            "%s 入站视频保存失败: %s", self._label, exc
-                        )
-                if not text:
-                    text = "[身份发送了一个视频，下载失败]"
+                    media_url = await save_file_from_bytes(
+                        decrypted,
+                        filename="video.mp4",
+                        content_type="video/mp4",
+                        owner_account_id=self.account_id,
+                    )
+                    _remember_media(media_url, "video")
+                    text_parts.append("[身份发送了一个视频，视频已保存]")
+                except MediaQuotaExceeded as exc:
+                    logger.warning(
+                        "%s 入站视频未保存（媒体配额已满）: %s",
+                        self._label, exc,
+                    )
+                    text_parts.append(
+                        "[身份发送了一个视频，媒体配额已满未保存]"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "%s 入站视频保存失败: %s", self._label, exc
+                    )
+                    text_parts.append("[身份发送了一个视频，保存失败]")
 
+        text = "\n".join(part for part in text_parts if part).strip()
         if not text:
             logger.debug("%s 消息无可处理文本", self._label)
             # 取消打字状态
             spawn(self._send_typing(from_user_id, status=2))
             return
+        media_url = media_urls[0] if media_urls else None
 
         # 引用只在进入引擎前拼接；缓存保存原始正文，避免重复嵌套引用。
         cache_text = text
@@ -1165,6 +1265,8 @@ class WeChatClient(ChannelAdapter):
                 nickname=msg.get("from_nickname", ""),
                 media_url=media_url,
                 content_type=content_type,
+                media_urls=media_urls or None,
+                media_kinds=media_kinds or None,
             )
             reply_text = result.text
             img_tasks = result.image_tasks
@@ -1257,8 +1359,13 @@ class WeChatClient(ChannelAdapter):
 
     # ── CDN 媒体下载（官方协议） ──────────────────────
 
-    async def _download_cdn_media(self, media_item: dict) -> Optional[bytes]:
-        """从 CDN 下载并解密媒体文件（使用官方 CDNMedia 协议）。"""
+    async def _download_cdn_media(
+        self, media_item: dict, max_bytes: int = MAX_FILE_SIZE
+    ) -> Optional[bytes]:
+        """从 CDN 下载并解密媒体文件（使用官方 CDNMedia 协议）。
+
+        分块读取并在超过 `max_bytes` 时立即中断，避免把超大媒体全量读进内存。
+        """
         # 提取 CDNMedia 结构
         cdn_media = media_item.get("media", {})
         encrypt_query_param = cdn_media.get("encrypt_query_param", "")
@@ -1287,7 +1394,25 @@ class WeChatClient(ChannelAdapter):
                         "%s CDN 下载失败: status=%s", self._label, resp.status
                     )
                     return None
-                encrypted_data = await resp.read()
+                declared = resp.content_length
+                if declared and declared > max_bytes:
+                    logger.warning(
+                        "%s CDN 媒体超过上限: %s > %s bytes",
+                        self._label, declared, max_bytes,
+                    )
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > max_bytes:
+                        logger.warning(
+                            "%s CDN 媒体超过上限: > %s bytes",
+                            self._label, max_bytes,
+                        )
+                        return None
+                    chunks.append(chunk)
+                encrypted_data = b"".join(chunks)
 
             decrypted = self._aes_decrypt(encrypted_data, aes_key)
             logger.info(
@@ -1848,15 +1973,43 @@ class WeChatClient(ChannelAdapter):
 
     # ── 多媒体输入处理 ────────────────────────────────
 
-    async def _save_image(self, image_data: bytes) -> Optional[str]:
+    async def _save_image(
+        self, image_data: bytes, content_type: str = "image/png"
+    ) -> Optional[str]:
         """保存图片到媒体库，返回 media_url。"""
         try:
             from app.services.media_storage import save_image_from_bytes
 
-            return await save_image_from_bytes(image_data)
+            return await save_image_from_bytes(
+                image_data,
+                content_type,
+                owner_account_id=self.account_id,
+            )
+        except MediaQuotaExceeded as exc:
+            logger.warning("%s 图片未保存（媒体配额已满）: %s", self._label, exc)
+            return None
         except Exception as e:
             logger.error("%s 图片保存失败: %s", self._label, e)
             return None
+
+    async def _deduct_inbound_quota(self, kind: str) -> bool:
+        """入站外部识别按次扣减账号额度；无账号归属时 fail closed。"""
+        if not self.account_id:
+            logger.warning(
+                "%s 缺少账号归属，跳过入站 %s 能力", self._label, kind
+            )
+            return False
+        from app.db.repositories.quota_repo import QuotaRepository
+
+        ok, reason = await QuotaRepository().deduct(
+            self.account_id, kind, 1
+        )
+        if not ok:
+            logger.info(
+                "%s 入站 %s 额度不足，跳过外部识别: %s",
+                self._label, kind, reason,
+            )
+        return ok
 
     async def _handle_image_input(self, image_data: bytes) -> str:
         """调用 Vision 描述图片内容，支持表情包尺寸预判。"""
@@ -1910,6 +2063,8 @@ class WeChatClient(ChannelAdapter):
 
     async def _handle_voice_input(self, silk_data: bytes) -> str:
         """下载的 silk 数据 -> wav -> ASR。"""
+        if not await self._deduct_inbound_quota("voice"):
+            return ""
         try:
             from app.services.asr_service import ASRService
             from app.services.audio_utils import silk_to_wav
@@ -1945,7 +2100,10 @@ class WeChatClient(ChannelAdapter):
                     from app.db.repositories.message_repo import MessageRepository
                     from app.services.media_storage import save_image_from_bytes
 
-                    media_url = await save_image_from_bytes(img_bytes)
+                    media_url = await save_image_from_bytes(
+                        img_bytes,
+                        owner_account_id=task.account_id,
+                    )
                     await MessageRepository().create(
                         conversation_id=conv_id,
                         role="assistant",

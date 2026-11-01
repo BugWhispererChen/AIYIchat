@@ -104,7 +104,11 @@ def _engine(monkeypatch, *, quota: _FakeQuota, tts: _FakeTTS,
         "app.db.repositories.media_repo.MediaRepository", lambda: _FakeMediaRepo()
     )
 
-    async def _save_audio(data: bytes, content_type: str = "audio/mpeg") -> str:
+    async def _save_audio(
+        data: bytes,
+        content_type: str = "audio/mpeg",
+        owner_account_id: str = "",
+    ) -> str:
         _save_audio.calls.append((data, content_type))  # type: ignore[attr-defined]
         return "/api/media/audio-1"
 
@@ -113,7 +117,9 @@ def _engine(monkeypatch, *, quota: _FakeQuota, tts: _FakeTTS,
         "app.services.media_storage.save_audio_from_bytes", _save_audio
     )
 
-    async def _save_image(data: bytes) -> str:
+    async def _save_image(
+        data: bytes, owner_account_id: str = ""
+    ) -> str:
         _save_image.calls.append(data)  # type: ignore[attr-defined]
         return "/api/media/image-1"
 

@@ -11,12 +11,29 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-async def download_qq_media(url: str, timeout: float = 30.0) -> bytes:
-    """异步下载QQ富媒体文件。"""
+async def download_qq_media(
+    url: str, timeout: float = 30.0, max_bytes: int = 10 * 1024 * 1024
+) -> bytes:
+    """异步流式下载 QQ 富媒体，超过上限立即中断，避免全量读入超大文件。"""
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.content
+        async with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            declared = resp.headers.get("content-length")
+            if declared:
+                try:
+                    declared_size = int(declared)
+                except ValueError:
+                    declared_size = 0
+                if declared_size > max_bytes:
+                    raise ValueError("QQ 媒体超过大小上限")
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("QQ 媒体超过大小上限")
+                chunks.append(chunk)
+    return b"".join(chunks)
 
 
 async def silk_to_wav(silk_data: bytes) -> bytes:

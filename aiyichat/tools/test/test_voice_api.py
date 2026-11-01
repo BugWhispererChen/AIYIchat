@@ -62,7 +62,11 @@ def _patch_voice(monkeypatch, *, transcript: str = "你好"):
     async def _transcribe(wav: bytes) -> str:
         return transcript
 
-    async def _save(data: bytes, content_type: str = "audio/mpeg") -> str:
+    async def _save(
+        data: bytes,
+        content_type: str = "audio/mpeg",
+        owner_account_id: str = "",
+    ) -> str:
         return "/api/media/user-voice"
 
     monkeypatch.setattr(settings, "asr_enabled", True)
@@ -257,6 +261,45 @@ def test_voice_rate_limit_429(monkeypatch) -> None:
     asyncio.run(flow())
 
 
+def test_voice_quota_exhausted_429(monkeypatch) -> None:
+    """语音 ASR 是外部计费调用，额度耗尽必须在转写前拒绝。"""
+    import app.conversation.engine as engine_module
+    from app.db.repositories.quota_repo import QuotaRepository
+
+    _patch_voice(monkeypatch)
+
+    async def flow() -> None:
+        app = await _setup_app("t_voice_quota")
+        original = engine_module.ConversationEngine
+        try:
+            async with _client(app) as client:
+                await _register(client, "voicenoquota")
+                await _approve("voicenoquota")
+                token = await _login(client, "voicenoquota")
+                service = await _service_for_username("voicenoquota")
+                quota = await QuotaRepository().find_by_account(
+                    service.account_id
+                )
+                assert quota is not None
+                await mongo.get_database().account_quotas.update_one(
+                    {"account_id": service.account_id},
+                    {"$set": {
+                        "voice_quota.used": quota.voice_quota.limit,
+                    }},
+                )
+                resp = await _post_voice(
+                    client, token, service_id=service.id
+                )
+                assert resp.status_code == 429, resp.text
+                assert "语音额度不足" in resp.text
+        finally:
+            engine_module.ConversationEngine = original  # type: ignore[misc]
+            account_limiter.reset()
+            mongo._db = None
+
+    asyncio.run(flow())
+
+
 def test_history_messages_include_media_fields() -> None:
     from app.db.repositories.conversation_repo import ConversationRepository
     from app.db.repositories.message_repo import MessageRepository
@@ -278,6 +321,11 @@ def test_history_messages_include_media_fields() -> None:
                     content="(语音回复)",
                     content_type="voice",
                     media_url="/api/media/history-voice",
+                    media_urls=[
+                        "/api/media/history-voice",
+                        "/api/media/history-image",
+                    ],
+                    media_kinds=["voice", "image"],
                 )
                 resp = await client.get(
                     f"/api/conversations/{conv.id}/messages?limit=10",
@@ -287,6 +335,11 @@ def test_history_messages_include_media_fields() -> None:
                 rows = resp.json()
                 assert rows[0]["content_type"] == "voice"
                 assert rows[0]["media_url"] == "/api/media/history-voice"
+                assert rows[0]["media_urls"] == [
+                    "/api/media/history-voice",
+                    "/api/media/history-image",
+                ]
+                assert rows[0]["media_kinds"] == ["voice", "image"]
         finally:
             mongo._db = None
 

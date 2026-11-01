@@ -508,6 +508,8 @@ async def export_payload(
                 "content": msg.content,
                 "content_type": msg.content_type,
                 "media_url": msg.media_url or "",
+                "media_urls": msg.media_urls,
+                "media_kinds": msg.media_kinds,
                 "emotion_tag": msg.emotion_tag or "",
                 "created_at": _iso(msg.created_at),
             }

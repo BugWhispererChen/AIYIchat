@@ -707,24 +707,22 @@ class QQWebSocketClient:
             elif ct.startswith("image/") and url:
                 image_url = url
 
-        # 下载图片到 MongoDB 持久存储
+        # 下载图片到 MongoDB 持久存储：一次流式下载同时用于落库与 Vision
         local_media_url = None
         image_data = b""
         if image_url:
             try:
-                from app.services.media_storage import save_image_from_url
-                local_media_url = await save_image_from_url(image_url)
+                from app.services.media_storage import save_inbound_image_from_url
+
+                local_media_url, image_data = await save_inbound_image_from_url(
+                    image_url,
+                    owner_account_id=self.bot_config.account_id,
+                )
                 # 掩码输出：/api/media/<id> 的 id 是能力令牌，拿到完整 URL 就能读原图
                 print(
                     f"{self._label} [图片已保存] "
                     f"/api/media/{mask_secret(local_media_url.rsplit('/', 1)[-1])}"
                 )
-                # 下载原图用于尺寸预判
-                import httpx
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.get(image_url)
-                    if resp.status_code == 200:
-                        image_data = resp.content
             except Exception as e:
                 logger.error("%s 图片保存失败: %s", self._label, e)
 
@@ -738,7 +736,11 @@ class QQWebSocketClient:
                 print(f"{self._label} [语音识别] {nickname}: {content}")
 
         # 图片输入 → Vision 描述（识别为表情包时转写为表情包格式，触发以图回图）
-        if image_url and settings.vision_enabled:
+        if (
+            image_url
+            and settings.vision_enabled
+            and await self._deduct_inbound_quota("image")
+        ):
             img_desc = await self._handle_image_input(image_url, image_data)
             if img_desc:
                 is_likely_sticker = self._is_likely_sticker(image_data) if image_data else False
@@ -1554,8 +1556,10 @@ class QQWebSocketClient:
             )
             return asr_refer_text.strip()
 
-        # 降级：下载 WAV 调 dashscope ASR
+        # 降级：下载 WAV 调 dashscope ASR（外部计费能力按次扣账号额度）
         if voice_wav_url and settings.asr_enabled:
+            if not await self._deduct_inbound_quota("voice"):
+                return "[身份发送了一条语音消息]"
             try:
                 from app.services.audio_utils import download_qq_media
                 from app.services.asr_service import ASRService
@@ -1572,6 +1576,24 @@ class QQWebSocketClient:
         # 兜底：让 Bot 知道身份发了语音
         return "[身份发送了一条语音消息]"
 
+    async def _deduct_inbound_quota(self, kind: str) -> bool:
+        """入站外部识别按次扣减账号额度；无账号归属时 fail closed。"""
+        account_id = getattr(self.bot_config, "account_id", "") or ""
+        if not account_id:
+            logger.warning(
+                "%s 缺少账号归属，跳过入站 %s 能力", self._label, kind
+            )
+            return False
+        from app.db.repositories.quota_repo import QuotaRepository
+
+        ok, reason = await QuotaRepository().deduct(account_id, kind, 1)
+        if not ok:
+            logger.info(
+                "%s 入站 %s 额度不足，跳过外部识别: %s",
+                self._label, kind, reason,
+            )
+        return ok
+
     async def _handle_image_input(
         self, image_url: str, image_data: bytes = b""
     ) -> str:
@@ -1584,14 +1606,36 @@ class QQWebSocketClient:
                 is_likely_sticker = self._is_likely_sticker(image_data)
 
             svc = get_vision_service()
+            # 已有本地字节时直接用 data URI，避免 Vision 再下载一次远端图片
+            target = image_url
+            if image_data:
+                target = "data:%s;base64,%s" % (
+                    self._detect_image_mime(image_data),
+                    base64.b64encode(image_data).decode(),
+                )
             if is_likely_sticker:
                 return await svc.describe_image_with_hint(
-                    image_url, is_likely_sticker=True
+                    target, is_likely_sticker=True
                 )
-            return await svc.describe_image(image_url)
+            return await svc.describe_image(target)
         except Exception as e:
             logger.error("%s 图片识别失败: %s", self._label, e)
             return ""
+
+    @staticmethod
+    def _detect_image_mime(data: bytes) -> str:
+        """按文件头识别入站图片 MIME。"""
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if data[:2] == b"\xff\xd8":
+            return "image/jpeg"
+        if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        if data[:4] == b"GIF8":
+            return "image/gif"
+        if data[:2] == b"BM":
+            return "image/bmp"
+        return "image/jpeg"
 
     @staticmethod
     def _is_likely_sticker(data: bytes) -> bool:
@@ -1707,7 +1751,10 @@ class QQWebSocketClient:
                     from app.services.media_storage import save_image_from_bytes
                     from app.db.repositories.message_repo import MessageRepository
 
-                    media_url = await save_image_from_bytes(img_bytes)
+                    media_url = await save_image_from_bytes(
+                        img_bytes,
+                        owner_account_id=task.account_id,
+                    )
                     await MessageRepository().create(
                         conversation_id=conv_id,
                         role="assistant",

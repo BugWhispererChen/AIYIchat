@@ -7,12 +7,29 @@ import uuid
 
 import httpx
 
-from app.db.repositories.media_repo import MediaRepository
+from app.db.repositories.media_repo import (
+    MediaQuotaExceeded,
+    MediaRepository,
+)
 from app.utils.redaction import mask_secret
 
 logger = logging.getLogger(__name__)
 
-MAX_IMAGE_SIZE = 4 * 1024 * 1024  # 4 MB
+__all__ = ["MediaQuotaExceeded"]
+
+MAX_IMAGE_SIZE = 4 * 1024 * 1024  # 落库图片上限 4 MB
+MAX_INBOUND_IMAGE_DOWNLOAD = 10 * 1024 * 1024  # 入站图片原始下载上限 10 MB
+MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 音频文件上限 10 MB
+MAX_FILE_SIZE = 15 * 1024 * 1024  # 文件/视频上限 15 MB（低于 Mongo 16MB 文档硬限）
+
+# 只允许光栅图片；SVG/HTML 等可执行/可渲染文本不能作为图片落库
+_ALLOWED_IMAGE_FORMATS = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "GIF": "image/gif",
+    "WEBP": "image/webp",
+    "BMP": "image/bmp",
+}
 
 _media_repo = MediaRepository()
 
@@ -58,35 +75,115 @@ def _compress_image(
     return buf.getvalue(), out_ct
 
 
-async def save_image_from_url(url: str) -> str:
-    """下载远程图片 → 压缩 → 存入 MongoDB → 返回 /api/media/{id}。"""
+def normalize_inbound_image(data: bytes) -> tuple[bytes, str]:
+    """校验入站图片是受支持的光栅格式，并规范化 MIME。"""
+    if not data:
+        raise ValueError("图片为空")
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image_format = (image.format or "").upper()
+            if image_format not in _ALLOWED_IMAGE_FORMATS:
+                raise ValueError(f"不支持的图片格式: {image_format or 'unknown'}")
+            # verify 会完整检查文件结构，避免把截断/伪装文件当图片存下去
+            image.verify()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("图片格式不受支持") from exc
+
+    content_type = _ALLOWED_IMAGE_FORMATS[image_format]
+    if len(data) > MAX_IMAGE_SIZE:
+        data, content_type = _compress_image(data, content_type)
+        if len(data) > MAX_IMAGE_SIZE:
+            raise ValueError("图片压缩后仍超过大小上限")
+    return data, content_type
+
+
+async def download_inbound_image(
+    url: str, max_bytes: int = MAX_INBOUND_IMAGE_DOWNLOAD
+) -> tuple[bytes, str]:
+    """流式下载入站图片，边读边检查上限，避免把超大响应当作 bytes 全量读入。"""
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("图片地址必须是 http(s)")
+
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
+        async with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            content_type = (
+                resp.headers.get("content-type", "").split(";")[0].strip()
+            )
+            declared = resp.headers.get("content-length")
+            if declared:
+                try:
+                    declared_size = int(declared)
+                except ValueError:
+                    declared_size = 0
+                if declared_size > max_bytes:
+                    raise ValueError("图片超过大小上限")
 
-    raw_data = resp.content
-    ct = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("图片超过大小上限")
+                chunks.append(chunk)
+    return b"".join(chunks), content_type
 
-    # 压缩（在线程中执行，避免阻塞事件循环）
-    data, ct = await asyncio.to_thread(_compress_image, raw_data, ct)
 
-    doc_id = await _media_repo.create(data=data, content_type=ct)
+async def _save_media(
+    data: bytes,
+    content_type: str,
+    *,
+    filename: str = "",
+    owner_account_id: str = "",
+) -> str:
+    """配额检查通过后写入媒体库；配额不足会抛出 MediaQuotaExceeded。"""
+    await _media_repo.ensure_capacity(owner_account_id, len(data))
+    return await _media_repo.create(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        owner_account_id=owner_account_id,
+    )
+
+
+async def save_inbound_image_from_url(
+    url: str, owner_account_id: str = ""
+) -> tuple[str, bytes]:
+    """下载入站图片、校验格式、压缩并落库，返回 (media_url, 原始字节)。"""
+    raw_data, _declared_type = await download_inbound_image(url)
+    data, content_type = await asyncio.to_thread(
+        normalize_inbound_image, raw_data
+    )
+    doc_id = await _save_media(
+        data, content_type, owner_account_id=owner_account_id
+    )
     # public_id 是 URL 里的能力令牌（见 MediaRepository.create），日志只打掩码值
     logger.info("Image saved to DB: id=%s, size=%d", mask_secret(doc_id), len(data))
-    return f"/api/media/{doc_id}"
+    return f"/api/media/{doc_id}", raw_data
 
 
-async def save_image_from_bytes(data: bytes, content_type: str = "image/png") -> str:
+async def save_image_from_bytes(
+    data: bytes,
+    content_type: str = "image/png",
+    owner_account_id: str = "",
+) -> str:
     """二进制图片 → 压缩 → 存入 MongoDB → 返回 /api/media/{id}。"""
-    data, ct = await asyncio.to_thread(_compress_image, data, content_type)
-    doc_id = await _media_repo.create(data=data, content_type=ct)
+    data, content_type = await asyncio.to_thread(
+        _compress_image, data, content_type
+    )
+    doc_id = await _save_media(
+        data, content_type, owner_account_id=owner_account_id
+    )
     logger.info("Image saved to DB: id=%s, size=%d", mask_secret(doc_id), len(data))
     return f"/api/media/{doc_id}"
 
 
 QQ_UPLOAD_MAX = 1 * 1024 * 1024  # QQ 文件上传接口限制约 1MB
-
-MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 音频文件上限 10 MB
 
 # 音频 content_type → 文件扩展名映射
 _AUDIO_EXT_MAP = {
@@ -100,13 +197,11 @@ _AUDIO_EXT_MAP = {
 }
 
 
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 通用文件/视频上限 100 MB
-
-
 async def save_file_from_bytes(
     data: bytes,
     filename: str = "file.bin",
     content_type: str = "application/octet-stream",
+    owner_account_id: str = "",
 ) -> str:
     """二进制文件/视频原样存入媒体库，返回可鉴权的 /api/media/{id}。"""
     if len(data) > MAX_FILE_SIZE:
@@ -114,10 +209,11 @@ async def save_file_from_bytes(
             f"文件过大 ({len(data) / 1024 / 1024:.1f} MB)，"
             f"上限 {MAX_FILE_SIZE / 1024 / 1024:.0f} MB"
         )
-    doc_id = await _media_repo.create(
-        data=data,
-        content_type=content_type,
+    doc_id = await _save_media(
+        data,
+        content_type,
         filename=filename,
+        owner_account_id=owner_account_id,
     )
     logger.info(
         "File saved to DB: id=%s, size=%d, type=%s",
@@ -126,7 +222,11 @@ async def save_file_from_bytes(
     return f"/api/media/{doc_id}"
 
 
-async def save_audio_from_bytes(data: bytes, content_type: str = "audio/mpeg") -> str:
+async def save_audio_from_bytes(
+    data: bytes,
+    content_type: str = "audio/mpeg",
+    owner_account_id: str = "",
+) -> str:
     """二进制音频 → 存入 MongoDB → 返回 /api/media/{id}。
 
     供试听等场景内部播放使用（不对外提供给第三方服务）。音频不压缩，直接存储。
@@ -138,8 +238,11 @@ async def save_audio_from_bytes(data: bytes, content_type: str = "audio/mpeg") -
         )
     ext = _AUDIO_EXT_MAP.get(content_type.lower(), "mp3")
     filename = f"voice_clone_{uuid.uuid4().hex}.{ext}"
-    doc_id = await _media_repo.create(
-        data=data, content_type=content_type, filename=filename
+    doc_id = await _save_media(
+        data,
+        content_type,
+        filename=filename,
+        owner_account_id=owner_account_id,
     )
     logger.info(
         "Audio saved to DB: id=%s, size=%d, type=%s",

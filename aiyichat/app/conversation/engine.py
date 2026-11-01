@@ -298,6 +298,8 @@ class ConversationEngine:
         content_type: str = "text",
         is_group: bool = False,
         group_id: str = "",
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
     ) -> EngineResult:
         """串行化同一会话的整轮处理，避免并发消息乱序与上下文断裂。"""
         target = (
@@ -315,6 +317,8 @@ class ConversationEngine:
                 content_type=content_type,
                 is_group=is_group,
                 group_id=group_id,
+                media_urls=media_urls,
+                media_kinds=media_kinds,
             )
 
     async def _handle_message_locked(
@@ -327,6 +331,8 @@ class ConversationEngine:
         content_type: str = "text",
         is_group: bool = False,
         group_id: str = "",
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
     ) -> EngineResult:
         """
         处理对方消息，返回AI回复。
@@ -340,6 +346,8 @@ class ConversationEngine:
             content_type: 消息类型 ("text" / "image" / "voice")
             is_group: 是否群聊消息
             group_id: 群ID（群聊时必传）
+            media_urls: 本条消息携带的全部媒体 URL（单条多 item 时使用）
+            media_kinds: 与 media_urls 对齐的媒体类型（image/voice/file/video）
 
         Returns:
             EngineResult 包含回复文本、图片描述、会话ID、账号ID、语音设置
@@ -472,6 +480,8 @@ class ConversationEngine:
                 text=text,
                 emotion_tag=detect_emotion(text),
                 media_url=media_url,
+                media_urls=media_urls,
+                media_kinds=media_kinds,
                 content_type=content_type,
                 created_at=received_at,
             )
@@ -832,6 +842,8 @@ class ConversationEngine:
             memory_facts=memory_facts,
             current_topic=current_topic,
             media_url=media_url,
+            media_urls=media_urls,
+            media_kinds=media_kinds,
             content_type=content_type,
             mood=mood,
             profile=profile,
@@ -922,6 +934,8 @@ class ConversationEngine:
         identity_id: str = "",
         media_url: str = "",
         voice_reply: bool = False,
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
     ):
         """串行化同一会话的流式整轮处理（与非流式共用会话锁）。"""
         target = identity_id or platform_id
@@ -938,6 +952,8 @@ class ConversationEngine:
                 identity_id=identity_id,
                 media_url=media_url,
                 voice_reply=voice_reply,
+                media_urls=media_urls,
+                media_kinds=media_kinds,
             ):
                 yield item
 
@@ -952,6 +968,8 @@ class ConversationEngine:
         identity_id: str = "",
         media_url: str = "",
         voice_reply: bool = False,
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
     ):
         """流式处理对方消息，逐块产出回复文本（用于 Web/测试 SSE 消费端）。
 
@@ -1045,6 +1063,8 @@ class ConversationEngine:
                 text=text,
                 emotion_tag=detect_emotion(text),
                 media_url=media_url,
+                media_urls=media_urls,
+                media_kinds=media_kinds,
                 content_type=content_type,
                 created_at=received_at,
             )
@@ -1266,6 +1286,8 @@ class ConversationEngine:
                 memory_facts=memory_facts,
                 current_topic=current_topic,
                 media_url=media_url,
+                media_urls=media_urls,
+                media_kinds=media_kinds,
                 content_type=content_type,
                 mood=mood,
                 profile=profile,
@@ -2393,6 +2415,8 @@ class ConversationEngine:
         memory_facts: list[str],
         current_topic: str,
         media_url: Optional[str] = None,
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
         content_type: str = "text",
         mood: CharacterMood | None = None,
         profile: PromptProfileInDB | None = None,
@@ -2410,6 +2434,8 @@ class ConversationEngine:
             text=text,
             emotion_tag=emotion_tag,
             media_url=media_url,
+            media_urls=media_urls,
+            media_kinds=media_kinds,
             content_type=content_type,
             created_at=received_at,
         )
@@ -2837,7 +2863,9 @@ class ConversationEngine:
                 timeout=60,
             )
             media_url = await save_audio_from_bytes(
-                audio, audio_content_type(audio)
+                audio,
+                audio_content_type(audio),
+                owner_account_id=account_id,
             )
             await MessageRepository().create(
                 conversation_id=conversation.id,
@@ -2924,7 +2952,9 @@ class ConversationEngine:
                     from app.db.repositories.message_repo import MessageRepository
                     from app.services.media_storage import save_image_from_bytes
 
-                    media_url = await save_image_from_bytes(img_bytes)
+                    media_url = await save_image_from_bytes(
+                        img_bytes, owner_account_id=service.account_id
+                    )
                     await MessageRepository().create(
                         conversation_id=conversation.id,
                         role="assistant",

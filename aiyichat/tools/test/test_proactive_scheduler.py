@@ -25,6 +25,42 @@ def _fixed_hour(scheduler: ProactiveScheduler, hour: int) -> bool:
         return scheduler._is_quiet_hours()
 
 
+class TestQuotaGate:
+    """主动消息生成前必须检查文本额度，耗尽后不再调用 LLM。"""
+
+    def test_generation_skipped_when_text_quota_exhausted(self) -> None:
+        async def case() -> None:
+            import mongomock_motor
+
+            from app.db import mongo
+
+            mongo._db = mongomock_motor.AsyncMongoMockClient()["test_proactive_quota"]
+            try:
+                await mongo.get_database().account_quotas.insert_one({
+                    "account_id": "acc-1",
+                    "text_quota": {"limit": 10, "used": 10},
+                    "voice_quota": {"limit": 10, "used": 0},
+                    "image_quota": {"limit": 10, "used": 0},
+                })
+                scheduler = ProactiveScheduler()
+                identity = SimpleNamespace()
+                service = SimpleNamespace(account_id="acc-1")
+                stage = SimpleNamespace(stage=1)
+                assert await scheduler._generate_content(
+                    identity, service, stage
+                ) == ("", "")
+                assert await scheduler._generate_share_content(
+                    identity, service, "trivia"
+                ) == ""
+                assert await scheduler._generate_event_content(
+                    identity, service, "考试"
+                ) == ""
+            finally:
+                mongo._db = None
+
+        asyncio.run(case())
+
+
 class TestIsQuietHours:
     """免打扰时段判定测试集（默认配置 22~8，UTC+8）。"""
 

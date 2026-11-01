@@ -430,6 +430,12 @@ class TestGenerateContent:
                 bot = await BotConfigRepository().create(
                     BotConfigCreate(account_id="acc-1", name="Bot")
                 )
+                await mongo.get_database().account_quotas.insert_one({
+                    "account_id": "acc-1",
+                    "text_quota": {"limit": 100000, "used": 0},
+                    "voice_quota": {"limit": 100000, "used": 0},
+                    "image_quota": {"limit": 100000, "used": 0},
+                })
                 await ProfileRepository().create(
                     PromptProfileCreate(slug="companion", name="小伴")
                 )
@@ -447,8 +453,9 @@ class TestGenerateContent:
 
                 sched = ProactiveScheduler()
                 svc = SimpleNamespace(
-                    id="svc-1", bot_id=bot.id, profile_id="companion",
-                    share_group_id="", context_key="svc-1",
+                    id="svc-1", account_id="acc-1", bot_id=bot.id,
+                    profile_id="companion", share_group_id="",
+                    context_key="svc-1",
                 )
                 identity = SimpleNamespace(
                     id="u-1", self_description="", platform="qq",
@@ -510,8 +517,9 @@ class TestGenerateContent:
 
                 # bot 不存在 → 空
                 svc2 = SimpleNamespace(
-                    id="svc-2", bot_id="no-bot", profile_id="companion",
-                    share_group_id="", context_key="svc-2",
+                    id="svc-2", account_id="acc-1", bot_id="no-bot",
+                    profile_id="companion", share_group_id="",
+                    context_key="svc-2",
                 )
                 content2, _ = await sched._generate_content(identity, svc2, stage)
                 assert content2 == ""

@@ -173,6 +173,26 @@ class QuotaRepository:
         )
         return result.modified_count > 0
 
+    async def has_remaining(
+        self, account_id: str, content_type: str
+    ) -> tuple[bool, str]:
+        """只读检查额度是否仍有剩余，不扣减（供主动消息等前置闸门使用）。"""
+        quota = await self.find_by_account(account_id)
+        if quota is None:
+            return False, "额度记录不存在"
+        q = getattr(quota, f"{content_type}_quota", None)
+        if q is None:
+            return False, "额度类型不存在"
+        if q.expires_at is not None:
+            exp = q.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < datetime.now(timezone.utc):
+                return False, "额度已过期"
+        if q.used >= q.limit:
+            return False, "额度不足"
+        return True, ""
+
     async def ensure_quota(self, account_id: str) -> AccountQuotaInDB:
         """确保账号存在额度记录，不存在则创建无限额度默认值。"""
         existing = await self.find_by_account(account_id)

@@ -499,6 +499,93 @@ class TestOfficialHTTPContracts:
         _run(body())
 
 
+class TestInboundQuotaGuards:
+    """入站 Vision/ASR 必须按账号额度放行，额度不足不调用外部服务。"""
+
+    def test_image_vision_skipped_when_quota_exhausted(self) -> None:
+        async def body():
+            from app.config import settings
+
+            client = _make_client(account_id="acc-1")
+            result = SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            )
+            client.engine.handle_message = AsyncMock(return_value=result)
+            client._send_reply = AsyncMock()
+            client._handle_image_input = AsyncMock(return_value="不该被调用")
+            FakeHttpxClient._responses = []
+            FakeHttpxClient._response = FakeHttpxResponse(status_code=404)
+            with patch.object(settings, "vision_enabled", True), patch.object(
+                settings, "tts_enabled", False
+            ), patch.object(
+                settings, "voice_dynamic_enabled", False
+            ), patch(
+                "app.services.media_storage.save_inbound_image_from_url",
+                AsyncMock(return_value=("/api/media/img-1", b"image-bytes")),
+            ), patch(
+                "app.db.repositories.quota_repo.QuotaRepository.deduct",
+                AsyncMock(return_value=(False, "额度不足")),
+            ), patch(
+                "app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient
+            ):
+                await client._handle_message_event("C2C_MESSAGE_CREATE", {
+                    "id": "img-quota",
+                    "author": {"user_openid": "u-1", "username": "小明"},
+                    "content": "",
+                    "attachments": [{
+                        "content_type": "image/png",
+                        "url": "https://example.test/a.png",
+                    }],
+                })
+            client._handle_image_input.assert_not_awaited()
+            assert client.engine.handle_message.await_args.kwargs["content_type"] == "image"
+
+        _run(body())
+
+    def test_voice_asr_skipped_when_quota_exhausted(self) -> None:
+        async def body():
+            from app.config import settings
+
+            client = _make_client(account_id="acc-1")
+            result = SimpleNamespace(
+                text="收到", texts=[], image_tasks=[], conversation_id="c-1",
+                voice_id="v", voice_instruction="", voice_pitch_rate=1.0,
+                voice_emotion_tag="", account_id="acc-1",
+            )
+            client.engine.handle_message = AsyncMock(return_value=result)
+            client._send_reply = AsyncMock()
+            FakeHttpxClient._responses = []
+            FakeHttpxClient._response = FakeHttpxResponse(status_code=404)
+            download = AsyncMock(return_value=b"wav")
+            with patch.object(settings, "asr_enabled", True), patch.object(
+                settings, "tts_enabled", False
+            ), patch.object(
+                settings, "voice_dynamic_enabled", False
+            ), patch(
+                "app.db.repositories.quota_repo.QuotaRepository.deduct",
+                AsyncMock(return_value=(False, "额度不足")),
+            ), patch(
+                "app.services.audio_utils.download_qq_media", download
+            ), patch(
+                "app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient
+            ):
+                await client._handle_message_event("C2C_MESSAGE_CREATE", {
+                    "id": "voice-quota",
+                    "author": {"user_openid": "u-1", "username": "小明"},
+                    "content": "",
+                    "attachments": [{
+                        "content_type": "voice",
+                        "url": "https://example.test/a.wav",
+                    }],
+                })
+            download.assert_not_awaited()
+            assert "语音消息" in client.engine.handle_message.await_args.kwargs["text"]
+
+        _run(body())
+
+
 class TestMessageEvent:
     """消息事件处理（mock 引擎）。"""
 
@@ -652,8 +739,8 @@ class TestMessageEvent:
             FakeHttpxClient._responses = []
             FakeHttpxClient._response = FakeHttpxResponse(status_code=404)
             with patch.object(settings, "vision_enabled", False), patch(
-                "app.services.media_storage.save_image_from_url",
-                AsyncMock(return_value="/api/media/img-1"),
+                "app.services.media_storage.save_inbound_image_from_url",
+                AsyncMock(return_value=("/api/media/img-1", b"image-bytes")),
             ), patch(
                 "app.adapters.qq_websocket.httpx.AsyncClient", FakeHttpxClient
             ):

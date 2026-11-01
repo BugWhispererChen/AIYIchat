@@ -98,6 +98,11 @@ def test_legal_pages_render_with_version() -> None:
                 privacy = (await client.get("/web/privacy")).text
                 for key in ("PBKDF2", "百炼", "备份", "Cookie", "删除"):
                     assert key in privacy, key
+                # 政策必须与真实实现一致：Bearer+localStorage，且不承诺不存在的删除入口
+                assert "localStorage" in privacy
+                assert "不使用会话 Cookie" in privacy
+                assert "不提供单条消息或单个对话的独立删除入口" in privacy
+                assert "历史归档" in privacy
         finally:
             mongo._db = None
 

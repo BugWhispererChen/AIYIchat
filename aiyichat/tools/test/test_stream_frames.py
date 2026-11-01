@@ -147,7 +147,8 @@ class TestWebChatJsContract:
     def test_handles_media_and_voice_frames(self) -> None:
         assert "'[MEDIA]'" in self.src and "MEDIA_FRAME" in self.src
         assert "'[USER_TEXT]'" in self.src and "USER_TEXT_FRAME" in self.src
-        assert "media_kind" not in self.src  # 协议是文本帧，不是 JSON
+        # 协议是文本帧，不是 JSON；media_kinds 是历史消息字段，不参与 SSE 解析
+        assert '"media_kind"' not in self.src
         assert "bubble-media" in self.src and "bubble-audio" in self.src
 
     def test_media_urls_are_validated_before_rendering(self) -> None:

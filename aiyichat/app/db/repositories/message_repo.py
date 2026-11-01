@@ -37,13 +37,31 @@ class MessageRepository:
         latency_ms: Optional[int] = None,
         content_type: str = "text",
         media_url: Optional[str] = None,
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
         created_at: Optional[datetime] = None,
     ) -> MessageInDB:
         """创建新消息。
 
         created_at 由调用方传入消息真实发生时刻（如对方消息的接收时间），
         缺省取当前时间；updated_at 始终为写入时间。
+
+        media_url 只保留首个媒体以兼容旧读法；media_urls/media_kinds 是完整列表，
+        调用方只传 media_url 时也会自动补齐，保证新旧消息口径一致。
         """
+        urls = [u for u in (media_urls or []) if u]
+        if media_url and media_url not in urls:
+            urls.insert(0, media_url)
+        kinds = [k for k in (media_kinds or []) if k]
+        if urls:
+            if len(kinds) < len(urls):
+                kinds.extend([content_type] * (len(urls) - len(kinds)))
+            kinds = kinds[: len(urls)]
+            media_url = urls[0]
+        else:
+            kinds = []
+            media_url = media_url or None
+
         now = datetime.now(timezone.utc)
         doc = {
             "conversation_id": conversation_id,
@@ -55,6 +73,8 @@ class MessageRepository:
             "latency_ms": latency_ms,
             "content_type": content_type,
             "media_url": media_url,
+            "media_urls": urls,
+            "media_kinds": kinds,
             "created_at": created_at or now,
             "updated_at": now,
         }
@@ -161,10 +181,13 @@ class MessageRepository:
         deleted = await self.delete(message_id)
         if not deleted:
             return False
-        if message.media_url:
+        if message.media_url or message.media_urls:
             from app.db.repositories.media_repo import media_ids_from_message_docs
 
-            refs = media_ids_from_message_docs([{"media_url": message.media_url}])
+            refs = media_ids_from_message_docs([{
+                "media_url": message.media_url,
+                "media_urls": message.media_urls,
+            }])
             if refs:
                 from app.db.repositories.media_repo import MediaRepository
 

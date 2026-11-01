@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Callable
 
@@ -616,6 +617,36 @@ class TestDataModule:
                         assert forbidden not in raw, forbidden
                     assert token not in raw
                     assert seeded["identity"].account_id not in raw
+            finally:
+                await _teardown()
+
+        _run(flow())
+
+    def test_export_includes_all_message_media(self) -> None:
+        """导出必须带上 media_urls/media_kinds，不能只导出首个媒体。"""
+
+        async def flow() -> None:
+            app = await _setup_app("acct_export_media")
+            try:
+                async with _client(app) as c:
+                    token = await _signup(c, "mira")
+                    seeded = await _seed_full_data("mira")
+                    first = f"/api/media/{seeded['media_id']}"
+                    second = f"/api/media/{uuid.uuid4().hex}"
+                    await mongo.get_database().messages.update_one(
+                        {"media_url": first},
+                        {"$set": {
+                            "media_urls": [first, second],
+                            "media_kinds": ["image", "voice"],
+                        }},
+                    )
+                    resp = await c.get(
+                        "/api/web/account/export", headers=_h(token)
+                    )
+                    assert resp.status_code == 200, resp.text
+                    message = resp.json()["conversations"][0]["messages"][0]
+                    assert message["media_urls"] == [first, second]
+                    assert message["media_kinds"] == ["image", "voice"]
             finally:
                 await _teardown()
 

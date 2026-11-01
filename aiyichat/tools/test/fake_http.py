@@ -7,8 +7,19 @@
 from typing import Any
 
 
+class _FakeStreamContent:
+    """伪造 aiohttp 的流式 content，供 iter_chunked 下载上限用例使用。"""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    async def iter_chunked(self, size: int):
+        for start in range(0, len(self._data), max(1, size)):
+            yield self._data[start : start + size]
+
+
 class FakeAiohttpResponse:
-    """伪造 aiohttp 响应，支持 text()/read()/status/headers。"""
+    """伪造 aiohttp 响应，支持 text()/read()/status/headers 与分块读取。"""
 
     def __init__(
         self,
@@ -22,6 +33,8 @@ class FakeAiohttpResponse:
         self._read = read
         self.status = status
         self.headers = headers or {}
+        self.content_length = len(read)
+        self.content = _FakeStreamContent(read)
 
     async def text(self) -> str:
         return self._text

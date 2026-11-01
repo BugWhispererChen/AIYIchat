@@ -112,6 +112,14 @@
             audio.preload = 'metadata';
             audio.src = safe;
             div.appendChild(audio);
+        } else if (kind === 'file' || kind === 'video') {
+            var mediaLink = document.createElement('a');
+            mediaLink.className = 'bubble-media-label';
+            mediaLink.href = safe;
+            mediaLink.target = '_blank';
+            mediaLink.rel = 'noopener';
+            mediaLink.textContent = kind === 'video' ? '查看视频' : '查看文件';
+            div.appendChild(mediaLink);
         } else {
             var img = document.createElement('img');
             img.className = 'bubble-image' + (kind === 'sticker' ? ' is-sticker' : '');
@@ -412,32 +420,35 @@
         rows.forEach(function (m) {
             var role = m.role === 'user' ? 'user' : 'assistant';
             var contentType = m.content_type || 'text';
-            var mediaUrl = m.media_url || '';
-            if (mediaUrl && (contentType === 'voice' || contentType === 'image')) {
-                var kind = contentType === 'voice'
-                    ? 'audio'
-                    : (String(m.content || '').indexOf('表情') >= 0 ? 'sticker' : 'image');
-                var caption = '';
-                if (contentType === 'voice' && role === 'user') {
-                    caption = m.content || '';
-                } else if (
-                    contentType === 'image'
-                    && m.content
-                    && m.content.charAt(0) !== '('
-                    && m.content.indexOf('[对方发送了') !== 0
-                ) {
-                    caption = m.content;
+            var mediaUrls = Array.isArray(m.media_urls) && m.media_urls.length
+                ? m.media_urls
+                : (m.media_url ? [m.media_url] : []);
+            var mediaKinds = Array.isArray(m.media_kinds) ? m.media_kinds : [];
+            var content = m.content || m.text || '';
+            var caption = '';
+            if (content && content.charAt(0) !== '('
+                && content.indexOf('[对方发送了') !== 0) {
+                caption = content;
+            }
+            var rendered = 0;
+            mediaUrls.forEach(function (mediaUrl, index) {
+                var mediaKind = mediaKinds[index] || contentType;
+                if (mediaKind === 'voice' || mediaKind === 'image'
+                    || mediaKind === 'file' || mediaKind === 'video') {
+                    var bubbleKind = mediaKind === 'voice'
+                        ? 'audio'
+                        : (mediaKind === 'image' && content.indexOf('表情') >= 0
+                            ? 'sticker' : mediaKind);
+                    var node = addMediaBubble(
+                        role, bubbleKind, mediaUrl,
+                        role === 'assistant' ? partnerLabel() : '',
+                        index === 0 ? caption : '', false
+                    );
+                    if (node) rendered += 1;
                 }
-                var mediaNode = addMediaBubble(
-                    role, kind, mediaUrl,
-                    role === 'assistant' ? partnerLabel() : '',
-                    caption, false
-                );
-                if (!mediaNode) {
-                    addBubble(role, m.content || m.text || '', '', partnerLabel());
-                }
-            } else {
-                addBubble(role, m.content || m.text || '', '', partnerLabel());
+            });
+            if (!rendered) {
+                addBubble(role, content, '', partnerLabel());
             }
         });
         if (banner) banner.hidden = false;

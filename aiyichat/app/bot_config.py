@@ -16,6 +16,7 @@ class BotConfig(BaseModel):
     """单个 Bot 的运行时配置（QQ / 微信 / 网页）"""
 
     id: str  # Bot UUID 唯一标识
+    account_id: str = ""  # 所属账号（媒体配额与入站能力按账号计）
     name: str = ""  # Bot 显示名称
     platform: str = "qq"  # "qq" | "wechat" | "web"
     app_id: str = ""
@@ -38,6 +39,7 @@ async def async_load_bots_config() -> list[BotConfig]:
     configs = [
         BotConfig(
             id=d.id,
+            account_id=d.account_id or "",
             name=d.name,
             platform=d.platform,
             app_id=d.app_id,

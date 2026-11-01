@@ -473,6 +473,22 @@ class ProactiveScheduler:
                 record.id, self._last_send_detail or "发送接口返回失败"
             )
 
+    async def _account_can_generate(self, account_id: str) -> bool:
+        """主动消息生成前的只读额度闸门：额度耗尽/记录缺失时不调用 LLM。"""
+        if not account_id:
+            return False
+        from app.db.repositories.quota_repo import QuotaRepository
+
+        ok, reason = await QuotaRepository().has_remaining(
+            account_id, "text"
+        )
+        if not ok:
+            logger.info(
+                "主动消息跳过：账号文本额度不可用 account=%s reason=%s",
+                account_id, reason,
+            )
+        return ok
+
     async def _generate_content(
         self, identity, service, stage: ProactiveStage
     ) -> tuple[str, str]:
@@ -486,6 +502,8 @@ class ProactiveScheduler:
         Returns:
             (消息内容, 被引用的待跟进事件内容；未引用时为空串)
         """
+        if not await self._account_can_generate(service.account_id):
+            return "", ""
         try:
             from app.conversation.context_manager import ContextManager
             from app.conversation.response_processor import ResponseProcessor
@@ -669,6 +687,8 @@ class ProactiveScheduler:
         Returns:
             消息内容，失败时为空串
         """
+        if not await self._account_can_generate(service.account_id):
+            return ""
         try:
             from app.conversation.context_manager import ContextManager
             from app.conversation.response_processor import ResponseProcessor
@@ -909,6 +929,8 @@ class ProactiveScheduler:
         self, identity, service, event_content: str
     ) -> str:
         """为到期事件生成主动跟进消息内容。"""
+        if not await self._account_can_generate(service.account_id):
+            return ""
         try:
             from app.conversation.context_manager import ContextManager
             from app.conversation.response_processor import ResponseProcessor

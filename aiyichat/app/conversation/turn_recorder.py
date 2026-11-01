@@ -29,6 +29,8 @@ class TurnRecorder:
         emotion_tag: Optional[str],
         media_url: Optional[str] = None,
         content_type: str = "text",
+        media_urls: Optional[list[str]] = None,
+        media_kinds: Optional[list[str]] = None,
         created_at: Optional[datetime] = None,
     ) -> MessageInDB:
         """持久化对方消息。
@@ -42,6 +44,8 @@ class TurnRecorder:
             content=text,
             emotion_tag=emotion_tag,
             media_url=media_url,
+            media_urls=media_urls,
+            media_kinds=media_kinds,
             content_type=content_type,
             created_at=created_at,
         )

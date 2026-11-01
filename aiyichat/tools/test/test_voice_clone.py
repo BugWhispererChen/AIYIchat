@@ -238,6 +238,7 @@ class TestSaveAudioFromBytes:
 
     @patch("app.services.media_storage._media_repo")
     def test_save_mp3(self, mock_repo) -> None:
+        mock_repo.ensure_capacity = AsyncMock()
         mock_repo.create = AsyncMock(return_value="media123")
         from app.services.media_storage import save_audio_from_bytes
 
@@ -249,6 +250,7 @@ class TestSaveAudioFromBytes:
 
     @patch("app.services.media_storage._media_repo")
     def test_save_wav(self, mock_repo) -> None:
+        mock_repo.ensure_capacity = AsyncMock()
         mock_repo.create = AsyncMock(return_value="media456")
         from app.services.media_storage import save_audio_from_bytes
 

@@ -17,6 +17,10 @@ class MessageInDB(BaseModel):
         "text", "voice", "image", "emoji", "file", "video"
     ] = "text"  # 消息内容类型
     media_url: Optional[str] = None
+    # 单条消息可携带多个媒体（微信一条消息常含“文字+图片+语音”）。
+    # media_url 保留首个媒体以兼容旧代码；media_kinds 与 media_urls 按下标对齐。
+    media_urls: list[str] = Field(default_factory=list)
+    media_kinds: list[str] = Field(default_factory=list)
     emotion_tag: Optional[str] = None
     token_count: Optional[int] = None
     llm_model: Optional[str] = None
@@ -36,4 +40,9 @@ class MessageInDB(BaseModel):
         # 兼容存量数据：无 updated_at 时使用 created_at
         if "updated_at" not in doc:
             doc["updated_at"] = doc.get("created_at", datetime.now(timezone.utc))
+        # 存量消息没有多值媒体字段，显式归一化 None，避免 Pydantic 校验失败
+        if not isinstance(doc.get("media_urls"), list):
+            doc["media_urls"] = []
+        if not isinstance(doc.get("media_kinds"), list):
+            doc["media_kinds"] = []
         return cls(**doc)

@@ -12,6 +12,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from app.config import settings
 from app.llm.model_registry import (
     ResolvedModelConfig,
@@ -691,9 +693,22 @@ class TestAudioUtils:
         async def body():
             from app.services import audio_utils
 
-            fake_resp = SimpleNamespace(
-                raise_for_status=lambda: None, content=b"media-bytes"
-            )
+            class FakeStreamResp:
+                status_code = 200
+                headers = {"content-length": "11"}
+
+                def raise_for_status(self):
+                    return None
+
+                async def aiter_bytes(self):
+                    yield b"media-"
+                    yield b"bytes"
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    return None
 
             class FakeClient:
                 def __init__(self, *a, **k):
@@ -705,12 +720,16 @@ class TestAudioUtils:
                 async def __aexit__(self, *a):
                     return None
 
-                async def get(self, *a, **k):
-                    return fake_resp
+                def stream(self, *a, **k):
+                    return FakeStreamResp()
 
             with patch.object(audio_utils.httpx, "AsyncClient", FakeClient):
                 out = await audio_utils.download_qq_media("http://x")
                 assert out == b"media-bytes"
+                with pytest.raises(ValueError):
+                    await audio_utils.download_qq_media(
+                        "http://x", max_bytes=5
+                    )
 
         _run(body())
 
@@ -724,6 +743,65 @@ class TestMediaStorage:
         data = b"small-image-data"
         out, ct = _compress_image(data, "image/png")
         assert out == data and ct == "image/png"
+
+    def test_normalize_inbound_image_rejects_non_raster(self) -> None:
+        from app.services.media_storage import normalize_inbound_image
+
+        with pytest.raises(ValueError):
+            normalize_inbound_image(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+        with pytest.raises(ValueError):
+            normalize_inbound_image(b"<html><body>x</body></html>")
+
+    def test_download_inbound_image_rejects_over_limit(self) -> None:
+        async def body():
+            from app.services import media_storage
+
+            class FakeStreamResp:
+                status_code = 200
+                headers = {"content-length": "20"}
+
+                def raise_for_status(self):
+                    return None
+
+                async def aiter_bytes(self):
+                    yield b"x" * 20
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    return None
+
+            class FakeClient:
+                def __init__(self, *a, **k):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    return None
+
+                def stream(self, *a, **k):
+                    return FakeStreamResp()
+
+            with patch.object(media_storage.httpx, "AsyncClient", FakeClient):
+                with pytest.raises(ValueError):
+                    await media_storage.download_inbound_image(
+                        "http://x/a.png", max_bytes=10
+                    )
+
+        _run(body())
+
+    def test_save_file_rejects_over_limit(self, monkeypatch) -> None:
+        async def body():
+            from app.services import media_storage
+
+            monkeypatch.setattr(media_storage, "MAX_FILE_SIZE", 10)
+            with pytest.raises(ValueError):
+                await media_storage.save_file_from_bytes(b"x" * 11)
+
+        _run(body())
 
     def test_save_image_from_bytes(self) -> None:
         async def body():
@@ -741,19 +819,40 @@ class TestMediaStorage:
 
         _run(body())
 
-    def test_save_image_from_url(self) -> None:
+    def test_save_inbound_image_from_url(self) -> None:
         async def body():
+            import io
+
             import mongomock_motor
+            from PIL import Image
 
             from app.db import mongo
             from app.services import media_storage
 
+            buffer = io.BytesIO()
+            Image.new("RGB", (1, 1), "white").save(buffer, format="PNG")
+            png_bytes = buffer.getvalue()
+
             mongo._db = mongomock_motor.AsyncMongoMockClient()["test_media_url"]
-            fake_resp = SimpleNamespace(
-                raise_for_status=lambda: None,
-                content=b"downloaded",
-                headers={"content-type": "image/png"},
-            )
+
+            class FakeStreamResp:
+                status_code = 200
+                headers = {
+                    "content-type": "image/png",
+                    "content-length": str(len(png_bytes)),
+                }
+
+                def raise_for_status(self):
+                    return None
+
+                async def aiter_bytes(self):
+                    yield png_bytes
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    return None
 
             class FakeClient:
                 def __init__(self, *a, **k):
@@ -765,13 +864,16 @@ class TestMediaStorage:
                 async def __aexit__(self, *a):
                     return None
 
-                async def get(self, *a, **k):
-                    return fake_resp
+                def stream(self, *a, **k):
+                    return FakeStreamResp()
 
             try:
                 with patch.object(media_storage.httpx, "AsyncClient", FakeClient):
-                    url = await media_storage.save_image_from_url("http://x/a.png")
+                    url, raw = await media_storage.save_inbound_image_from_url(
+                        "http://x/a.png"
+                    )
                     assert url.startswith("/api/media/")
+                    assert raw == png_bytes
             finally:
                 mongo._db = None
 

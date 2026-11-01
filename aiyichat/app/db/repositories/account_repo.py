@@ -135,7 +135,7 @@ class AccountRepository:
                             "$in": id_variants_list(list(conv_ids))
                         }
                     },
-                    {"media_url": 1},
+                    {"media_url": 1, "media_urls": 1},
                 )
             ]
             # 定妆照媒体与消息媒体都必须回收：覆盖赋值会让其中一类永久残留

@@ -15,7 +15,7 @@ CredentialStatus = Literal["pending", "active", "rejected", "disabled"]
 
 # 当前合规文本版本：条款或隐私政策改版时递增，注册留痕按版本记录
 TERMS_VERSION = "v1.1"
-PRIVACY_VERSION = "v1.1"
+PRIVACY_VERSION = "v1.2"
 
 
 def normalize_username(username: str) -> str:

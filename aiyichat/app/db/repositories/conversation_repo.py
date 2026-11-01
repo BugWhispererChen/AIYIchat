@@ -301,7 +301,7 @@ class ConversationRepository:
             doc
             async for doc in get_database().messages.find(
                 {"conversation_id": {"$in": id_variants_list(conversation_ids)}},
-                {"media_url": 1},
+                {"media_url": 1, "media_urls": 1},
             )
         ]
         return {

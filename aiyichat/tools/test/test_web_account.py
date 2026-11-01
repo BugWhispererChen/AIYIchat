@@ -766,6 +766,9 @@ class TestDataModule:
                     assert counts["services"] == 0
                     assert counts["conversations"] == 1
                     assert counts["messages"] == 2
+                    archived = data.json()["archived"]
+                    assert archived["total"] == 1
+                    assert archived["items"][0]["message_count"] == 2
 
                     exported = await c.get("/api/web/account/export", headers=_h(token))
                     assert exported.status_code == 200, exported.text

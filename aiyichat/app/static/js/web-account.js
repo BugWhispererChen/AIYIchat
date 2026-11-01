@@ -255,13 +255,37 @@
 
         var wrap = el('service-data');
         wrap.textContent = '';
+        var archived = r.data.archived || { total: 0, items: [] };
+        if (archived.total) {
+            wrap.appendChild(archivedBlock(archived));
+        }
         if (!r.data.services.length) {
-            wrap.appendChild(mk('div', 'ui-empty', '还没有服务，去「聊天服务」创建一个。'));
+            if (!archived.total) {
+                wrap.appendChild(mk('div', 'ui-empty', '还没有服务，去「聊天服务」创建一个。'));
+            }
             return;
         }
         r.data.services.forEach(function (svc) {
             wrap.appendChild(serviceRow(svc, byId[svc.id]));
         });
+    }
+
+    function archivedBlock(archived) {
+        var box = mk('details', 'ui-inset');
+        box.appendChild(mk('summary', 'ui-summary',
+            '已删除服务的历史（' + num(archived.total) + ' 条对话）'));
+        (archived.items || []).forEach(function (conv) {
+            box.appendChild(mk('div', 'data-meta',
+                (conv.title || '未命名会话') + ' · 消息 ' + num(conv.message_count) + ' 条 · ' +
+                date(conv.last_message_at, true)));
+        });
+        if (archived.total > (archived.items || []).length) {
+            box.appendChild(mk('div', 'fact-meta',
+                '仅显示最近 ' + num((archived.items || []).length) + ' 条，导出可查看全部。'));
+        }
+        box.appendChild(mk('div', 'fact-meta',
+            '完整内容可在「导出全部数据」中查看；「清空对话记录」会删除这些历史。'));
+        return box;
     }
 
     function serviceRow(svc, memory) {

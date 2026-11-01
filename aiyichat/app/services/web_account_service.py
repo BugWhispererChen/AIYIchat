@@ -325,6 +325,11 @@ async def data_overview(account_id: str) -> dict[str, Any]:
                 "memory_updated_at": _iso(memory.updated_at) if memory else "",
             }
         )
+    current_keys = {svc.id for svc in services}
+    current_keys.update(svc.context_key for svc in services)
+    archived = [
+        conv for conv in conversations if conv.service_id not in current_keys
+    ]
     return {
         "counts": {
             "services": len(services),
@@ -333,6 +338,20 @@ async def data_overview(account_id: str) -> dict[str, Any]:
             "facts": fact_total,
         },
         "services": rows,
+        # 服务行删除后历史仍保留：至少让账号中心看得见这些会话，
+        # 完整正文走导出，删除入口仍是“清空对话记录”。
+        "archived": {
+            "total": len(archived),
+            "items": [
+                {
+                    "id": conv.id,
+                    "title": conv.title or "未命名会话",
+                    "message_count": conv.message_count,
+                    "last_message_at": _iso(conv.last_message_at),
+                }
+                for conv in archived[:50]
+            ],
+        },
     }
 
 

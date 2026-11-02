@@ -1,4 +1,8 @@
 <p align="center">
+  <strong>中文</strong> · <a href="README_en.md">English</a>
+</p>
+
+<p align="center">
   <img src="assets/readme/hero.svg" alt="爱易聊 AIYIchat —— 住在 QQ 和微信里的 AI 聊天伙伴" width="100%">
 </p>
 

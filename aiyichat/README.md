@@ -158,6 +158,9 @@ docker compose up -d --build
 docker compose logs --tail=50 app
 ```
 
+证书同样不需要手工准备：compose 里的 `certgen` 服务会先跑一次
+`tools/ensure_certs.py` 生成自签名证书，`app` 服务在它成功退出后才启动。
+
 Windows 上直接从源码跑，可在 `aiyichat/` 目录用 PowerShell 执行根目录的 `deploy.ps1`：
 
 ```powershell
@@ -306,7 +309,8 @@ AIYIchat\
 └── unins000.exe            # 卸载器
 ```
 
-> `certs/` 不入部署包、不提交 Git，由部署脚本 / 面板首次运行时自动生成自签名证书；
+> `certs/` 不入部署包、不提交 Git，由部署脚本 / 面板 / `docker compose`（一次性 `certgen` 服务）
+> 在首次运行时自动生成自签名证书；
 > 生产环境可在部署前自行准备正式证书放入 `certs/`（检测到已有证书会跳过生成）。
 
 ---

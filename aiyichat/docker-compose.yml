@@ -19,6 +19,16 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # 一次性证书准备：镜像 CMD 硬要求 certs/selfsigned.{key,crt}，而 certs/ 不入 Git
+  # 也不入部署包。缺这一步时，照 README 直接 `docker compose up` 的部署者只会看到
+  # uvicorn 那句不指名文件的 FileNotFoundError。已有证书原样跳过，不覆盖正式证书。
+  certgen:
+    build: .
+    restart: "no"
+    volumes:
+      - ./certs:/app/certs
+    command: ["python", "tools/ensure_certs.py"]
+
   app:
     build: .
     logging:
@@ -36,6 +46,7 @@ services:
     env_file:
       - .env
     volumes:
+      # 证书目录对应用只读：写证书是 certgen 的事，应用进程不需要这个权限
       - ./certs:/app/certs:ro
       - ./.env:/app/.env
       # Kuzu 图数据库数据文件持久化（人际关系网络增强）
@@ -43,6 +54,9 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      # 证书没就绪就没必要起应用：起不来也只会在日志里留一句难懂的 TLS 报错
+      certgen:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       # 健康检查端口读取容器内 HTTPS_PORT 环境变量（CMD-SHELL 形式）

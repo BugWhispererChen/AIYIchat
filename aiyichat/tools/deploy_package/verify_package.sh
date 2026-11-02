@@ -61,6 +61,12 @@ check_pkg() {
     echo "$file_list" | grep -q "tools/seed_companion_profiles\.py$" \
         && echo "PASS: 含预置角色种子脚本" \
         || echo "WARN: 缺少 tools/seed_companion_profiles.py"
+    # certgen 一次性服务跑这个脚本准备证书，缺了 docker compose up 会卡在 TLS 装配上
+    if echo "$file_list" | grep -q "tools/ensure_certs\.py$"; then
+        echo "PASS: 含证书准备脚本 tools/ensure_certs.py"
+    else
+        echo "FAIL: 缺少 tools/ensure_certs.py（compose 的 certgen 服务无法运行）"; return 1
+    fi
 
     # 6. 证书与敏感文件不入包确认
     local sensitive

@@ -139,6 +139,8 @@ COPY data/stickers/ ./data/stickers/
 # 预置角色种子脚本与定妆照素材（容器内手动执行 seed）
 COPY tools/seed_companion_profiles.py ./tools/seed_companion_profiles.py
 COPY tools/migrations/ ./tools/migrations/
+# 证书准备脚本：compose 的一次性 certgen 服务调用它（certs/ 不入包，缺它 Docker 直跑起不来）
+COPY tools/ensure_certs.py ./tools/ensure_certs.py
 COPY data/preset_portraits/ ./data/preset_portraits/
 # 服务端口可配置（宿主机与容器内一致），默认 HTTPS 443 + HTTP 80
 ENV HTTPS_PORT=443 HTTP_PORT=80
@@ -225,6 +227,16 @@ def assemble_package(
         shutil.copy2(seed_script_src, output_dir / "tools" / "seed_companion_profiles.py")
     else:
         print("警告：预置角色种子脚本不存在，跳过: tools/seed_companion_profiles.py")
+
+    # 复制证书准备脚本：docker-compose.yml 的 certgen 一次性服务要跑它，
+    # 少这一个文件，部署包里的 `docker compose up` 就会卡在证书缺失上
+    cert_script_src = project_root / "tools" / "ensure_certs.py"
+    if not cert_script_src.exists() and runtime_dir is not None:
+        cert_script_src = runtime_dir / "tools" / "ensure_certs.py"
+    if cert_script_src.exists():
+        shutil.copy2(cert_script_src, output_dir / "tools" / "ensure_certs.py")
+    else:
+        print("警告：证书准备脚本不存在，跳过: tools/ensure_certs.py")
 
     # 复制存量数据迁移脚本：README 让部署后在容器内跑 tools/migrations/*，
     # 不一起入包的话"有文档没脚本"就是媒体迁移一直没执行的原因之一

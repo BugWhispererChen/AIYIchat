@@ -14,6 +14,10 @@ compose 的一次性 `certgen` 服务调用，把"自动生成证书"的承诺�
     CERT_DIR          证书目录，默认 /app/certs
     CERT_EXTRA_HOSTS  追加进 SAN 的 DNS 名或 IP，逗号分隔（局域网 IP 直访时用）
 
+容器内探测不到宿主机的局域网地址，所以本脚本不自动把局域网 IP 塞进 SAN：需要
+用 IP 直访的部署者请显式声明，例如 `CERT_EXTRA_HOSTS=192.0.2.20 docker compose up -d`，
+否则浏览器按 IP 打开时会提示证书名称不匹配。
+
 已存在的证书一律不覆盖：生产部署者可能在部署前放入正式证书，静默替换等于删掉
 他们的证书。私钥落盘权限收紧到 0600（Windows 的 chmod 只作用于只读位，无副作用）。
 """
@@ -30,6 +34,12 @@ from pathlib import Path
 DEFAULT_CERT_DIR = "/app/certs"
 CERT_NAME = "selfsigned"
 VALID_DAYS = 3650
+# 与 deploy.sh / deploy.ps1 的 openssl `-subj "/C=CN/O=AIYIchat/CN=localhost"` 同形：
+# 后台证书的运维流程是按 "AIYIchat" 字样在系统信任库里找指纹再导入，
+# 主题里缺这个组织名就会搜不到，四条生成路径必须给出同一个 DN。
+SUBJECT_COUNTRY = "CN"
+SUBJECT_ORGANIZATION = "AIYIchat"
+SUBJECT_COMMON_NAME = "localhost"
 
 
 def _split_hosts(raw: str) -> list[str]:
@@ -107,7 +117,13 @@ def ensure_certs(cert_dir: Path, extra_hosts: list[str]) -> str:
     try:
         cert_dir.mkdir(parents=True, exist_ok=True)
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+        name = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COUNTRY_NAME, SUBJECT_COUNTRY),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, SUBJECT_ORGANIZATION),
+                x509.NameAttribute(NameOID.COMMON_NAME, SUBJECT_COMMON_NAME),
+            ]
+        )
         now = datetime.now(timezone.utc)
         cert = (
             x509.CertificateBuilder()

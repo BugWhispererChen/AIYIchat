@@ -25,6 +25,9 @@ services:
   certgen:
     build: .
     restart: "no"
+    # 宿主机环境变量不会自动进容器，需要显式透传：写 .env 或命令前缀都行
+    environment:
+      - CERT_EXTRA_HOSTS=${CERT_EXTRA_HOSTS:-}
     volumes:
       - ./certs:/app/certs
     command: ["python", "tools/ensure_certs.py"]

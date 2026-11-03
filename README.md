@@ -278,6 +278,13 @@ docker compose logs --tail=50 app
 
 自签名证书由这一步自动准备（`certgen` 服务先跑一次 `tools/ensure_certs.py`，再起应用），
 不需要手工执行 openssl。你若在 `certs/` 里放了自己的正式证书，检测到已存在就原样沿用、不会覆盖。
+要用局域网 IP 直接访问（而不是 `localhost`）时，把该地址写进证书的主题备用名：
+
+```bash
+CERT_EXTRA_HOSTS=192.0.2.20 docker compose up -d --build
+```
+
+容器内探测不到宿主机的局域网地址，所以这个参数需要你显式给出，否则按 IP 打开时浏览器会提示证书名称不匹配。
 
 ### 装完之后要做的三件事
 

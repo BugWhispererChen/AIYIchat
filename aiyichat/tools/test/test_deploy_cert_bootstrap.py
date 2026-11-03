@@ -52,11 +52,23 @@ class TestGenerateCertificates:
 
         cert, from_cert, from_key = _load_pair(target)
         assert from_cert.public_numbers() == from_key.public_numbers(), "证书与私钥不配对"
-        cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        assert cn == "localhost"
         assert cert.not_valid_after_utc > cert.not_valid_before_utc
         span = (cert.not_valid_after_utc - cert.not_valid_before_utc).days
         assert VALID_DAYS <= span <= VALID_DAYS + 2
+
+    def test_subject_matches_openssl_branch(self, tmp_path: Path) -> None:
+        # 后台换证书是按 "AIYIchat" 字样在信任库里搜指纹的，
+        # 四条生成路径的 subject 必须同形，否则导入与检索流程会分叉
+        target = tmp_path / "dn"
+        ensure_certs(target, [])
+        cert, _, _ = _load_pair(target)
+        attrs = {oid: cert.subject.get_attributes_for_oid(oid)[0].value for oid in (
+            NameOID.COUNTRY_NAME, NameOID.ORGANIZATION_NAME, NameOID.COMMON_NAME
+        )}
+        assert attrs[NameOID.ORGANIZATION_NAME] == "AIYIchat"
+        assert attrs[NameOID.COMMON_NAME] == "localhost"
+        assert str(attrs[NameOID.COUNTRY_NAME]) in {"CN", "2.5.4.6"}
+        assert "AIYIchat" in cert.subject.rfc4514_string()
 
     def test_san_covers_localhost(self, tmp_path: Path) -> None:
         target = tmp_path / "san"
@@ -143,6 +155,13 @@ class TestComposeWiring:
         # 写证书是 certgen 的权限，应用进程只读即可
         assert "./certs:/app/certs:ro" in text
 
+    def test_certgen_passes_san_override_into_container(self) -> None:
+        # 宿主机环境变量不会自动进容器；少这一行透传，README 里
+        # `CERT_EXTRA_HOSTS=... docker compose up` 的用法就是无效的
+        text = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        block = text[text.index("certgen:") : text.index("  app:")]
+        assert "CERT_EXTRA_HOSTS=${CERT_EXTRA_HOSTS:-}" in block
+
 
 class TestImageAndPackageCarryTheScript:
     """镜像与部署包都要带上脚本：漏一处，那条部署路径就还是起不来。"""
@@ -175,3 +194,8 @@ class TestDocsKeepThePromise:
     def test_readme_mentions_compose_cert_generation(self, readme: str) -> None:
         text = (PROJECT_ROOT / readme).read_text(encoding="utf-8")
         assert "ensure_certs" in text or "certgen" in text
+
+    def test_san_override_is_discoverable(self) -> None:
+        # README 教人用 CERT_EXTRA_HOSTS，模板里没有这一项的话没人会知道它存在
+        text = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
+        assert "CERT_EXTRA_HOSTS" in text

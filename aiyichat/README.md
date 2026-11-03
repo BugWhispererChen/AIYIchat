@@ -160,6 +160,15 @@ docker compose logs --tail=50 app
 
 证书同样不需要手工准备：compose 里的 `certgen` 服务会先跑一次
 `tools/ensure_certs.py` 生成自签名证书，`app` 服务在它成功退出后才启动。
+生成的证书与部署脚本的 openssl 分支同形（`C=CN`、`O=AIYIchat`、`CN=localhost`），
+后台按 "AIYIchat" 检索信任库指纹的流程在两条路径上一致。
+
+要用局域网 IP 直接访问，把地址写进证书的主题备用名（容器内探测不到宿主机 IP，
+必须显式给出，可写在本目录 `.env` 里，也可放在命令前缀）：
+
+```bash
+CERT_EXTRA_HOSTS=192.0.2.20 docker compose up -d --build
+```
 
 Windows 上直接从源码跑，可在 `aiyichat/` 目录用 PowerShell 执行根目录的 `deploy.ps1`：
 

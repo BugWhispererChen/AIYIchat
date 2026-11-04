@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="690" viewBox="0 0 1280 690" role="img" aria-label="爱易聊 AIYIchat B 端平台形态：一套部署同时运营渠道、服务、角色、额度与内容安全">
+  <defs>
+    <style>
+      .t  { font-family: Georgia, 'Songti SC', 'STSong', serif; fill: #1f1b16; }
+      .ui { font-family: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif; }
+      .h1 { font-size: 27px; font-weight: 700; }
+      .sub { font-size: 14.5px; fill: #5f574c; }
+      .band { font-size: 15px; font-weight: 700; fill: #1f1b16; }
+      .cardT { font-size: 13.5px; font-weight: 700; fill: #1f1b16; }
+      .cardL { font-size: 12px; fill: #554d42; }
+      .core { font-size: 13px; font-weight: 700; fill: #3b326b; }
+      .note { font-size: 12.5px; fill: #7a6f60; }
+      .num { font-size: 12px; font-weight: 700; fill: #b4691b; }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8d8272"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="690" fill="#f7f5f1"/>
+  <rect x="0" y="0" width="1280" height="6" fill="#4f46e5" opacity="0.85"/>
+
+  <text x="640" y="58" text-anchor="middle" class="t h1">一套部署 = 一个可运营的 AI 聊天服务平台</text>
+  <text x="640" y="86" text-anchor="middle" class="ui sub">运营者管台账、额度、内容与开关；终端用户在 QQ · 微信 · 网页里加好友即聊</text>
+
+  <!-- 运营层 -->
+  <rect x="40" y="112" width="1200" height="152" rx="14" fill="#efe9df" stroke="#d9d2c6"/>
+  <circle cx="62" cy="136" r="4.5" fill="#e08a2b"/>
+  <text x="76" y="141" class="ui band">运营者 · 管理后台 14 个页面</text>
+
+  <g>
+    <rect x="70" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="86" y="180" class="ui cardT">服务台账</text>
+    <text x="86" y="204" class="ui cardL">账号 · 身份 · 渠道</text>
+    <text x="86" y="224" class="ui cardL">服务三层可查</text>
+
+    <rect x="262" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="278" y="180" class="ui cardT">角色库</text>
+    <text x="278" y="204" class="ui cardL">11 位预置 · 自建</text>
+    <text x="278" y="224" class="ui cardL">公共 / 租户私有</text>
+
+    <rect x="454" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="470" y="180" class="ui cardT">套餐与额度</text>
+    <text x="470" y="204" class="ui cardL">文字 · 语音 · 图片</text>
+    <text x="470" y="224" class="ui cardL">套用即留订单台账</text>
+
+    <rect x="646" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="662" y="180" class="ui cardT">功能实验室</text>
+    <text x="662" y="204" class="ui cardL"><tspan class="num">41</tspan> 项能力开关</text>
+    <text x="662" y="224" class="ui cardL">保存即热生效</text>
+
+    <rect x="838" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="854" y="180" class="ui cardT">内容安全</text>
+    <text x="854" y="204" class="ui cardL">过滤 · 事件审计</text>
+    <text x="854" y="224" class="ui cardL">追加词表热生效</text>
+
+    <rect x="1030" y="156" width="180" height="92" rx="10" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="1046" y="180" class="ui cardT">质量与指标</text>
+    <text x="1046" y="204" class="ui cardL">评测 · 看板</text>
+    <text x="1046" y="224" class="ui cardL">分阶段耗时</text>
+  </g>
+
+  <path d="M640 264 L640 292" stroke="#8d8272" stroke-width="1.6" marker-end="url(#arw)"/>
+
+  <!-- 中间：渠道 / 引擎 / 用户 -->
+  <rect x="40" y="316" width="300" height="176" rx="12" fill="#ffffff" stroke="#ddd6ca"/>
+  <text x="60" y="344" class="ui band">渠道接入</text>
+  <text x="60" y="372" class="ui cardL">QQ WebSocket Bot × N</text>
+  <text x="60" y="394" class="ui cardL">微信 Bot × N（扫码令牌）</text>
+  <text x="60" y="416" class="ui cardL">网页渠道 · SSE 流式</text>
+  <text x="60" y="444" class="ui core">30s 轮询热增删</text>
+  <text x="60" y="466" class="ui cardL">逐 Bot 启停 / 封禁</text>
+
+  <path d="M340 404 L380 404" stroke="#8d8272" stroke-width="1.6" marker-end="url(#arw)"/>
+
+  <rect x="380" y="302" width="520" height="204" rx="14" fill="#eeeafd" stroke="#4f46e5" stroke-width="1.8"/>
+  <text x="400" y="330" class="ui band">统一对话链路 —— 所有渠道共用一条</text>
+  <text x="400" y="358" class="ui cardL">平台差异由适配器收敛为统一消息格式</text>
+  <text x="400" y="386" class="ui core">记忆五级 · 情绪 · 主动性 · 拟人护栏</text>
+  <text x="400" y="414" class="ui cardL">多模态：听 / 说 / 看 / 画 长在对话流里</text>
+  <text x="400" y="442" class="ui core">额度：预检 → 结算 → 失败退还</text>
+  <text x="400" y="470" class="ui cardL">身份级配额 · 1 GB 媒体配额 · 共享资产不驱逐</text>
+  <text x="400" y="494" class="ui note">同一身份跨 QQ / 微信 / 网页可共用记忆与历史</text>
+
+  <path d="M900 404 L940 404" stroke="#8d8272" stroke-width="1.6" marker-end="url(#arw)"/>
+
+  <rect x="940" y="316" width="300" height="176" rx="12" fill="#ffffff" stroke="#ddd6ca"/>
+  <text x="960" y="344" class="ui band">终端用户</text>
+  <text x="960" y="372" class="ui cardL">QQ / 微信加好友即聊</text>
+  <text x="960" y="394" class="ui cardL">网页注册 → 审核 → 登录</text>
+  <text x="960" y="416" class="ui cardL">多服务切换 · 历史保留</text>
+  <text x="960" y="438" class="ui cardL">自助绑渠道与建服务</text>
+  <text x="960" y="466" class="ui core">账号中心</text>
+  <text x="960" y="488" class="ui cardL">额度 · 设备 · 改密 · 注销</text>
+
+  <path d="M640 506 L640 532" stroke="#8d8272" stroke-width="1.6" marker-end="url(#arw)"/>
+
+  <!-- 支撑层 -->
+  <rect x="40" y="540" width="1200" height="104" rx="12" fill="#efe9df" stroke="#d9d2c6"/>
+  <text x="60" y="564" class="ui band">支撑层</text>
+  <g>
+    <rect x="60" y="574" width="285" height="56" rx="9" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="74" y="596" class="ui cardT">MongoDB</text>
+    <text x="74" y="616" class="ui cardL">账号 · 服务 · 记忆 · 媒体 · 订单</text>
+
+    <rect x="365" y="574" width="285" height="56" rx="9" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="379" y="596" class="ui cardT">模型槽位 <tspan class="num">×12</tspan></text>
+    <text x="379" y="616" class="ui cardL">6 文本任务 + 听/说/看/画/改图/向量</text>
+
+    <rect x="670" y="574" width="285" height="56" rx="9" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="684" y="596" class="ui cardT">可观测</text>
+    <text x="684" y="616" class="ui cardL">health 三态 · 熔断 · Trace · 耗时</text>
+
+    <rect x="975" y="574" width="245" height="56" rx="9" fill="#ffffff" stroke="#ddd6ca"/>
+    <text x="989" y="596" class="ui cardT">交付形态</text>
+    <text x="989" y="616" class="ui cardL">Win 单文件 / Linux compose</text>
+  </g>
+
+  <text x="40" y="672" class="ui note">边界：单管理员（无 RBAC）· 无对外开放 API · 限流与验证码为进程内存，多实例需共享存储 · 不接第三方支付</text>
+</svg>

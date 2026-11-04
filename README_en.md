@@ -268,7 +268,7 @@ register → username and weak-password validation → image captcha → per-IP 
 
 **Operations and observability**
 
-- Three-tier health endpoints (`/health`, `/health/live`, `/health/ready`): database ping, LLM and
+- Three-tier health endpoints (`/api/health`, `/api/health/live`, `/api/health/ready`): database ping, LLM and
   circuit-breaker state, embedding degradation, disk watermark, background task slots. Latency, disk and
   raw exception text are returned **only to an admin session** — this is a public repository.
 - Circuit breaker: failure-rate threshold trips it, a recovery window opens, a success count closes it,

@@ -12,6 +12,7 @@
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11-blue.svg" alt="Python 3.11"></a>
   <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-ruff%20%7C%20mypy%20%7C%20pytest-brightgreen.svg" alt="CI"></a>
   <a href="https://github.com/BugWhispererChen/AIYIchat/stargazers"><img src="https://img.shields.io/github/stars/BugWhispererChen/AIYIchat?style=social" alt="GitHub stars"></a>
+  <a href="https://github.com/DasterProkio/awesome-ai-companion/blob/main/README.zh-CN.md"><img src="https://raw.githubusercontent.com/DasterProkio/awesome-ai-companion/main/assets/featured-in-awesome-ai-companion-zh-CN.png" alt="已收录于人机恋开源项目大全" height="24"></a>
 </p>
 
 # 爱易聊（AIYIchat）
